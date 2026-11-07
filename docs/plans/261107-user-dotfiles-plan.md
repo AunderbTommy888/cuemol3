@@ -131,7 +131,16 @@
     (起動処理全体の中止。transcript に「startup scripts stopped」と出す)。コマンドのエラーで 1 ファイルが
     失敗したときは、今までどおり残りのファイルを実行する (区別する)。
   - gate の release は、最後のファイル (または Stop) の `runSubmission` が戻ってから行う。Stop を
-    押しても、worker の実行が止まって戻るまでは gate を開けない。
+    押しても、worker の実行が止まって戻るまでは gate を開けない。release は Promise の完了に付け、
+    `ConsoleRoot` の unmount には付けない (gate は host 側の module の状態なので、Root が消えても残る)。
+  - 実行中に Console plugin を off にした場合 (Root の unmount): `useConsoleRunner` の後始末で、実行中の
+    run (rc でも手で打ったコマンドでも) に `cancelRun` を送る。今の後始末は `consoleSession.reset()` だけで
+    worker の実行を取り消さないので、off にすると Stop の手段が無くなり、再び on にしても新しい runner の
+    `runIdRef` は空で止められない。取り消された rc の Promise が戻った時点で gate を開け、残りの startup
+    ファイルは Stop と同じく実行しない。
+    - 残る制約: `useSuppressUndoRedo` のロックは unmount で外れるので、取り消しが worker に届いて txn が
+      閉じるまでの短い間は Undo/Redo が抑止されない。plugin の無効化を実行の終了まで保留すれば避けられるが、
+      Settings の plugin の切り替えに手を入れる割に得るものが小さいので、行わない。
   - ファイル名やどの dialect かは純関数 `planStartupScripts(paths, metas)` で決め、ここをテストする。
   - 実行は起動につき 1 回だけ。「実行済み / skip 済み」の状態は `ConsoleRoot` の ref ではなく、plugin の
     mount より長く生きる host 側 (下記の startup gate の module の状態) に置く。`PluginRoots` は plugin を
@@ -195,6 +204,8 @@
    - `styles/` に `id="user"` のファイルを置いても読まれず、終了後の `user_styles.xml` が変わらないこと
    - `startup.txt` に `create_scene` と後続のコマンドを書いても、scene が 1 つだけ作られること
    - Console plugin を off -> on にしても rc が再実行されないこと
+   - 時間のかかる rc の実行中に Console plugin を off にすると、rc が取り消され、残りの startup ファイルは
+     実行されず、その後に argv のファイルが開くこと (再び on にしても rc は再実行されない)
    - `startup.qax` の中の相対パスが `~/.cuemol/` から解決されること (`startup.txt` が無くても)
    - アプリが起動していない状態で、時間のかかる rc を置いて `tritium_cli -c '...'` を打つと、rc の後に
      そのコマンドが実行されること
@@ -212,6 +223,7 @@
        unmount した保留は外れる、実行中の保留は timeout で外れない
      - endpoint の `run` 要求が gate が開くまで実行されず、待っている間に取り消された要求は gate が開いても
        実行されないこと
+     - 実行中に `useConsoleRunner` が unmount されると、その run id に `cancelRun` が送られること
      - rc の実行中に Stop を押すと、その `startup-N` の run id に `cancelRun` が送られ、`runSubmission` が
        戻るまで gate が開かず、残りの startup ファイルは実行されない (境界の 1 件)
      - `loadDotStyles`: 途中まで有効な定義を含む壊れたファイルを skip し、その定義が lookup に残らない
@@ -234,3 +246,7 @@
    エラーは 1 ファイルだけの失敗 (残りを実行する) として区別する。gate は `runSubmission` が戻ってから開ける。
 8. (第 3 回) `tritium_cli` の `run` 要求も gate を待ち、待つ間に取り消された要求は実行しない。全 rc
    (`.qax` も) に `cwd = dirname(path)` を明示して渡す。
+9. (第 4 回) 実行中に Console plugin を off にしたら、unmount の後始末で実行中の run に `cancelRun` を送る
+   (手で打ったコマンドにも効く)。gate は Promise の完了で開け、Root の unmount には付けない。plugin の
+   無効化を保留する案は、Settings に手を入れる割に得るもの (取り消しが届くまでの短い間の Undo/Redo の
+   抑止) が小さいので採らない。

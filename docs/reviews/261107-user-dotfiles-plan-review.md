@@ -1,45 +1,33 @@
 # User dotfiles 計画レビュー（更新版）
 
 対象: [261107-user-dotfiles-plan.md](../plans/261107-user-dotfiles-plan.md)  
-レビュー日: 2026-11-07（第 3 回レビュー・追加確認）
+レビュー日: 2026-11-07（第 4 回レビュー）
 
-**これまでの指摘は計画上で対処されていますが、追加確認で実益のある指摘を 2 件確認しました。** 前回指摘の対応確認に加え、CLI からの起動と `.qax` の実行経路を照合した結果です。先に述べた「追加指摘なし」という判断を訂正します。
+**前回の 2 件は計画上で対処されています。関連経路も見直し、追加で修正する実益がある指摘は 1 件です。** rc 実行中に Console plugin を無効にした場合の扱いが不足しています。
 
-## 1. [P2] CLI のコマンド実行も startup gate で待たせる
+## 1. [P2] rc 実行中は、ConsoleRoot をそのまま unmount しない
 
-対象: 実装 3、136–151 行（startup gate）。
+対象: 実装 3、118–134 行・143–148 行。
 
-計画で gate を待つのは `useShellOpenFiles` だけですが、`tritium_cli` はそこを通らず、`useConsoleEndpoint` から直接 `runSubmission` を呼びます。endpoint の有効条件は `cm !== null` とアクセス許可で、rc の完了を待ちません。CLI も接続情報に endpoint が現れると起動完了と判断します。
+計画では `useConsoleRunner` に Stop と Undo/Redo 抑止を担わせますが、Console plugin を off にすると、その hook を持つ Root 自体が unmount されます。現行の cleanup は `consoleSession.reset()` を呼ぶだけで、worker の実行は取り消しません。一方、`useSuppressUndoRedo` は unmount 時にロックを解放します。
 
-このため、CLI がアプリを起動し、rc が fetch している間に利用者のコマンドを送ると、worker の `txnBusy()` により利用者のコマンドが拒否されます。逆に CLI のコマンドが先に transaction を開始すると、rc の側が拒否される可能性があります。接続先のパスを揃えるだけでは、CLI から起動する通常の使い方が安定しません。
+したがって、長い fetch を含む rc の実行中に Settings で Console を off にすると、worker の transaction は続いたまま、Stop が使えなくなり、Undo/Redo の抑止も外れます。再度 on にしても新しい runner の `runIdRef` は空なので、元の rc を止められません。計画にある「claim 前の unmount では保留を外す」処理と「再 mount では再実行しない」処理だけでは、この実行中のケースを扱えません。
 
-**修正案:** `useConsoleEndpoint` の `run` 要求も startup gate の終了を待ってから実行する。既存の `info` 応答などと分け、待機中にクライアントが取消した場合は、gate が開いてもその要求を実行しない。少なくとも「CLI が起動したアプリでも rc → 利用者のコマンドの順になる」を計画の実行順序に含める。
+**修正案:** 最小の対応として、rc 実行中は Console plugin の無効化を保留し、Stop または正常終了で `runSubmission` が戻ってから無効化する。無効化操作を中止要求として扱う場合も、先に `cancelRun` を送り、処理が戻るまで runner と Undo/Redo 抑止を維持する。gate も同じ終了時点まで維持する。実行中に off → on を試しても、取消対象とロックが失われないことを既存の起動・停止確認に含める。
 
-根拠: [useConsoleEndpoint.ts](../../tritium/react-gui/src/plugins/console/renderer/useConsoleEndpoint.ts) の endpoint 有効条件と `runSubmission` 呼出し、[connection.ts](../../tritium/cli/src/connection.ts) の `ensureApp`、[runCommand.ts](../../tritium/react-gui/src/plugins/console/worker/runtime/runCommand.ts) の `txnBusy()` による拒否。
-
-## 2. [P2] `.qax` にも rc ディレクトリの cwd を明示する
-
-対象: 仕様 30–33 行、実装 3 の 93–99 行・115–118 行。
-
-仕様では全 rc の相対パスをファイルのディレクトリから解決しますが、実装手順で cwd の設定を記載しているのは「qax 以外」の分岐だけです。既存の `runQaxStandalone()` は `workDirFor(args)` を使い、`cwd` が渡されなければ console の現在ディレクトリを使います。qax ファイル自体を絶対パスで開いても、その中のコマンドの基準ディレクトリは変わりません。
-
-たとえば `~/.cuemol/startup.qax` 内の `<cmd>` で相対パスの PDB を load する場合、qax の経路をそのまま再利用すると、`~/.cuemol/` ではなくアプリの起動ディレクトリなどから探して失敗します。先に実行する `startup.txt` の有無や cwd の扱いにも依存させるべきではありません。
-
-**修正案:** startup 用の runner が、各ファイルの実行開始時に `cwd = dirname(scriptPath)` を明示して `runSubmission` へ渡す、と記載する。これを `.qax` にも適用すれば、既存 qax の「1 action = 1 undo」を維持しながら、全 rc で同じパス解決の契約を満たせます。
-
-根拠: [runCommand.ts](../../tritium/react-gui/src/plugins/console/worker/runtime/runCommand.ts) の `workDirFor`（85 行以降）、`runQaxStandalone`（449 行以降）、`runScriptPath` の qax 呼出し。
+根拠: [PluginRoots.tsx](../../tritium/react-gui/src/renderer/plugin-host/PluginRoots.tsx) の active plugin の mount、[useConsoleRunner.ts](../../tritium/react-gui/src/plugins/console/renderer/useConsoleRunner.ts) の unmount cleanup と `runIdRef`、[UndoRedoLockContext.tsx](../../tritium/react-gui/src/renderer/contexts/UndoRedoLockContext.tsx) の `useSuppressUndoRedo`、[SettingsPane.tsx](../../tritium/react-gui/src/renderer/features/settings/SettingsPane.tsx) の plugin 切替処理。
 
 ## 前回指摘の対応確認
 
-前回残っていた Stop の接続は、計画上で解消しています。`useConsoleRunner` の共通経路を使い、次の処理が明記されました。
+| 前回の指摘 | 更新後の計画 | 判定 |
+|---|---|---|
+| CLI のコマンドが rc と競合する | endpoint の `run` も `startupSettled()` を待ち、待機中に取り消された要求は実行しない。実行順序・確認項目・テストに反映 | 計画上で解消 |
+| `.qax` の相対パスが rc のディレクトリ基準にならない | 各ファイルの開始時に `cwd = dirname(scriptPath)` を明示し、`.qax` にも適用。先行ファイルの cwd に依存させない | 計画上で解消 |
 
-- `consoleSession.begin()` による Stop の表示と Undo/Redo の抑止。
-- `runIdRef` と `stoppedRef` による、実行中の rc とシーン操作後の継続の停止。
-- Stop では残りの startup ファイルも中止し、通常のコマンドエラーとは区別。
-- `runSubmission` が戻ってから gate を release。
+それ以前の指摘への対処（予約 ID、継続時の再送、main / CLI の接続先統一、timeout、起動につき 1 回、style 読込失敗時の後始末、Stop の接続）も維持されています。
 
-初回の 6 件（予約 ID、継続時の再送、接続先の統一、timeout、起動につき 1 回、style 読込失敗時の後始末）への対処も維持されています。
+## 追加確認と範囲
 
-## 確認範囲
+前回の修正箇所だけでなく、起動条件、plugin 設定の読込と切替、CLI の待機中の取消、text / qax の cwd と継続実行、style の読込・失敗時の削除・GUI 設定の保存を見直しました。この確認範囲では、上記以外に追加で修正を求める実益のある問題は見つかりませんでした。
 
-更新後の計画全文と、console の実行・停止、CLI の起動・要求送信、qax の cwd 解決を静的に照合しました。判定は計画への対応を示し、実装済みを意味しません。上記の不具合例はコードから導いたもので、アプリで再現試験した結果ではありません。計画本文と実装コードは変更せず、レビュー文書のみ更新しました。
+静的レビューであり、判定は計画への対応を示します。実装済み・動作検証済みを意味しません。ビルド、アプリでの再現試験は行っていません。計画本文と実装コードは変更せず、レビュー文書のみ更新しました。
