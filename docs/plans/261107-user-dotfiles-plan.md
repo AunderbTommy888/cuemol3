@@ -27,7 +27,10 @@
 
 - rc の実行タイミング: CueMol の初期化と最初の scene の作成が終わった後で、argv や
   open-file で渡されたファイルを開く前 (PyMOL と同じ順序)。対象は起動時の scene。
-- 相対パスは `~/.cuemol/` を基準に解決する (cwd = rc ファイルのディレクトリ)。1 ファイル
+  `tritium_cli` から送られたコマンドも rc の後に実行する (CLI がアプリを起動した場合も、rc ->
+  利用者のコマンドの順になる)。
+- 相対パスは `~/.cuemol/` を基準に解決する (cwd = rc ファイルのディレクトリ。`.qax` も含め、全ファイルで
+  同じ。前に実行したファイルの cwd や、console の今の cwd には依存しない)。1 ファイル
   = 1 submission = 1 undo txn (qax は既存挙動どおり 1 action ごと)。例外: rc の中で scene を変える
   コマンド (`create_scene`、`switch_scene` など) を使うと、手で打った submission と同じく、scene ごとに
   別の undo txn になる (undo は scene ごとのため)。
@@ -121,6 +124,9 @@
     - `runIdRef` に `startup-N` の run id を入れ、`stoppedRef` を `runSubmission` の `stopped` に渡す
       -> Stop で `cancelRun` がその run id に送られ、scene の操作の後の継続も止まる。
     - 終わったら `consoleSession.finish(entries)`。echo と結果の行には `[startup] ` を付ける。
+  - cwd: 各ファイルの実行を始めるときに `cwd = dirname(scriptPath)` を明示して `runSubmission` に渡す
+    (`.qax` にも)。worker の qax の経路 (`runQaxStandalone`) は `cwd` が渡されないと console の今の
+    ディレクトリ (`workDirFor`) を使うので、`startup.qax` の中の相対パスが `~/.cuemol/` から解決されない。
   - Stop の扱い: 実行中の rc を Stop したら、そのファイルを止め、**残りの startup ファイルも実行しない**
     (起動処理全体の中止。transcript に「startup scripts stopped」と出す)。コマンドのエラーで 1 ファイルが
     失敗したときは、今までどおり残りのファイルを実行する (区別する)。
@@ -141,6 +147,11 @@
   - `prefsLoaded` の前に既定値で mount され、保存された設定で off になって unmount された plugin は、
     claim していなければ cleanup で保留を外す (gate を止めたままにしない)。
   - `features/file-io/useShellOpenFiles.ts` は drain の前に `await startupSettled()` する。
+  - `tritium_cli` のコマンド (`plugins/console/renderer/useConsoleEndpoint.ts` の `run` 要求) も、
+    `runSubmission` を呼ぶ前に `await startupSettled()` する。endpoint は `cm` が ready になれば有効になり、
+    CLI は接続情報に endpoint が出た時点で起動完了とみなすので、待たないと rc の実行中に利用者の
+    コマンドが届き、worker の txn が使用中 (`txnBusy`) で一方が拒否される。`info` などの実行しない応答は
+    待たせない。待っている間にクライアントが取り消した要求は、gate が開いても実行しない。
     `startupSettled` は「`prefsLoaded` かつ最初の scene が settled で、保留が 0」で解決する。
   - rc 側の開始条件の「最初の scene が settled」は plugin から見えないので、`useInitialSceneSettled` を
     plugin-host api に公開する (`useAppInitialization` の `initialSceneSettled` を context 経由で出す)。
@@ -184,6 +195,9 @@
    - `styles/` に `id="user"` のファイルを置いても読まれず、終了後の `user_styles.xml` が変わらないこと
    - `startup.txt` に `create_scene` と後続のコマンドを書いても、scene が 1 つだけ作られること
    - Console plugin を off -> on にしても rc が再実行されないこと
+   - `startup.qax` の中の相対パスが `~/.cuemol/` から解決されること (`startup.txt` が無くても)
+   - アプリが起動していない状態で、時間のかかる rc を置いて `tritium_cli -c '...'` を打つと、rc の後に
+     そのコマンドが実行されること
    - 時間のかかる rc (`fetch` など) の実行中に Stop が表示され、押すと rc が止まり、残りの startup ファイルは
      実行されず、その後に argv のファイルが開くこと。実行中は Cmd+Z が効かないこと
    - `CUEMOL_HOME=<dir>` で起動したアプリに、同じ `CUEMOL_HOME` の `tritium_cli` が接続できること
@@ -196,6 +210,8 @@
      - `planStartupScripts`: 固定順、`.txt` = native、plugin off の dialect は skip
      - startup gate: `claimStartup` が起動につき 1 回だけ true (再 mount では false)、claim せずに
        unmount した保留は外れる、実行中の保留は timeout で外れない
+     - endpoint の `run` 要求が gate が開くまで実行されず、待っている間に取り消された要求は gate が開いても
+       実行されないこと
      - rc の実行中に Stop を押すと、その `startup-N` の run id に `cancelRun` が送られ、`runSubmission` が
        戻るまで gate が開かず、残りの startup ファイルは実行されない (境界の 1 件)
      - `loadDotStyles`: 途中まで有効な定義を含む壊れたファイルを skip し、その定義が lookup に残らない
@@ -216,3 +232,5 @@
 7. (第 2 回) rc は手で打った submission と同じ runner の経路 (`useConsoleRunner`) で実行し、実行中の表示・
    Stop・Undo/Redo の抑止に乗せる。Stop は起動処理全体の中止 (残りのファイルを実行しない)、コマンドの
    エラーは 1 ファイルだけの失敗 (残りを実行する) として区別する。gate は `runSubmission` が戻ってから開ける。
+8. (第 3 回) `tritium_cli` の `run` 要求も gate を待ち、待つ間に取り消された要求は実行しない。全 rc
+   (`.qax` も) に `cwd = dirname(path)` を明示して渡す。
