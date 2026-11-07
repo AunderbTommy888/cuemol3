@@ -34,6 +34,7 @@
 | [261107-chx-tutorial-survey-plan.md](261107-chx-tutorial-survey-plan.md) | ChimeraX の tutorial 17 本 (845 行) を ChX console に流した調査の記録と、後で検討するもの: 新しいコマンド (`volume`・`lighting`・`hbonds`・`coulombic`・`morph`・`preset` ほか)、CueMol 側の機能追加が要るもの (`clip`・`mlp`・`fitmap`・`movie` ほか)、断る対象、dialect から op への省略可の引数の共通の対策 | **未着手 / 別途検討** |
 | [261107-map-full-region-boundary-bug-plan.md](261107-map-full-region-boundary-bug-plan.md) | 地図の renderer で、表示範囲を全体 (full) にしたまま分子の境界を設定すると mesh が全部消える C++ の不具合 (box なら正しい)。再現手順、本来の動作、調べたこと、次の手順 | **未着手 / 不具合** |
 | [261103-chimerax-console-plan.md](261103-chimerax-console-plan.md) | ChX console (console の ChimeraX dialect) の残り: lighting・windowsize・clip (CueMol 側の機能追加が先に要る)、backbone を隠す規則と非表示の原子の style 保持 (表示状態を別に持つ必要がある)、`fit_view` op | **未実装** (既存機能で作れるコマンドは実装済み。`../architecture/console-chimerax-dialect.md`) |
+| [261107-user-dotfiles-plan.md](261107-user-dotfiles-plan.md) | `~/.cuemol/` の dotfiles: 起動時に console で実行する startup script (`startup.txt`/`.qax`/`.pml`/`.cxc`、拡張子で dialect を判定) と、read-only で読む追加 style (`styles/*.xml`、優先度は system < dotfile < GUI の user set) | **未実装** |
 | [261017-tube-raycast-memo-plan.md](261017-tube-raycast-memo-plan.md) | tube / cartoon の GPU raycast (impostor) の設計メモ: dev201608 の rctube の経緯、掃引パラメータの 1D 求根 + 断面 SDF 案、文献調査 | **検討メモ**。着手前に CPU で試作して安定性を確かめる |
 
 ## 実装済み (旧ルールで残っているもの)
