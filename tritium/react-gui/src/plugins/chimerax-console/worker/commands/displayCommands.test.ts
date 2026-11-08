@@ -9,7 +9,8 @@
  * which ChimeraX leaves round. And the nucleic acid bases (`chx:nuclbase`):
  * `nucleotides` switching how they are drawn on that renderer only, refusing
  * part of a model's nucleic acids (the setting is one per renderer), and the
- * base slabs going with the cartoon when it is hidden.
+ * base slabs going with the cartoon when it is hidden. And `show #1` on a
+ * map (no atoms reached) showing the map, as ChimeraX's default `what`.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,8 +19,8 @@ import type { CmdContext } from '@plugins/console/worker/dialect-api'
 
 const { ops, spec } = vi.hoisted(() => ({
   ops: [] as { name: string; args: Record<string, unknown> }[],
-  /** What the specification means in the molecule. */
-  spec: { sel: '*' },
+  /** What the specification means in the molecule (null: it reaches no molecule), and the maps it names. */
+  spec: { sel: '*' as string | null, maps: [] as { uid: number; model: number; name: string; className: string }[] },
 }))
 
 const OWNED = new Map([['chx:stick', 1], ['chx:ball', 2], ['chx:sphere', 3], ['chx:cartoon', 4], ['chx:nucl', 5], ['chx:nuclbase', 6]])
@@ -35,7 +36,8 @@ vi.mock('../display', async (importOriginal) => ({
     ops.push({ name: 'set_renderer_selection', args: { rendId, selection } })
     return { ok: true }
   },
-  targetsOf: () => ({ ok: true, targets: [{ obj: { uid: 10, model: 1, name: 'a', className: 'MolCoord' }, sel: spec.sel }] }),
+  targetsOf: () => ({ ok: true, targets: spec.sel === null ? [] : [{ obj: { uid: 10, model: 1, name: 'a', className: 'MolCoord' }, sel: spec.sel }] }),
+  wholeMapsOf: () => spec.maps,
   // The molecule has every kind of residue, so every section applies.
   emitContext: () => ({ anyHit: () => true }),
 }))
@@ -75,12 +77,20 @@ const written = () => ops.filter((o) => o.name === 'set_node_prop').map((o) => `
 beforeEach(() => {
   ops.length = 0
   spec.sel = '*'
+  spec.maps = []
 })
 
 describe('show models only', () => {
   it('shows the models named and hides every other one', async () => {
     await run('show', { objects: '#1', what: 'models', only: 'true' })
     expect(ops.filter((o) => o.name === 'set_visible').map((o) => [o.args.nodeId, o.args.visible])).toEqual([[10, true], [20, false]])
+  })
+
+  it('shows a map named with nothing else: no atoms reached means models', async () => {
+    spec.sel = null
+    spec.maps = [{ uid: 30, model: 3, name: 'emd', className: 'DensityMap' }]
+    await run('show', { objects: '#3' })
+    expect(ops.filter((o) => o.name === 'set_visible').map((o) => [o.args.nodeId, o.args.visible])).toEqual([[30, true]])
   })
 })
 

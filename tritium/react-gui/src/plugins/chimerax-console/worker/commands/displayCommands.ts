@@ -48,8 +48,12 @@ const LETTERS: Readonly<Record<string, Part>> = {
   a: 'atoms', b: 'atoms', c: 'cartoons', r: 'cartoons', m: 'models', s: 'surfaces', p: 'pseudobonds',
 }
 
-/** The parts a `what` list or `target` letters name; atoms when neither is given. */
-function partsOf(what: string, target: string): { ok: true; parts: Set<Part> } | { ok: false; error: string } {
+/**
+ * The parts a `what` list or `target` letters name. When neither is given:
+ * atoms if the specification reaches any, else models (`show.py`
+ * `what_objects`), so `show #1` on a map shows the map.
+ */
+function partsOf(what: string, target: string, anyAtoms = true): { ok: true; parts: Set<Part> } | { ok: false; error: string } {
   const parts = new Set<Part>()
   for (const w of what === '' ? [] : what.split(',')) {
     if (w === 'atoms' || w === 'bonds') parts.add('atoms')
@@ -63,7 +67,7 @@ function partsOf(what: string, target: string): { ok: true; parts: Set<Part> } |
     if (!p) return { ok: false, error: `Error: "${ch}" in target is not one of a b c m p r s` }
     parts.add(p)
   }
-  if (parts.size === 0) parts.add('atoms')
+  if (parts.size === 0) parts.add(anyAtoms ? 'atoms' : 'models')
   return { ok: true, parts }
 }
 
@@ -163,10 +167,10 @@ function showHideCommand(show: boolean, word = show ? 'show' : 'hide'): ChxComma
     mutates: true,
     summary: show ? 'Show atoms, cartoons, surfaces or models.' : 'Hide atoms, cartoons, surfaces or models.',
     async run(ctx, args, cc) {
-      const parts = partsOf(args.what, args.target)
-      if (!parts.ok) return parts
       const found = targetsOf(ctx, cc.sceneId, args.objects)
       if (!found.ok) return found
+      const parts = partsOf(args.what, args.target, found.targets.length > 0)
+      if (!parts.ok) return parts
       const maps = parts.parts.has('models') ? wholeMapsOf(ctx, cc.sceneId, args.objects) : []
       return showHide(ctx, cc, found.targets, parts.parts, show, args.only === 'true', args.objects.trim() === '', maps)
     },
