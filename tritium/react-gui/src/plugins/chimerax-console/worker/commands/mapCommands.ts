@@ -351,6 +351,22 @@ export async function unzoneMaps(ctx: WorkerContext, cc: CmdContext, maps: reado
 }
 
 /** The map objects among an object specification's objects (those with map renderers). */
+/**
+ * Colour the contours of maps and set their opacity (`color` on a map,
+ * ChimeraX's `_set_model_colors` on a volume's surfaces): each contour
+ * renderer, mesh or surface, through `set_map_contour`. A null leaves that
+ * one as it is.
+ */
+export async function colorMaps(ctx: WorkerContext, cc: CmdContext, maps: readonly NumberedObject[], color: string | null, alpha: number | null): Promise<CmdOutcome> {
+  for (const m of maps) {
+    for (const r of mapRenderers(ctx, cc.sceneId, m.uid)) {
+      const res = await runOp(ctx, cc, 'set_map_contour', { rendId: r.id, level: null, extent: null, color, alpha })
+      if (!res.ok) return res
+    }
+  }
+  return { ok: true }
+}
+
 export function mapObjectsOf(ctx: WorkerContext, sceneId: number, spec: string): NumberedObject[] {
   const found = objectsOf(ctx, sceneId, spec)
   return found.ok ? found.objs.filter((o) => mapRenderers(ctx, sceneId, o.uid).length > 0) : []

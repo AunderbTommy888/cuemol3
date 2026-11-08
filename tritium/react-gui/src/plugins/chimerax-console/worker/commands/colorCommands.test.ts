@@ -14,6 +14,9 @@
  * `color fromatoms` on part of a molecule puts the atoms' entries, limited
  * to the part, first in a painted surface's table; a surface not coloured by
  * paint is left as it is (switching it would recolour the rest of it).
+ *
+ * `color` on a map named as a model colours its contours, with the
+ * transparency (percent) as their opacity.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,6 +34,9 @@ const { state } = vi.hoisted(() => ({
     withSurface: false,
     surfacePainted: false,
     paintWrites: [] as { op: string; id: number; rows: { selStr: string; colorValue: string }[] }[],
+    /** The maps the specification names as models, and what colorMaps was given. */
+    maps: [] as { uid: number }[],
+    mapColors: [] as [number[], string | null, number | null][],
   },
 }))
 
@@ -46,9 +52,10 @@ vi.mock('../display', async (importOriginal) => ({
   ensurePaint: async () => ({ ok: true }),
   // Every renderer already has entries from an earlier colour.
   paintCount: () => 3,
+  wholeMapsOf: () => state.maps,
   targetsOf: () => ({
     ok: true,
-    targets: (state.bfac ? [10, 20] : [10]).map((uid) => ({ obj: { uid, model: uid, name: 'm', className: 'MolCoord' }, sel: state.sel })),
+    targets: state.maps.length > 0 ? [] : (state.bfac ? [10, 20] : [10]).map((uid) => ({ obj: { uid, model: uid, name: 'm', className: 'MolCoord' }, sel: state.sel })),
   }),
   forEachAtom: (_ctx: unknown, _s: number, uid: number, _expr: string, visit: (a: { bfac: number; occ: number }) => void) => {
     for (const b of state.bfac?.[uid] ?? []) visit({ bfac: b, occ: 1 })
@@ -67,6 +74,12 @@ vi.mock('../display', async (importOriginal) => ({
   },
 }))
 vi.mock('../surface', () => ({ surfacesOn: () => (state.withSurface ? [{ id: 7, chain: 'A' }] : []) }))
+vi.mock('./mapCommands', () => ({
+  colorMaps: async (_ctx: unknown, _cc: unknown, maps: { uid: number }[], c: string | null, a: number | null) => {
+    state.mapColors.push([maps.map((m) => m.uid), c, a])
+    return { ok: true }
+  },
+}))
 
 import { COLOR_COMMANDS } from './colorCommands'
 
@@ -89,6 +102,8 @@ beforeEach(() => {
   state.withSurface = false
   state.surfacePainted = false
   state.paintWrites.length = 0
+  state.maps = []
+  state.mapColors.length = 0
   vi.mocked(cc.warn).mockClear()
 })
 
@@ -103,6 +118,12 @@ describe('color', () => {
     state.ops.length = 0
     state.sel = 'chain A'
     expect(await color({ objects: '/A', color: 'red', target: 'a' })).toEqual(['add_paint_at 1', 'add_paint_at 2', 'add_paint_at 3'])
+  })
+
+  it('colours a map named as a model, the transparency percent becoming its opacity', async () => {
+    state.maps = [{ uid: 30 }]
+    await color({ objects: '#3', color: '#ff0000', transparency: '75' })
+    expect(state.mapColors).toEqual([[[30], '#ff0000', 0.25]])
   })
 })
 

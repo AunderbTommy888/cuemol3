@@ -41,7 +41,7 @@ import type { ChxCommand } from '../cli/command'
 import { BUILTIN_COLORS, ELEMENT_COLORS } from '../colorTables'
 import { readColor, splitColorArg } from '../colors'
 import { chainColor, modelColor, nucleotideEntries, paletteColors, plddtEntries, RAINBOW, rainbowRanges, readPaletteOrFetch, VALUE_STEPS, valueEntries, valueRange } from '../colorSchemes'
-import { ATOM_STYLES, CARTOONS, NUCL_BASE, atomRenderers, cartoonRenderers, emitContext, ensureOwned, ensurePaint, forEachAtom, intersect, isPaintColoring, ownedOn, paintCount, prependPaint, readPaint, replacePaint, runOp, targetsOf } from '../display'
+import { ATOM_STYLES, CARTOONS, NUCL_BASE, atomRenderers, cartoonRenderers, emitContext, ensureOwned, ensurePaint, forEachAtom, intersect, isPaintColoring, ownedOn, paintCount, prependPaint, readPaint, replacePaint, runOp, targetsOf, wholeMapsOf } from '../display'
 import type { PaintRow, Target } from '../display'
 import type { NumberedObject } from '../models'
 import { surfacesOn } from '../surface'
@@ -49,6 +49,7 @@ import { unsupported, warnIgnored } from './warn'
 import { modifyColor } from '../colorModify'
 import type { Adjuster, ModifyOp } from '../colorModify'
 import { NONE } from '../spec/emit'
+import { colorMaps } from './mapCommands'
 
 /** The colourings by name the console does. */
 const SPECIAL = ['byhetero', 'byelement', 'bychain', 'bymodel', 'bynucleotide']
@@ -178,13 +179,13 @@ const color: ChxCommand = chxCommand({
     { name: 'color', type: Or(ColorArg, EnumOf([...SPECIAL, FROM_ATOMS, ...FROM_CARTOONS, ...Object.keys(REFUSED)])), role: 'optional' },
     { name: 'what', type: StringArg, role: 'optional', ignored: true },
     { name: 'target', type: StringArg, role: 'keyword' },
-    { name: 'transparency', type: StringArg, role: 'keyword', ignored: true },
+    { name: 'transparency', type: FloatArg, role: 'keyword' },
     { name: 'halfbond', type: StringArg, role: 'keyword', ignored: true },
   ],
   mutates: true,
-  summary: 'Colour atoms, cartoons and surfaces: a colour, byhetero, byelement, bychain or bymodel.',
+  summary: 'Colour atoms, cartoons, surfaces and maps: a colour, byhetero, byelement, bychain or bymodel.',
   async run(ctx, args, cc): Promise<CmdOutcome> {
-    warnIgnored(cc, 'color', args, ['what', 'transparency', 'halfbond'])
+    warnIgnored(cc, 'color', args, ['what', 'halfbond'])
     if (args.color === '') return { ok: false, error: 'Error: color: give a colour or one of byhetero, byelement, bychain, bymodel' }
     const refused = REFUSED[args.color]
     if (refused) return unsupported(`Error: color: ${args.color} is not supported (${refused})`)
@@ -192,14 +193,23 @@ const color: ChxCommand = chxCommand({
     if (FROM_CARTOONS.includes(args.color)) return colorFromAtoms(ctx, cc, args.objects, args.target, 'cartoon')
     // CueMol's paint has no alpha; a colour that states one is drawn opaque.
     const { hex: colorValue, alpha } = SPECIAL.includes(args.color) ? { hex: args.color, alpha: null } : splitColorArg(args.color)
-    if (alpha !== null && alpha < 1) cc.warn('color: transparency in a colour is not supported yet; drawn opaque')
     const target = args.target === '' ? DEFAULT_TARGET : args.target
     const found = targetsOf(ctx, cc.sceneId, args.objects)
     if (!found.ok) return found
+    // A map named as a model takes a plain colour on its contours with target s, and the
+    // transparency (percent) or the colour's own alpha as their opacity (color.py).
+    const maps = target.includes('s') && !SPECIAL.includes(args.color) ? wholeMapsOf(ctx, cc.sceneId, args.objects) : []
+    if (args.transparency !== '' && found.targets.length > 0) cc.warn('color: transparency is not supported yet for atoms, cartoons and molecular surfaces (use the transparency command); ignored there')
+    else if (alpha !== null && alpha < 1 && found.targets.length > 0) cc.warn('color: transparency in a colour is not supported yet; drawn opaque')
     for (const t of found.targets) {
       // On the whole molecule, every colouring but a partial one covers each atom.
       const replace = t.sel === '*' && !PARTIAL.includes(colorValue)
       const res = await paintTarget(ctx, cc, t, target, entriesFor(ctx, cc, colorValue, t), ATOMS_ONLY.includes(colorValue), replace)
+      if (!res.ok) return res
+    }
+    if (maps.length > 0) {
+      const opacity = args.transparency !== '' ? Math.min(1, Math.max(0, 1 - Number(args.transparency) / 100)) : alpha
+      const res = await colorMaps(ctx, cc, maps, colorValue, opacity)
       if (!res.ok) return res
     }
     return { ok: true }
