@@ -19,6 +19,8 @@
 import type { FormatOptions, MapCenterPolicy } from '@renderer/worker/shared/fileOpenTypes';
 import type { Scene } from '@cuemol/core/src/wrappers/Scene';
 import type { View } from '@cuemol/core/src/wrappers/View';
+import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext';
+import { fitViewToMap } from './mapFit';
 const log = console;
 
 type Bag = Record<string, unknown>;
@@ -59,9 +61,10 @@ export function isEmDensityMap(obj: unknown): boolean {
 }
 
 /**
- * Fit every view of the scene to the whole map (DensityMap.fitView).
+ * Fit every view of the scene to the map as it is drawn (`mapFit.ts`: the
+ * extent of its shown contours, else its data block).
  */
-export function fitViewsToMap(scene: Scene, obj: unknown): void {
+export function fitViewsToMap(ctx: WorkerContext, scene: Scene, obj: unknown): void {
     const o = obj as Bag & { fitView?: (view: View, dummy: boolean) => void };
     if (typeof o.fitView !== 'function') return;
     const uidStr = (scene as unknown as { view_uids?: string }).view_uids;
@@ -71,7 +74,7 @@ export function fitViewsToMap(scene: Scene, obj: unknown): void {
         if (!Number.isFinite(uid)) continue;
         try {
             const view = scene.getView(uid) as View | null;
-            if (view) o.fitView(view, false);
+            if (view) fitViewToMap(ctx, scene, obj, view);
         } catch (e) {
             log.warn(`[worker] fitViewsToMap: fitView failed for view ${uid}:`, e);
         }
@@ -133,6 +136,7 @@ function setMapCenterToView(scene: Scene, rend: unknown): boolean {
  *   not a map the policy applies to.
  */
 export function applyMapCenterPolicy(
+    ctx: WorkerContext,
     scene: Scene,
     obj: unknown,
     rend: unknown,
@@ -144,7 +148,7 @@ export function applyMapCenterPolicy(
 
     const resolved = resolveMapCenterPolicy(obj, policy);
     if (resolved === 'moveViewCenter') {
-        fitViewsToMap(scene, obj);
+        fitViewsToMap(ctx, scene, obj);
     } else {
         setMapCenterToView(scene, rend);
     }

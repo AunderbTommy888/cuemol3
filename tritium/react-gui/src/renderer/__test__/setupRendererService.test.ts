@@ -25,6 +25,9 @@ vi.mock('@renderer/worker/server/services/helpers/makeSel', () => ({
 vi.mock('@renderer/worker/server/services/helpers/molPostProc', () => ({
     molPostProc: vi.fn(),
 }))
+vi.mock('@renderer/worker/server/services/sceneTree/sceneOps', () => ({
+    focusOnNode: vi.fn(() => ({ ok: true })),
+}))
 vi.mock('@renderer/worker/server/services/helpers/getDefaultStyleName', () => ({
     getDefaultStyleName: vi.fn(() => 'DefaultStyle'),
 }))
@@ -33,6 +36,7 @@ import { setupRenderer } from '@renderer/worker/server/services/rend/setupRender
 import { makeSel } from '@renderer/worker/server/services/helpers/makeSel'
 import { molPostProc } from '@renderer/worker/server/services/helpers/molPostProc'
 import { getDefaultStyleName } from '@renderer/worker/server/services/helpers/getDefaultStyleName'
+import { focusOnNode } from '@renderer/worker/server/services/sceneTree/sceneOps'
 import { fakeObject, fakeRenderer, fakeScene, fakeView, makeWorkerCtx } from '@renderer/worker/testing'
 
 /**
@@ -102,23 +106,24 @@ describe('setupRenderer — direct API (no NewRendererCommand)', () => {
         expect(getDefaultStyleName).toHaveBeenCalledWith('isosurf', 'em')
     })
 
-    it('centerView=true recenters all views via scene.view_uids -> scene.getView -> setViewCenter', () => {
-        const { ctx, mol, scene, rend } = makeFixture({ className: 'MolCoord', viewIds: [10, 11] })
-        setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: true })
-        expect(rend().getCenter).toHaveBeenCalled()
-        expect(scene.getView).toHaveBeenCalledWith(10)
-        expect(scene.getView).toHaveBeenCalledWith(11)
-        for (const view of scene.views) {
-            expect(view.setViewCenter).toHaveBeenCalledTimes(1)
-            expect(view.setViewCenter).toHaveBeenCalledWith({ __pos: true })
-        }
+    // Center view frames the new renderer as the Focus button does (centre
+    // and zoom), in every view, unrecorded -- and only once its selection is
+    // set, so a renderer of one chain frames that chain, not the molecule.
+    it('centerView=true fits every view to the renderer after its selection is set', () => {
+        const { ctx, mol, rend } = makeFixture({ className: 'MolCoord', viewIds: [10, 11] })
+        setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: true, selectionEnabled: true, selection: 'chain A' })
+        const r = rend()
+        expect(vi.mocked(focusOnNode).mock.calls.map(([, a]) => a)).toEqual([10, 11].map((viewId) => ({
+            sceneId: 100, viewId, nodeId: r.uid, nodeType: 'renderer', record: false,
+        })))
+        expect(r.sets.sel).toHaveBeenCalled()
+        expect(r.sets.sel.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(focusOnNode).mock.invocationCallOrder[0])
     })
 
     it('centerView=false does not touch the views', () => {
-        const { ctx, mol, scene, rend } = makeFixture({ className: 'MolCoord', viewIds: [10] })
+        const { ctx, mol } = makeFixture({ className: 'MolCoord', viewIds: [10] })
         setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: false })
-        expect(rend().getCenter).not.toHaveBeenCalled()
-        expect(scene.views[0].setViewCenter).not.toHaveBeenCalled()
+        expect(focusOnNode).not.toHaveBeenCalled()
     })
 
     // MapRenderer::getCenter() is the map's DISPLAY center, at the origin on a
@@ -127,19 +132,10 @@ describe('setupRenderer — direct API (no NewRendererCommand)', () => {
     // object is decided later, by applyMapCenterPolicy.
     it('never recenters on a volume object, even with centerView=true', () => {
         for (const className of ['DensityMap', 'ElePotMap']) {
-            const { ctx, mol, scene, rend } = makeFixture({ className, viewIds: [10] })
+            const { ctx, mol } = makeFixture({ className, viewIds: [10] })
             setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: true })
-            expect(rend().getCenter, className).not.toHaveBeenCalled()
-            expect(scene.views[0].setViewCenter, className).not.toHaveBeenCalled()
+            expect(focusOnNode, className).not.toHaveBeenCalled()
         }
-    })
-
-    it('centerView=true but renderer lacks getCenter() -> skips silently', () => {
-        const { ctx, mol, scene } = makeFixture({ className: 'MolCoord', hasGetCenter: false, viewIds: [10] })
-        expect(() =>
-            setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: true })
-        ).not.toThrow()
-        expect(scene.views[0].setViewCenter).not.toHaveBeenCalled()
     })
 
     // --- Selection gate (preserved from the prior contract) ---
@@ -217,11 +213,10 @@ describe('setupRenderer — preset renderer group (presetName set)', () => {
         expect(molPostProc).not.toHaveBeenCalled()
     })
 
-    it('centerView=true recenters through the group getCenter (member average)', () => {
+    it('centerView=true fits the views to the preset group', () => {
         const f = makeFixture({ className: 'MolCoord', viewIds: [10] })
         setupRenderer(f.ctx, f.mol as unknown, { ...presetOpts, centerView: true })
-        expect(f.rend().getCenter).toHaveBeenCalled()
-        expect(f.scene.views[0].setViewCenter).toHaveBeenCalledWith({ __pos: true })
+        expect(focusOnNode).toHaveBeenCalledWith(f.ctx, expect.objectContaining({ viewId: 10, nodeId: f.rend().uid, record: false }))
     })
 
     it('returns null (no molPostProc) when createPresetRenderer throws', () => {

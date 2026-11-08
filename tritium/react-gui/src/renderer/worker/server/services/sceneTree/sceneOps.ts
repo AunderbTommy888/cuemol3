@@ -20,8 +20,9 @@ import { destroyStyleSetIn } from '../style/styleOps';
 import { recordDeleteNode, recordOp, recordRenameNode } from '@renderer/worker/server/actions/serviceOps';
 import { safeRead } from '@renderer/worker/server/services/helpers/safeRead';
 import { makeSel } from '@renderer/worker/server/services/helpers/makeSel';
-import { listGroupChildRenderers } from '@renderer/worker/server/services/helpers/groupChildren';
+import { enumerateObjectRenderers, listGroupChildRenderers } from '@renderer/worker/server/services/helpers/groupChildren';
 import { collectGroupMemberUids } from '@renderer/worker/server/services/helpers/rendGroup';
+import { displayedMapFitBox, fitViewToMap } from '@renderer/worker/server/services/map/mapFit';
 
 export interface FocusOnNodeArgs {
     sceneId: number;
@@ -90,10 +91,53 @@ function hasProp<T>(obj: T, name: string): boolean {
 }
 
 
+/** A selection's text, an unset one (empty text, which selects every atom) as `*`. */
+function selText(read: () => unknown): string {
+    const s = String(safeRead(read) ?? '').trim();
+    return s === '' ? '*' : s;
+}
+
+/**
+ * The atoms a molecule draws: the union of the selections of its shown
+ * renderers (a surface's `showsel` within its `sel`), as ChimeraX fits to
+ * what is displayed. Null when no renderer is shown -- the caller then fits
+ * every atom; an unset selection counts as every atom, not as nothing.
+ */
+function displayedSel(ctx: WorkerContext, scene: Scene, obj: CueMolObject): MolSelection | null {
+    const parts: string[] = [];
+    for (const r of enumerateObjectRenderers(obj, scene)) {
+        if (!(safeRead(() => (r as unknown as { visible: boolean }).visible) ?? false)) continue;
+        if (!hasProp(r, 'sel')) continue;
+        const sel = selText(() => (r as unknown as { sel: MolSelection | null }).sel?.toString());
+        if (!hasProp(r, 'showsel')) {
+            parts.push(sel);
+            continue;
+        }
+        const shown = selText(() => (r as unknown as { showsel: MolSelection | null }).showsel?.toString());
+        parts.push(shown === '*' ? sel : sel === '*' ? shown : `(${sel}) and (${shown})`);
+    }
+    if (parts.length === 0) return null;
+    const expr = parts.includes('*') ? '*' : parts.map((p) => `(${p})`).join(' or ');
+    return makeSel(ctx, expr, scene.uid);
+}
+
+/**
+ * The fit box of a molecule's displayed atoms (`displayedSel`), or of all its
+ * atoms when nothing is shown or the shown selections match no atom.
+ */
+function objectFitBox(ctx: WorkerContext, scene: Scene, obj: CueMolObject, view: GUIView): FitBox | null {
+    // A map frames its shown contours (`mapFit.ts`), else its data block.
+    if (!hasMethod(obj, 'fitView2')) return displayedMapFitBox(scene, obj, view) ?? fitBoxOf(ctx, obj, view, null);
+    const shown = displayedSel(ctx, scene, obj);
+    return (shown ? fitBoxOf(ctx, obj, view, shown) : null) ?? fitBoxOf(ctx, obj, view, null);
+}
+
 /**
  * Zoom the view to fit a scene-tree node.
  *
- * Objects use `fitView`; renderers/groups prefer `fitView2` with the
+ * A molecule fits its displayed atoms (`displayedSel`, all of them when
+ * nothing is shown), a map its shown contours (`mapFit.ts`, its data block
+ * when none is shown); renderers/groups prefer `fitView2` with the
  * renderer's selection, fall back to `fitView`, then to `getCenter` for
  * scalar / density-map renderers. scene / camera / style have no focus
  * action and report `ok: false`.
@@ -109,6 +153,15 @@ export function focusOnNode(ctx: WorkerContext, args: FocusOnNodeArgs): FocusOnN
     if (args.nodeType === 'object') {
         const obj = scene.getObject(args.nodeId) as CueMolObject | null;
         if (!obj) return { ok: false };
+        // A molecule frames what it draws (`displayedSel`); a map its data block.
+        const shown = hasMethod(obj, 'fitView2') ? displayedSel(ctx, scene, obj) : null;
+        if (shown && fitBoxOf(ctx, obj, view, shown)) {
+            (obj as unknown as MolCoord).fitView2(view, shown);
+            return { ok: true };
+        }
+        if (!hasMethod(obj, 'fitView2') && fitViewToMap(ctx, scene, obj, view as unknown as Parameters<typeof fitViewToMap>[3])) {
+            return { ok: true };
+        }
         if (hasMethod(obj, 'fitView')) {
             (obj as unknown as MolCoord).fitView(view, false);
             return { ok: true };
@@ -195,7 +248,7 @@ function fitBoxOf(
 function nodeFitBox(ctx: WorkerContext, scene: Scene, view: GUIView, nodeId: number, nodeType: SceneNodeType): FitBox | null {
     if (nodeType === 'object') {
         const obj = scene.getObject(nodeId) as CueMolObject | null;
-        return obj ? fitBoxOf(ctx, obj, view, null) : null;
+        return obj ? objectFitBox(ctx, scene, obj, view) : null;
     }
     if (nodeType === 'renderer' || nodeType === 'rendGroup') {
         const rend = scene.getRenderer(nodeId) as Renderer | null;
@@ -222,7 +275,7 @@ function fitNodeType(scene: Scene, id: number): 'object' | 'renderer' | null {
  * op, and the scene-tree Focus button on a multi-selection).
  *
  * Each node contributes the box its own focus would frame (a molecule's
- * atoms, or a renderer's selection, grown by 20%; a map's whole cell), all
+ * displayed atoms, or a renderer's selection, grown by 20%; a map's shown contours), all
  * measured in the view's current axes; the view is fitted to their union by
  * `View.fitToBox`, keeping the direction it looks. One node takes the
  * single-node path (`focusOnNode`), so it frames exactly as before. Uids that
