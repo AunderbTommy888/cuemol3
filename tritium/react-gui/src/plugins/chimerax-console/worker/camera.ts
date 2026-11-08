@@ -20,6 +20,7 @@ import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 // operation of its own (op-catalog.md 3.1).
 import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneResolver'
 import { makeSel } from '@renderer/worker/server/services/helpers/makeSel'
+import { displayedMapFitBox } from '@renderer/worker/server/services/map/mapFit'
 import type { Target } from './display'
 
 interface Vec {
@@ -58,10 +59,15 @@ export interface Framing {
 }
 
 /**
- * The framing of every target's atoms together, or null when they hold no
- * atom (the view is then left alone, as `fitView` does).
+ * The framing of every target's atoms and every map's drawn contours
+ * together, or null when there is neither (the view is then left alone, as
+ * `fitView` does). A map counts by the box of what it draws, as the scene
+ * pane's Focus (`mapFit.ts`); that box is in the view's rotated frame, the
+ * same coordinates as the atoms projected on the view's axes
+ * (`View::convXYTrans` / `convZTrans`), so both go into one box, and the
+ * margin is added once.
  */
-export function framingOf(ctx: WorkerContext, sceneId: number, viewId: number, targets: readonly Target[]): Framing | null {
+export function framingOf(ctx: WorkerContext, sceneId: number, viewId: number, targets: readonly Target[], maps: readonly number[] = []): Framing | null {
   const view = ctx.sceMgr.getView(viewId) as unknown as ViewAxes | null
   const scene = getSceneOrNull(ctx, sceneId)
   if (!view || !scene) return null
@@ -82,6 +88,14 @@ export function framingOf(ctx: WorkerContext, sceneId: number, viewId: number, t
         if (v < lo[i]) lo[i] = v
         if (v > hi[i]) hi[i] = v
       })
+    }
+  }
+  for (const uid of maps) {
+    const box = displayedMapFitBox(scene, scene.getObject(uid), view, 0)
+    if (!box) continue
+    for (let i = 0; i < 3; i++) {
+      lo[i] = Math.min(lo[i], box.min[i])
+      hi[i] = Math.max(hi[i], box.max[i])
     }
   }
   if (!Number.isFinite(lo[0])) return null

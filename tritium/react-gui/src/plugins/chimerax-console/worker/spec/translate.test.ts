@@ -16,14 +16,21 @@ import type { EmitContext } from './emit'
 import { parseSpec, SpecError } from './parse'
 import { isSelector, withSceneSelectors } from './selectors'
 
+/** The console's names (`name X spec`): one naming a model, one using it, and two using each other. */
+const CHX_NAMES: Record<string, string> = { alc: '#2/A', both: 'alc | #1/B', loop1: 'loop2', loop2: 'loop1' }
+
 /** Two molecules, #1 `1abc` and #2 `2xyz`; every expression hits chain A only. */
 const scene: EmitContext = {
   models: [{ model: 1, name: '1abc' }, { model: 2, name: '2xyz' }],
   chainsHit: () => ['A'],
   anyHit: () => true,
   currentSelection: () => 'chain B',
-  namedSelections: new Set(['site']),
+  namedSelections: new Set(['site', ...Object.keys(CHX_NAMES)]),
   displayedAtoms: (model) => `shown${model}`,
+  expandName: (name) => {
+    const spec = CHX_NAMES[name]
+    return spec === undefined ? undefined : withSceneSelectors(scene.namedSelections, () => parseSpec(spec, isSelector))?.node
+  },
 }
 
 /** The expression in model `n`, or the error. */
@@ -95,5 +102,19 @@ describe('@@display', () => {
     expect(inModel(':10@@display')).toBe('(resi 10) and (shown1)')
     expect(inModel('@@^display')).toBe('not (shown1)')
     expect(inModel('@@display=false')).toBe('not (shown1)')
+  })
+})
+
+describe('model forms and console names', () => {
+  it('reads #! as the model itself (CueMol objects have no sub-models)', () => {
+    expect(inModel('#!1', 1)).toBe('*')
+    expect(inModel('#!1', 2)).toBe('none')
+    expect(inModel('#!1.2')).toMatch(/^error: a sub-model/)
+  })
+
+  it('emits a name where it is used, so a name may name a model and use other names', () => {
+    expect([inModel('alc', 1), inModel('alc', 2)]).toEqual(['none', 'chain A'])
+    expect([inModel('both', 1), inModel('both', 2)]).toEqual(['chain B', 'chain A'])
+    expect(inModel('loop1')).toBe('error: the name "loop1" is used inside itself')
   })
 })

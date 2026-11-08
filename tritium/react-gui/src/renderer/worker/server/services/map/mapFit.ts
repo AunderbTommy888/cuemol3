@@ -31,10 +31,12 @@ type MapRend = { visible?: boolean; level?: number; siglevel?: number };
 /**
  * The box of what a map draws: the union, over its shown contour renderers,
  * of the grid points at or above each one's level, grown by the molecule
- * fit's margin. Null when the object is not such a map, no contour is shown,
- * or no grid point reaches the level -- the caller then fits the data block.
+ * fit's margin (`margin`, a fraction of the box on each side; 0 for the bare
+ * box, when the caller adds its own). Null when the object is not such a
+ * map, no contour is shown, or no grid point reaches the level -- the caller
+ * then fits the data block.
  */
-export function displayedMapFitBox(scene: Scene, obj: unknown, view: unknown): MapFitBox | null {
+export function displayedMapFitBox(scene: Scene, obj: unknown, view: unknown, margin: number = FIT_MARGIN): MapFitBox | null {
     const src = obj as LevelBoxSource;
     if (typeof src.getLevelFitBoxJSON !== 'function') return null;
     const lo = [Infinity, Infinity, Infinity];
@@ -56,7 +58,7 @@ export function displayedMapFitBox(scene: Scene, obj: unknown, view: unknown): M
         }
     }
     if (!Number.isFinite(lo[0])) return null;
-    const grow = (i: number) => (hi[i] - lo[i]) * FIT_MARGIN;
+    const grow = (i: number) => (hi[i] - lo[i]) * margin;
     return {
         min: [lo[0] - grow(0), lo[1] - grow(1), lo[2] - grow(2)],
         max: [hi[0] + grow(0), hi[1] + grow(1), hi[2] + grow(2)],

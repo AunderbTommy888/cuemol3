@@ -46,6 +46,7 @@ import type { SpecNode } from './spec/parse'
 import { parseSpec, SpecError } from './spec/parse'
 import { isSelector, withSceneSelectors } from './spec/selectors'
 import { selectionNames } from './names'
+import { chxNames } from './chxNames'
 import { isMolecule, numberedObjects } from './models'
 import type { NumberedObject } from './models'
 
@@ -165,9 +166,11 @@ export function emitContext(ctx: WorkerContext, sceneId: number): EmitContext {
     const obj = mols.find((m) => m.model === model)
     if (obj) forEachAtom(ctx, sceneId, obj.uid, expr, (a) => visit(a.chainName))
   }
+  const own = chxNames(ctx, sceneId)
+  const names = selectionNames(ctx, sceneId)
   return {
     models: mols.map((m) => ({ model: m.model, name: m.name })),
-    namedSelections: selectionNames(ctx, sceneId),
+    namedSelections: names,
     currentSelection(model) {
       const obj = mols.find((m) => m.model === model)
       if (!obj) return NONE
@@ -189,6 +192,12 @@ export function emitContext(ctx: WorkerContext, sceneId: number): EmitContext {
     displayedAtoms(model) {
       const obj = mols.find((m) => m.model === model)
       return obj ? displayedAtoms(ctx, sceneId, obj.uid) : NONE
+    },
+    expandName(name) {
+      const spec = own.get(name)
+      if (spec === undefined) return undefined
+      const read = withSceneSelectors(names, () => parseSpec(spec, isSelector))
+      return read?.node
     },
   }
 }

@@ -107,15 +107,17 @@ ChimeraX のソース (`~/ext/ChimeraX/src/bundles/`) のうち、写したも�
 
 | ChimeraX | CueMol |
 |---|---|
-| `#1`、`#1,3-5` (model) | model 番号で object を選ぶ |
+| `#1`、`#1,3-5` (model)、`#!1` | model 番号で object を選ぶ。`#!1` (sub-model を含まない model 1) は、CueMol の object に sub-model が無いので `#1` と同じ |
 | `/A,B` | `chain A,B` |
+| `/a-h` (chain の範囲) | その model に実在する chain ID のうち範囲に入るもの (`chain a,b,...`)。ChimeraX と同じく文字列として比べ (`atomspec.py` の `string_matcher`)、大文字小文字は、構造に小文字の chain ID があるときだけ区別する (`structure.py` の `lower_case_chains`) |
 | `:10-20,30`、`:10A`、`:10A-20B` | `resi 10:20`、`resi 30`、`resi 10A`、`resi 10A:20B` |
 | `:ALA`、`:5HT` | `resn ALA`、`resn 5HT` |
 | `@CA,CB` | `name CA,CB` |
 | `all` / `protein` / `nucleic` / `ligand` / `solvent` / `helix` / `strand` / `coil` | `*` / `protein` / `nucleic` / `ligand` / `water` / `helix` / `sheet` / `coil` |
 | `sel` (今の選択) | 各分子の今の選択 (object の `sel`) の式。選択の無い分子では `none`。選択を書き換えるコマンド (`select sel ...`) でも、書き換える前の値から読む |
 | `selAtoms` (ChimeraX `shortcuts.py`) | scene のどこかに選択があれば `sel` と同じ式、どの分子にも選択が無ければ全原子 (`*`) |
-| scene の名前付き selection の名前 (`name` で定義したもの) | その名前 (CueMol の参照)。行を読む直前に、runtime が `bind` に渡す scene から名前の一覧を読む (`names.ts`、`withSceneSelectors`) |
+| ChX の名前 (`name X spec` で定義したもの) | その spec の文字列を、使う場所で object ごとに翻訳したもの (下記「名前」) |
+| scene の名前付き selection の名前 (GUI などで作ったもの) | その名前 (CueMol の参照)。行を読む直前に、runtime が `bind` に渡す scene から名前の一覧を読む (`names.ts`、`withSceneSelectors`)。同じ名前が ChX の名前にもあれば、ChX の名前を使う |
 | `backbone` / `mainchain`、`sidechain` / `sideonly` | 原子名で展開した式 |
 | 元素記号 (`C`、`Fe`) | `elem Fe` |
 
@@ -152,7 +154,14 @@ ChimeraX のソース (`~/ext/ChimeraX/src/bundles/`) のうち、写したも�
   | `##name=...` | object の名前を worker で照合して `*` / `none` |
 
   CueMol に無い属性 (`serial_number`、`alt_loc`、`idatm_type`、`radius`、`insertion_code` など) は断る。
-- 未対応のもの (sub-model `#1.2`、`#!`、上の表に無い属性、引用符付きの名前、CueMol に無い selector (`ions`、
+- **名前** (`chxNames.ts`): ChimeraX の `name X spec` は spec の**文字列**に名前を付け、使うたびに評価し直す (model
+  番号も使うときに解決する)。CueMol の名前付き selection は分子ごとに評価する 1 つの式で、「この分子だけ」を書けない
+  (`SelNodes.hpp` に分子の node が無い) ので、ChX は scene ごとに「名前 -> spec の文字列」の表を worker のメモリに持つ
+  (model 番号・alias と同じく、scene の状態ではなく、保存も undo もされない。消えた scene の表は、次に表を読むときに
+  捨てる)。spec の中の名前は、object ごとに翻訳するときにその文字列を読んで同じ object で翻訳する (`emit.ts` の
+  `expandName`) ので、`name ALC1 #2/k,l` は #2 だけに当たり、名前の中で名前を使える。自分自身を使う名前 (`name a b`、
+  `name b a`) と 10 段より深い入れ子は、翻訳の誤りとして断る。
+- 未対応のもの (sub-model `#1.2`、上の表に無い属性、引用符付きの名前、CueMol に無い selector (`ions`、
   IDATM 型など)) は、caret 付きの「not supported yet」で断る。
 
 ## 4. model 番号 (`models.ts`)
@@ -358,8 +367,8 @@ renderer で表し、**その selection と paint が表示の状態そのもの
 | `select zone` | `near range [find]`、`extend`、`residues` | `set_mol_selection`、`count_selection` | 下記 |
 | `select up` / `select down` | | `set_mol_selection`、`count_selection` | 下記 |
 | `select add` / `subtract` / `intersect` / `clear`、`~select` | `[spec]` (`intersect` は必須) | `set_mol_selection` | 今の選択と和・差・積を取って書く。spec が無ければ `add` は全部、`subtract` は全部を引く |
-| `name` | `name spec` / `name name` (定義を出す) | `define_selection` | spec の式が分子ごとに違う (model を指す、model をまたぐ zone) と断る。CueMol の名前付き selection は、使う分子ごとに評価する 1 つの式だから |
-| `name delete` / `name list`、`name frozen` | `name\|all` | `remove_selection` | `name frozen` は断る (今の原子の集合を固定する手段が無い) |
+| `name` | `name spec` / `name name` (定義を出す) | `define_selection`、`remove_selection` | spec を ChX の名前の表に入れ (§3「名前」)、一度翻訳して誤りが無いことを確かめる (誤りなら表を元に戻す)。全部の分子で同じ式になるときは、今までどおり CueMol の名前付き selection も作る (GUI に出て、scene に保存される)。分子ごとに違う式 (model を指す、model をまたぐ zone) は ChX の表だけに持ち、「scene には保存されない (この session だけ)」と 1 行で言う (同じ名前の CueMol の名前付き selection があれば消す)。`all`・`sel`・組み込みの selector (`protein`、元素記号など) は名前にできない |
+| `name delete` / `name list`、`name frozen` | `name\|all` | `remove_selection` | ChX の表と CueMol の名前付き selection の両方が対象。`name list` は ChX の名前を spec の文字列で、ChX の表に無い CueMol の名前付き selection を式で出す。`name frozen` は断る (今の原子の集合を固定する手段が無い) |
 | `info`、`info models` / `chains` / `residues` / `atoms` | `[spec]`、`attribute`、`saveFile` (無視) | (読み取り) | ChimeraX の書式 (`#1, 1crn, shown`、`chain id #1/A chain_id A`、`residue id #1/A:12 name ALA`、`atom id #1/A:12@CA`)。結合の数と IDATM 型 (`info atoms` の既定の attribute) は CueMol に無いので出さない。atom の attribute は name・element・bfactor・occupancy |
 | `alias` / `alias list` / `alias delete` / `~alias` | `name text`、`$1`-`$9`・`$*` | (中のコマンドの op) | 下記 |
 | `surface` | `[spec]`、`enclose`、`probeRadius`、`color`、`transparency`、`gridSpacing` `resolution` `visiblePatches` など (無視) | `create_renderer`、`set_node_prop` (`showsel` `proberad` `alpha`)、`add_paint_at` | spec の触れる chain ごとの surface に spec の patch を足す (§5) |
@@ -423,7 +432,10 @@ ChimeraX の fit との差 (近似): 余白は CueMol が箱の各辺 20%、Chim
 
 **view**: ChimeraX の `view` と同じく、向きを変えずに、名指したもの (無ければ全部) が収まるように center・zoom・slab を
 1 回の `set_view` で書く。範囲は object ごとの式の原子を、view の軸 (`right_vec` / `up_vec` / `forward_vec`) で読んで求める
-(`camera.ts`)。計算は `MolCoord::fitView` (`MolCoordGeomImpl.cpp`) と同じ: 各辺 20% 広げ、4 A より細い軸は 4 A に、zoom は
+(`camera.ts`)。名指したもの (無ければ全部) に地図の object があれば、その表示中の等値面の範囲 (scene pane の Focus と
+同じ、`mapFit.ts` の `displayedMapFitBox`。余白は付けずに受け取る) も同じ箱に入れる。その箱は view の回転後の座標で、
+原子を view の軸に投影した座標と同じ (`View::convXYTrans` / `convZTrans`) ので、そのまま合わせ、余白は最後に 1 回だけ
+足す。等値面を表示していない地図は数えない。計算は `MolCoord::fitView` (`MolCoordGeomImpl.cpp`) と同じ: 各辺 20% 広げ、4 A より細い軸は 4 A に、zoom は
 幅か高さを view の縦横比で、slab は奥行き。既存の op を使わないのは、`focus_node` は node 1 つ、`focus_selection` は molecule
 1 つ、`focus_nodes` (複数 node の和に fit) は node 単位で object ごとの原子式を取らないため。camera の変更は undo しない。
 
@@ -594,6 +606,10 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
 - `commands/reprCommands.test.ts` (追加分): spec の無い `label` が新しいラベルを作らず、今あるラベルの原子だけを書き直し、
   ラベルが無ければ error にすること
 - `commands/mapCommands.test.ts` (追加分): `sdLevel` / `rmsLevel` を平均と標準偏差から地図の値に換算すること
+- `spec/translate.test.ts` (追加分): `#!1` が `#1` と同じになること、ChX の名前が使う場所で model ごとに翻訳され
+  (model を指す名前、名前の中の名前)、自分自身を使う名前を断ること。`commands/selectCommands.test.ts`: 分子ごとに違う
+  名前を ChX の表だけに持ち、同じ名前は CueMol の名前付き selection も作ること
+- `camera.test.ts`: `view` の枠に地図の表示中の箱が入り、余白が 1 回だけ足されること
 - C++ の `src/tests/modules/molstr/test_namelabel.cpp` (`LabelAtomIDsJSON`): ラベルの付いた原子をラベルの順に返すこと
 - console 共通の `runtime/runCommand.test.ts`: `unsupported` の結果と `unsupportedCommand` の知らないコマンドを warning
   で飛ばして残りを実行し、1 つの txn にすること

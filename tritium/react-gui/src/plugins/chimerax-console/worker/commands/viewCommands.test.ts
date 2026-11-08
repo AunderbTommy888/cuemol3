@@ -29,6 +29,11 @@ vi.mock('../camera', async (importOriginal) => ({
   framingOf: () => ({ center: [0, 0, 10], zoom: 30, slab: 30 }),
 }))
 
+vi.mock('./fileCommands', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  objectsOf: () => ({ ok: true, objs: [] }),
+}))
+
 import { VIEW_COMMANDS } from './viewCommands'
 import { MISC_COMMANDS } from './miscCommands'
 import { cameraMatrix, readCamera } from '../camera'

@@ -42,7 +42,19 @@ export interface EmitContext {
   namedSelections: ReadonlySet<string>
   /** The atoms of model `model` that are displayed (`@@display`; `none` for none). */
   displayedAtoms?(model: number): string
+  /**
+   * The specification a console name stands for (`name X spec`), read into
+   * its tree; undefined for a word that is not one. Emitted where the name
+   * is used, in each model, so a name may name a model.
+   */
+  expandName?(name: string): SpecNode | undefined
 }
+
+/** The console names being expanded, innermost last: a name used inside itself is refused. */
+const expanding: string[] = []
+
+/** How deep names may use other names. */
+const MAX_NAME_DEPTH = 10
 
 /** Where a group of a specification is emitted: the model, and the scene when there is one. */
 interface Scope {
@@ -286,9 +298,31 @@ function residueGroupExpr(g: ResidueGroup, scope: Scope): string {
   ])
 }
 
+/**
+ * Chain ids with ranges (`/a-h`): ChimeraX compares ids as strings, `start <=
+ * id <= end` (`atomspec.py` `string_matcher`), ignoring case unless the
+ * structure has lower-case chain ids (`structure.py`, `lower_case_chains`).
+ * CueMol has no range on chain ids, so a range becomes the model's chain ids
+ * that fall in it.
+ */
+function chainsExpr(parts: readonly ResiduePart[], scope: Scope, pos: number): string {
+  if (parts.every((p) => p.end === null)) return namesExpr('chain', parts, 'chain')
+  if (!scope.ec) throw new SpecError('a chain range needs the scene', pos)
+  const ids = scope.ec.chainsHit(scope.model, ALL)
+  const cased = ids.some((id) => id !== id.toUpperCase())
+  const norm = (x: string) => (cased ? x : x.toLowerCase())
+  const singles = parts.filter((p) => p.end === null)
+  const inRange = ids.filter((id) => parts.some((p) => p.end !== null && norm(id) >= norm(p.start) && norm(id) <= norm(p.end)))
+  const terms = [
+    ...(singles.length > 0 ? [namesExpr('chain', singles, 'chain')] : []),
+    ...(inRange.length > 0 ? [`chain ${inRange.join(',')}`] : []),
+  ]
+  return terms.length === 0 ? NONE : or(terms)
+}
+
 function chainGroupExpr(g: ChainGroup, scope: Scope): string {
   return and([
-    g.chains === null ? ALL : namesExpr('chain', g.chains, 'chain'),
+    g.chains === null ? ALL : chainsExpr(g.chains, scope, g.chains[0]?.pos ?? 0),
     testsExpr(g.chainTests, 'chain', scope),
     g.residues.length === 0 ? ALL : or(g.residues.map((r) => residueGroupExpr(r, scope))),
   ])
@@ -358,6 +392,18 @@ export function emitFor(node: SpecNode, model: number, ec?: EmitContext): string
       }
       const expr = selectorExpr(node.name)
       if (expr !== null) return expr
+      // A console name: its specification, emitted here (it takes precedence over a CueMol named selection).
+      const named = ec?.expandName?.(node.name)
+      if (named) {
+        if (expanding.includes(node.name)) throw new SpecError(`the name "${node.name}" is used inside itself`, node.pos)
+        if (expanding.length >= MAX_NAME_DEPTH) throw new SpecError(`names are nested more than ${MAX_NAME_DEPTH} deep`, node.pos)
+        expanding.push(node.name)
+        try {
+          return emitFor(named, model, ec)
+        } finally {
+          expanding.pop()
+        }
+      }
       // A named selection of the scene: CueMol reads the name as a reference.
       if (ec?.namedSelections.has(node.name)) return node.name
       throw new SpecError(`the selector "${node.name}" is not supported yet`, node.pos, true)

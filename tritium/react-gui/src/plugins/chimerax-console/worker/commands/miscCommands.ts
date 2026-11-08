@@ -13,6 +13,8 @@ import { framingOf } from '../camera'
 import { readSpec, runOp, targetsOf } from '../display'
 import { unsupported, warnIgnored } from './warn'
 import { recallView } from './viewCommands'
+import { objectsOf } from './fileCommands'
+import { isMolecule } from '../models'
 
 /** A view name (cli.py `NamedViewArg`): a word that is not a specification. */
 const NamedViewArg: ArgType = { ...StringArg, name: 'a view name' }
@@ -53,7 +55,10 @@ const view = chxCommand({
     warnIgnored(cc, 'view', args, ['pad'])
     const found = targetsOf(ctx, cc.sceneId, args.objects)
     if (!found.ok) return found
-    const framing = framingOf(ctx, cc.sceneId, cc.viewId, found.targets)
+    // Maps count too, by what they draw (a molecule's atoms are the specification's).
+    const objs = objectsOf(ctx, cc.sceneId, args.objects)
+    const maps = objs.ok ? objs.objs.filter((o) => !isMolecule(o)).map((o) => o.uid) : []
+    const framing = framingOf(ctx, cc.sceneId, cc.viewId, found.targets, maps)
     if (!framing) return { ok: false, error: 'Error: view: nothing to show' }
     // Every argument of set_view is given: one left out reaches the op as undefined, not null.
     const res = await runOp(ctx, cc, 'set_view', {

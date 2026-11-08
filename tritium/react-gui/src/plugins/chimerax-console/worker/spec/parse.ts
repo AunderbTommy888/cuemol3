@@ -19,6 +19,7 @@
  * the `*` `?` `[...]` wildcards are read here and translated by the emitter,
  * which also refuses (with a caret) the attributes CueMol has no counterpart
  * for. Sub-models (`#1.2`) are refused here: CueMol objects are not nested.
+ * `#!1` (model 1 without its sub-models) is therefore the same as `#1`.
  */
 
 /** A specification that cannot be read, or uses a part not supported yet. */
@@ -258,9 +259,9 @@ class Reader {
     let models: ModelRange[] | null = null
     let modelTests: AttrTest[] | null = null
     if (this.peek() === '#' && !this.atZone()) {
-      if (this.peek(2) === '#!') this.unsupported('"#!"')
       if (this.peek(2) !== '##') {
-        this.pos++
+        // `#!N`: model N without its sub-models, which a CueMol object never has.
+        this.pos += this.peek(2) === '#!' ? 2 : 1
         models = this.modelList()
         if (this.peek() === '.' && /^\.[\d*]/.test(this.rest())) this.unsupported('a sub-model')
       }
