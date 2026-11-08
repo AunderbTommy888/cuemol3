@@ -442,7 +442,9 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
 - `region all`: `region_mode = full`。格子の範囲の指定は warn して飛ばす (CueMol は中心 +- extent の箱か全体だけ)。
 - `show` / `hide`: renderer の `set_visible`。`showOutlineBox true` は warn して飛ばし、`subdivide` など見た目の細部は warn。
 - **EDS の地図の既定** (`open <id> from eds`): ChimeraX が取得した X 線の地図の見せ方 (`eds_fetch.py`) に合わせ、地図の
-  renderer に `region_mode = full`、色 `#b2b2b2` (ChimeraX の最初の地図の色)、level = 上位 1% の格子点を囲む値
+  renderer に `region_mode = full`、色 `#b2b2b2` (ChimeraX の最初の地図の色)、メッシュの線の太さ `width = 0.5`
+  (CueMol の既定は 1。CueMol のメッシュは lighting しない一様な線なので、1 pixel では地図全体が塊に見える。ChimeraX の
+  lighting された柱のようなメッシュには合わせない)、level = 上位 1% の格子点を囲む値
   (`DensityMap.getLevelAtTopFraction(0.01)`、`volume.py` の `initial_surface_levels`) を書く (`mapCommands.ts` の
   `applyXrayMapDefaults`)。GUI の X 線の地図の既定 (青、1σ 前後、視点のまわりの箱) はモデル構築向けなので変えない。
 - `volume zone`: 地図の renderer の分子の境界 (`bndry_molname` / `bndry_sel` / `bndry_rng`) に書く。表示範囲 (`region_mode`)
@@ -533,7 +535,7 @@ warn して無視。引数無しは AO の on / off を出す。
   何もしないこと。`commands/colorCommands.test.ts`: `fromatoms` が paint の surface の先頭に spec と交わった entry を
   差し込み、paint でない surface は変えずに warn すること
 - `commands/mapCommands.test.ts`: `volume` の断るキーワードを warn して飛ばし `color` を適用すること、EDS の地図の既定
-  (`region_mode full`、灰色、上位 1% の level)
+  (`region_mode full`、細いメッシュ、灰色、上位 1% の level)
 - `commands/silhouettes.test.ts`: 輪郭線を `edges` で書き、後から作った renderer に同じ輪郭線を写すこと
 - console 共通の `runtime/runCommand.test.ts`: `unsupported` の結果と `unsupportedCommand` の知らないコマンドを warning
   で飛ばして残りを実行し、1 つの txn にすること
