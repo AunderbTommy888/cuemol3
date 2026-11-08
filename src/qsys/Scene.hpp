@@ -336,8 +336,25 @@ namespace qsys {
 
     /// Get object by UID
     ObjectPtr getObject(qlib::uid_t uid) const;
-    /// Get (first) object by name
+    /// Get (first) object by name, of any type
     ObjectPtr getObjectByName(const LString &name) const;
+
+    /// Every object of this name, in UID order (impl: Scene.cpp)
+    std::vector<ObjectPtr> getObjectsByName(const LString &name) const;
+
+    /// The first object of this name (in UID order) that is a T: another
+    /// object of the same name and a different type (a map named after its
+    /// molecule) is passed over. Null when there is none.
+    template <class T>
+    qlib::LScrSp<T> getObjectByNameAs(const LString &name) const
+    {
+      for (const ObjectPtr &pObj : getObjectsByName(name)) {
+        qlib::LScrSp<T> p(pObj, qlib::no_throw_tag());
+        if (!p.isnull())
+          return p;
+      }
+      return qlib::LScrSp<T>();
+    }
 
     int getAllObjectUIDs(qlib::UIDList &uids) const;
 

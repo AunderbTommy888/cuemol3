@@ -92,7 +92,7 @@ bool SelOpNode::chkAroundNode2(MolAtomPtr patom, bool bExpn)
   bool bAcrossMol = false;
   if (!ar_molname.isEmpty()) {
     qsys::ScenePtr pSce = pMol->getScene();
-    MolCoordPtr ptmp(pSce->getObjectByName(ar_molname), qlib::no_throw_tag());
+    MolCoordPtr ptmp = pSce->getObjectByNameAs<MolCoord>(ar_molname);
     if (ptmp.isnull()) {
       // ERROR: around target mol is not found (ignore)
       MB_DPRINTLN("Around target mol %s not found", ar_molname.c_str());

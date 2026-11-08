@@ -397,6 +397,17 @@ ObjectPtr Scene::getObject(qlib::uid_t uid) const
   return i->second;
 }
 
+std::vector<ObjectPtr> Scene::getObjectsByName(const LString &name) const
+{
+  // m_data is keyed by UID, so the list is in UID order.
+  std::vector<ObjectPtr> rval;
+  for (const data_t::value_type &i : m_data) {
+    if (i.second->getName().equals(name))
+      rval.push_back(i.second);
+  }
+  return rval;
+}
+
 ObjectPtr Scene::getObjectByName(const LString &name) const
 {
   BOOST_FOREACH(const data_t::value_type &i, m_data) {

@@ -514,8 +514,7 @@ void MapSurfRenderer::setupColorEnv()
     m_pGrad = getMultiGrad().get();
     LString nm = getColorMapName();
     if (!nm.isEmpty()) {
-      qsys::ObjectPtr pobj = ensureNotNull(getScene())->getObjectByName(nm);
-      m_pColMapObj = dynamic_cast<qsys::ScalarObject*>(pobj.get());
+      m_pColMapObj = ensureNotNull(getScene())->getObjectByNameAs<qsys::ScalarObject>(nm).get();
     }
     if (m_pColMapObj==NULL) {
       LOG_DPRINTLN("MapSurfRend> \"%s\" is not a scalar object.", nm.c_str());
@@ -1409,8 +1408,7 @@ MolCoordPtr MapSurfRenderer::resolveMolIDImpl(const qlib::LString &name)
   if (pScene.isnull())
     return MolCoordPtr();
 
-  qsys::ObjectPtr pobj = pScene->getObjectByName(name);
-  MolCoordPtr pMol = MolCoordPtr(pobj, qlib::no_throw_tag());
+  MolCoordPtr pMol = pScene->getObjectByNameAs<molstr::MolCoord>(name);
   if (pMol.isnull()) {
     return pMol;
   }

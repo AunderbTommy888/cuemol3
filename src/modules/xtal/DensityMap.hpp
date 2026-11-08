@@ -152,6 +152,11 @@ namespace xtal {
     /// View::fitToBox), as JSON {"min":[x,y,z],"max":[x,y,z]}
     LString getFitBoxJSON(const qsys::ViewPtr &pView) const;
 
+    /// The box of the grid points at or above `level` (absolute density,
+    /// the drawn isosurface's extent) in the view's rotated frame, as
+    /// getFitBoxJSON writes it; empty when no point reaches the level.
+    LString getLevelFitBoxJSON(const qsys::ViewPtr &pView, double level) const;
+
     ///////////////////////////////////////////////
     // setup density map
 

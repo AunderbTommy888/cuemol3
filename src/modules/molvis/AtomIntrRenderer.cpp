@@ -835,7 +835,7 @@ MolCoordPtr AtomIntrRenderer::evalMol(const AtomIntrElem &elem) const
 {
   if (elem.nMolID==qlib::invalid_uid) {
     if (!elem.molName.isEmpty()) {
-      MolCoordPtr pmol = ensureNotNull(getScene())->getObjectByName(elem.molName);
+      MolCoordPtr pmol = ensureNotNull(getScene())->getObjectByNameAs<MolCoord>(elem.molName);
 
       // if null, elem.molName is already deleted!!
       //ensureNotNull(pmol);

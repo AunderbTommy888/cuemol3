@@ -223,6 +223,9 @@ void View::setSlabDepth(double d)
 /// zero working out the aspect ratio and zoom in without limit.
 const double View::FIT_MIN_EXTENT = 4.0;
 
+/// A few residues around a lone atom or a small ligand.
+const double View::FIT_MIN_ZOOM = 15.0;
+
 void View::fitToBox(const qlib::Vector4D &vmin, const qlib::Vector4D &vmax)
 {
   qlib::Box3D bbox;
@@ -248,7 +251,7 @@ void View::fitToBox(const qlib::Vector4D &vmin, const qlib::Vector4D &vmax)
   const double fasp = double(getWidth()) / double(qlib::max(1, getHeight()));
   const double mx = bbox.vend.x() - bbox.vstart.x();
   const double my = bbox.vend.y() - bbox.vstart.y();
-  setZoom(mx / my > fasp ? mx / fasp : my);
+  setZoom(qlib::max(FIT_MIN_ZOOM, mx / my > fasp ? mx / fasp : my));
   setSlabDepth(bbox.vend.z() - bbox.vstart.z());
 }
 
