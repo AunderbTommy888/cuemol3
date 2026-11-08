@@ -63,7 +63,7 @@ tritium_cli     --POST /console/*-----+--> main: localApi/server.ts (127.0.0.1:<
 
 ### 接続情報ファイル
 
-listen 中は `~/.cuemol/local-api.json` (mode 0600、`CUEMOL_LOCAL_API_INFO` で場所を変更可) に
+listen 中は `~/.cuemol/local-api.json` (mode 0600。場所は `CUEMOL_LOCAL_API_INFO` -> `$CUEMOL_HOME/local-api.json` -> 既定の順で決まり、`tritium_cli` も同じ規則で読む。[user-dotfiles.md](user-dotfiles.md)) に
 `{ port, token, pid, endpoints }` を書く。同じユーザの command line client が、port も token も
 貼り付けずに接続するためのもの。close と app 終了で消す。
 
@@ -190,7 +190,7 @@ ES module `dist/tritium_cli.mjs` に bundle する (`task build_tritium` に含�
   react-gui 側 (`main/localApi/consoleEndpoint.test.ts`、devDependency `@cuemol/tritium-cli`)。repo からは `task run_tritium_cli`
 (`-- -c '...'` で非対話)、配布物からは同梱の wrapper `tritium_cli` (§5.3) で起動する。
 
-- 接続情報は request ごとに `~/.cuemol/local-api.json` (`CUEMOL_LOCAL_API_INFO`) から読む。
+- 接続情報は request ごとに `~/.cuemol/local-api.json` (`CUEMOL_LOCAL_API_INFO`、`CUEMOL_HOME`) から読む。
   port は MCP plugin の設定で変わり得るが、client は毎回このファイルを読むので影響しない。
 - **app の自動起動** (`ensureApp`): 情報ファイルが無い、`console` endpoint が無い、pid が
   死んでいるときは、app を `--tritium-cli` 付きで detached 起動し (`ELECTRON_RUN_AS_NODE` は外す)、情報ファイルに
