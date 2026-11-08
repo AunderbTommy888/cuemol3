@@ -12,7 +12,7 @@ import { COLOR_COMMANDS } from './colorCommands'
 import { DISPLAY_COMMANDS } from './displayCommands'
 import { FILE_COMMANDS } from './fileCommands'
 import { MISC_COMMANDS, setCommandList } from './miscCommands'
-import { VIEW_COMMANDS } from './viewCommands'
+import { VIEW_COMMANDS, keepingSilhouettes } from './viewCommands'
 import { ALIAS_COMMANDS, setAliasCommandList } from './aliasCommands'
 import { SELECT_COMMANDS } from './selectCommands'
 import { REPR_COMMANDS } from './reprCommands'
@@ -20,8 +20,11 @@ import { ANALYSIS_COMMANDS } from './analysisCommands'
 import { LOOK_COMMANDS } from './lookCommands'
 import { MAP_COMMANDS, MAP_OPERATION_COMMANDS } from './mapCommands'
 
-/** Every command, in ChimeraX's registration order. */
-export const CHX_COMMANDS: readonly ChxCommand[] = [
+/**
+ * Every command, in ChimeraX's registration order. Each keeps the silhouettes'
+ * width in pixels across a camera move (`keepingSilhouettes`).
+ */
+export const CHX_COMMANDS: readonly ChxCommand[] = ([
   ALIAS_COMMANDS.alias,
   ALIAS_COMMANDS.aliasList,
   ALIAS_COMMANDS.aliasDelete,
@@ -120,7 +123,7 @@ export const CHX_COMMANDS: readonly ChxCommand[] = [
   LOOK_COMMANDS.unitcellOutline,
   LOOK_COMMANDS.unitcellDelete,
   MISC_COMMANDS.help,
-]
+] as ChxCommand[]).map(keepingSilhouettes)
 
 setCommandList(() => CHX_COMMANDS)
 setAliasCommandList(() => CHX_COMMANDS)

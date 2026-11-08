@@ -18,7 +18,8 @@
  * when an atom moves from one style to another.
  *
  * Limit: CueMol has no per-atom display flag, so the style of a hidden atom
- * is not kept -- an atom shown again comes back as a stick.
+ * is not kept -- an atom shown again comes back in the style the automatic
+ * styling gives it (`autoStyle.ts` `initialStylesOf`).
  *
  * Nucleic acids: the backbone is drawn by `chx:nucl` (a tube through the
  * phosphates) and the bases by `chx:nuclbase` (a `nucl` renderer drawing no

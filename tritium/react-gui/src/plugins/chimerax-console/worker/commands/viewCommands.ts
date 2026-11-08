@@ -384,6 +384,51 @@ export async function silhouettes(
 }
 
 /**
+ * Keep the silhouettes as wide in pixels as they were before the camera
+ * moved: ChimeraX's width is in pixels, CueMol's in angstroms, so a zoom
+ * would widen them (`view` on a few residues, tens of times). The `edges`
+ * outlines are scaled by how much the pixel size changed.
+ *
+ * @param before - the camera before the command ran
+ */
+export async function keepSilhouettePixels(ctx: WorkerContext, cc: CmdContext, before: CameraState): Promise<CmdOutcome> {
+  const after = readCamera(ctx, cc.viewId)
+  if (!after) return { ok: true }
+  const ratio = pixelSize(after) / pixelSize(before)
+  if (!Number.isFinite(ratio) || ratio <= 0 || Math.abs(ratio - 1) < 1e-6) return { ok: true }
+  for (const r of outlinedRenderers(ctx, cc.sceneId).filter((o) => o.egtype === SILHOUETTE_EDGE_TYPE)) {
+    const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: r.id, prop: 'eglinew', value: String(r.eglinew * ratio) })
+    if (!res.ok) return res
+  }
+  return { ok: true }
+}
+
+/**
+ * A command that keeps the silhouettes' pixel width (`keepSilhouettePixels`)
+ * across whatever it does to the camera. Only the outermost command does
+ * it: an alias or a preset runs commands inside its own.
+ */
+let keeping = 0
+export function keepingSilhouettes(c: ChxCommand): ChxCommand {
+  return {
+    ...c,
+    async run(ctx, args, cc) {
+      if (keeping > 0) return c.run(ctx, args, cc)
+      keeping++
+      try {
+        const before = readCamera(ctx, cc.viewId)
+        const out = await c.run(ctx, args, cc)
+        if (!before) return out
+        const kept = await keepSilhouettePixels(ctx, cc, before)
+        return kept.ok ? out : kept
+      } finally {
+        keeping--
+      }
+    },
+  }
+}
+
+/**
  * Give renderers just made the outline the rest of the scene has: ChimeraX's
  * silhouettes are one setting for the view, so a model opened after they
  * were turned on is outlined too. Read from the scene's renderers (one in

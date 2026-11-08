@@ -309,9 +309,13 @@ renderer で表し、**その selection と paint が表示の状態そのもの
   ChimeraX の lighting の切り替えと、糖鎖の SNFG 表示は行わない。
 - **制約**:
   - CueMol に原子ごとの表示フラグは無く、どの原子を描くかは renderer の selection だけで決まる。そのため**非表示の原子の
-    style は保持しない**。`style :ALA sphere` -> `hide :ALA atoms` -> `show :ALA atoms` では ALA は stick で出る
-    (ChimeraX では sphere)。ALA が非表示のうちの `style :ALA sphere` も効かない。もう一度 `style` を打てば直り、データは
-    壊れない。保持するには style ごとの原子集合を scene に別に持つ必要があり、その代償 (selection 一覧が散らかる、
+    style は保持しない**。非表示の原子を `show` すると、auto style がその原子に与える style で出す (`autoStyle.ts` の
+    `initialStylesOf`: molecule の大きさから決め、small polymer は stick (金属とイオンは sphere)、medium は sphere
+    (ligand は stick、水は ball)、large は sphere)。ChimeraX は原子の style を表示と別に持ち、auto style は非表示の原子にも
+    style を付けるので (原子の既定は sphere)、`hide atoms` の後の `show <spec> atoms` はこれで ChimeraX と同じになる。
+    ただし、非表示の間に変えた style は保たない: `style :ALA sphere` -> `hide :ALA atoms` -> `show :ALA atoms` では、
+    small polymer の ALA は stick で出る (ChimeraX では sphere)。ALA が非表示のうちの `style :ALA sphere` も効かない。
+    もう一度 `style` を打てば直り、データは壊れない。保持するには style ごとの原子集合を scene に別に持つ必要があり、その代償 (selection 一覧が散らかる、
     状態の二重化) に見合わないので行っていない。
   - selection の式は、組み合わせた後、書き込む前に簡単にする (`writeSel`、[selection 式の簡単化](selection-simplify.md))。
     `show` / `hide` / `style` を繰り返しても伸びないが、最短になるとは限らない。
@@ -426,7 +430,10 @@ renderer で表し、**その selection と paint が表示の状態そのもの
   ChimeraX の silhouettes は後から開いた model にも付くので、ChX が renderer を新しく作るとき (`open` の後の
   `adopt`、新しい surface) に、scene に `edges` の renderer があればその `egtype` / `eglinew` / `egcolor` を写す
   (`viewCommands.ts` の `inheritSilhouettes`)。状態は別に持たず scene の renderer から読むので、保存した scene でも同じ。幅は ChimeraX が pixel、CueMol が Å なので、今の zoom で
-  換算する (以後の zoom で太さが変わることを warn)。`width` を省いて**新しく有効にする** renderer には、ChimeraX の
+  換算する。ChX のコマンドが camera の zoom を変えたら (`view`、`zoom`、名前を付けた view、`view matrix` など)、
+  `edges` の renderer の `eglinew` を pixel の大きさの比で掛け直し、pixel での太さを保つ (`registry.ts` で全コマンドを
+  `keepingSilhouettes` で包む。alias や preset の中のコマンドは外側だけが行う)。GUI のマウスでの zoom には追従しない
+  (`width` を指定したときはこのことを warn)。`width` を省いて**新しく有効にする** renderer には、ChimeraX の
   既定の太さ (1 pixel、`graphics/opengl.py` の `Silhouette.thickness`) を今の zoom で換算して書く。CueMol の既定
   (`eglinew` 0.01 Å) は今の zoom で 1 pixel に満たず、ほとんど見えないため。既に有効な renderer の太さは変えない。
 
@@ -578,12 +585,14 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
   重複、ファイル名の `\` を escape しないこと、元素記号で始まる spec を keyword や sub-command の省略と取り違えない
   こと (`color C & :ber red`、`show O`、`select C & :sti`)
 - `commands/viewCommands.test.ts`: spec を付けた `view` が `set_view` に引数を欠かさず渡すこと (欠けた引数は op に
-  `undefined` で届き、`rotation` が足されたときに `view sel` が例外で落ちた)
+  `undefined` で届き、`rotation` が足されたときに `view sel` が例外で落ちた)、zoom を変えたコマンドの後に輪郭線の
+  `eglinew` が pixel の大きさの比で掛け直されること
 - `spec/translate.test.ts`: 階層・insertion code・残基名・演算子の翻訳、model ごとの評価、16 進の色を spec にしないこと、
   未対応の語を断ること
 - `display.test.ts`: show / hide / style / cartoon の合成 (式は小さな原子の集合で評価して比べる)、他の renderer に
   触らないこと、今の selection から始めること (undo / GUI の編集に追従)、style を変えても色が残り paint への切り替えは
-  1 度だけであること、地図に届くのは model の番号だけの指定であること
+  1 度だけであること、地図に届くのは model の番号だけの指定であること、非表示の原子は auto style の style で出て、
+  表示中の原子は style を保つこと
 - `models.test.ts`: 番号を詰めず、使い回さないこと
 - `commands/mapCommands.test.ts`: `volume` の `level` が地図の値のまま、`transparency` が `alpha = 1 - t` で書かれ、box の
   `contour` の `step > 1` と 1・2・4・8 以外の `step` を何も書かずに断り、`region all` なら `lod` を書くこと、`volume zone` が

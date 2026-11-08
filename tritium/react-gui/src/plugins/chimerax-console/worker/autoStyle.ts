@@ -30,7 +30,7 @@ import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
 import { chainColor, modelColor } from './colorSchemes'
 import { ATOM_STYLES, CARTOONS, ensureOwned, forEachAtom, minus, NUCL_BASE, writeSel } from './display'
-import type { BaseMode } from './display'
+import type { AtomStyle, BaseMode } from './display'
 import { nucleotideEntries } from './colorSchemes'
 import type { NumberedObject } from './models'
 import { NONE } from './spec/emit'
@@ -112,6 +112,32 @@ function sizeOf(ctx: WorkerContext, sceneId: number, objUid: number): MoleculeSi
     oneSequence: sequences.size <= 1,
     chainIds: [...seqs.keys()].sort(),
   }
+}
+
+/**
+ * The style an atom comes back in when it is shown again: the one the
+ * automatic styling gave it. ChimeraX keeps an atom's draw mode apart from
+ * its display, and the styling sets it for every atom, shown or not (small
+ * polymer: sticks, metals and ions spheres; medium: spheres, ligands sticks,
+ * solvent balls; large: spheres, the atom's default). CueMol draws an atom
+ * only in the renderer of its style, so a hidden atom has none; this is
+ * what it would have had, from the molecule's size. A `style` given while
+ * the atom was hidden is not kept.
+ */
+export function initialStylesOf(ctx: WorkerContext, sceneId: number, objUid: number): Record<AtomStyle, string> {
+  const size = sizeOf(ctx, sceneId, objUid)
+  const style = autoStyleOf(size)
+  if (style === 'non-polymer' || (style === 'small polymer' && size.residues <= MIN_RIBBON_THRESHOLD)) {
+    return { stick: '*', ball: NONE, sphere: NONE }
+  }
+  if (style === 'small polymer') {
+    const spheres = `(${METAL} or ${HALIDE_ION})`
+    return { stick: minus('*', spheres), ball: NONE, sphere: spheres }
+  }
+  if (style === 'medium polymer') {
+    return { stick: LIGAND, ball: 'water', sphere: minus('*', `(${LIGAND}) or water`) }
+  }
+  return { stick: NONE, ball: NONE, sphere: '*' }
 }
 
 /** The selections of the console's renderers a style draws. */

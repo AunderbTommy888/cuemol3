@@ -7,6 +7,8 @@
  * not applied (`turn y 3 30` must end at 90 degrees, not 3), and a
  * `view matrix` that places the camera but leaves CueMol's orthographic
  * projection, or puts the centre (and so the slab) away from the scene.
+ * And silhouettes that widen with a zoom (their width is in pixels in
+ * ChimeraX, in angstroms in CueMol).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -30,12 +32,24 @@ vi.mock('../camera', async (importOriginal) => ({
   framingOf: () => ({ center: [0, 0, 10], zoom: 30, slab: 30 }),
 }))
 
+// One renderer outlined as the silhouettes are, 0.1 A wide.
+vi.mock('@renderer/worker/server/catalog/refs', () => ({
+  objectNodes: () => [{ id: 1, children: [{ id: 5, type: 'renderer' }] }],
+  rendererNodesOf: (obj: { children: unknown[] }) => obj.children,
+}))
+vi.mock('@renderer/worker/server/services/props/read', () => ({
+  getGenericProps: () => ({
+    ok: true,
+    entries: [{ key: 'egtype', value: 'edges' }, { key: 'eglinew', value: 0.1 }, { key: 'egcolor', value: '#000000' }, { key: 'type_name', value: 'ribbon' }],
+  }),
+}))
+
 vi.mock('./fileCommands', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   objectsOf: () => ({ ok: true, objs: [] }),
 }))
 
-import { VIEW_COMMANDS } from './viewCommands'
+import { VIEW_COMMANDS, keepingSilhouettes } from './viewCommands'
 import { MISC_COMMANDS } from './miscCommands'
 import { cameraMatrix, readCamera } from '../camera'
 import type { Quat } from '../camera'
@@ -72,6 +86,18 @@ beforeEach(() => {
 })
 
 describe('camera commands', () => {
+  it('a command that zooms keeps the silhouettes as wide in pixels', async () => {
+    const zoomIn = keepingSilhouettes({ ...VIEW_COMMANDS.zoom, run: async () => { view.zoom = 4; return { ok: true } } })
+    try {
+      await zoomIn.run(ctx, {}, cc)
+    } finally {
+      view.zoom = 40
+    }
+    const w = ops.find((o) => o.name === 'set_node_prop' && o.args.prop === 'eglinew')
+    expect(w?.args.nodeId).toBe(5)
+    expect(Number(w?.args.value)).toBeCloseTo(0.01)
+  })
+
   it('view <spec> gives set_view every argument (one left out reaches the op as undefined)', async () => {
     const cmd = MISC_COMMANDS.view
     const args = Object.fromEntries(cmd.args.map((a) => [a.name, a.default ?? '']))

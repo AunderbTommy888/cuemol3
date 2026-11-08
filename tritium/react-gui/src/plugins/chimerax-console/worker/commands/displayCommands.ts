@@ -36,6 +36,8 @@ import type { AtomStyle, BaseMode, Target } from '../display'
 import { numberedObjects } from '../models'
 import type { NumberedObject } from '../models'
 import { hideSurfaces, showSurfaces } from '../surface'
+import { NONE } from '../spec/emit'
+import { initialStylesOf } from '../autoStyle'
 import { warnIgnored } from './warn'
 
 /** What `show` / `hide` can act on (cli.py `WhatArg`). */
@@ -115,13 +117,16 @@ async function showHide(
       const sel = (id: number) => readSel(ctx, cc.sceneId, id)
       // With `only`, what each style shows outside the specification goes.
       const kept = (id: number) => (only ? intersect(sel(id), t.sel) : sel(id))
-      const writes: [number, string][] = show
-        // New atoms come in as sticks; atoms already shown keep their style.
-        ? [
-            [r.stick, union(kept(r.stick), minus(t.sel, union(sel(r.ball), sel(r.sphere))))],
-            ...(only ? [r.ball, r.sphere].map((id): [number, string] => [id, kept(id)]) : []),
-          ]
-        : [r.stick, r.ball, r.sphere].map((id) => [id, minus(sel(id), t.sel)])
+      let writes: [number, string][]
+      if (show) {
+        // Atoms already shown keep their style; the others come in with the
+        // one the automatic styling gave them (autoStyle.ts).
+        const fresh = minus(t.sel, union(union(sel(r.stick), sel(r.ball)), sel(r.sphere)))
+        const initial = fresh === NONE ? null : initialStylesOf(ctx, cc.sceneId, t.obj.uid)
+        writes = (['stick', 'ball', 'sphere'] as const).map((s) => [r[s], union(kept(r[s]), initial ? intersect(fresh, initial[s]) : NONE)])
+      } else {
+        writes = [r.stick, r.ball, r.sphere].map((id) => [id, minus(sel(id), t.sel)])
+      }
       for (const [id, next] of writes) {
         const w = await writeSel(ctx, cc, id, next)
         if (!w.ok) return w
