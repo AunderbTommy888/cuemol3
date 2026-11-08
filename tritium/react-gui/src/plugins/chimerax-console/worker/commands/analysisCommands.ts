@@ -24,7 +24,7 @@ import type { ChxCommand } from '../cli/command'
 import { forEachAtom, ownedOn, runOp, targetsOf } from '../display'
 import type { AtomView, Target } from '../display'
 import { isMolecule, numberedObjects } from '../models'
-import { warnIgnored } from './warn'
+import { unsupported, warnIgnored } from './warn'
 
 /** The interaction renderer `distance` draws into. */
 const DISTANCE = 'chx:distance'
@@ -168,7 +168,7 @@ const align = chxCommand({
   summary: 'Move a model so that atoms fit onto others, pair by pair in order (least squares).',
   async run(ctx, args, cc) {
     const refused = ALIGN_REFUSED.find((k) => args[k] !== '')
-    if (refused) return { ok: false, error: `Error: align: ${refused} is not supported` }
+    if (refused) return unsupported(`Error: align: ${refused} is not supported`)
     if (args.move !== '' && !'structures'.startsWith(args.move)) return { ok: false, error: 'Error: align: only move structures is supported' }
     if (args.toAtoms === '') return { ok: false, error: 'Error: align: give the atoms to fit onto with toAtoms' }
     const mov = targetsOf(ctx, cc.sceneId, args.atoms)

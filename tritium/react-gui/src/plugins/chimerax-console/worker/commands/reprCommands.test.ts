@@ -8,7 +8,9 @@
  * polymer (the shape would change with the specification), a hide that
  * deletes the surface instead of narrowing what it shows, a transparency
  * that reaches the wrong renderers or a whole molecule when only part of it
- * was named, and a residue label on no atom or on every atom.
+ * was named, and a residue label on no atom or on every atom; and a new
+ * surface that does not take the cartoon's colours (ChimeraX colours a new
+ * surface from the ribbon), or fails on a molecule the console did not style.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -27,6 +29,10 @@ const { state } = vi.hoisted(() => ({
     /** The chains an expression reaches. */
     chains: ['A', 'B'],
     nextId: 100,
+    /** Each painted renderer's paint entries. */
+    paint: new Map<number, { selStr: string; colorValue: string }[]>(),
+    /** What replacePaint gave each renderer. */
+    replaced: new Map<number, { selStr: string; colorValue: string }[]>(),
   },
 }))
 
@@ -42,6 +48,15 @@ vi.mock('../display', async (importOriginal) => ({
   ensureOwned: async () => ({ ok: true, ids: new Map(state.owned) }),
   emitContext: () => ({ chainsHit: () => state.chains, anyHit: () => true }),
   targetsOf: () => ({ ok: true, targets: [{ obj: { uid: 10, model: 1, name: 'm', className: 'MolCoord' }, sel: state.sel }] }),
+  readPaint: async (_ctx: unknown, _cc: unknown, id: number) => state.paint.get(id) ?? null,
+  replacePaint: async (_ctx: unknown, _cc: unknown, id: number, rows: { selStr: string; colorValue: string }[]) => {
+    state.replaced.set(id, rows)
+    return { ok: true }
+  },
+}))
+vi.mock('./viewCommands', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  inheritSilhouettes: async () => ({ ok: true }),
 }))
 vi.mock('@renderer/worker/server/services/props/read', () => ({
   getGenericProps: (_ctx: unknown, a: { nodeId: number }) => ({ ok: true, entries: [{ key: 'showsel', value: state.showsel.get(a.nodeId) ?? '' }] }),
@@ -70,6 +85,8 @@ beforeEach(() => {
   state.showsel.clear()
   state.sel = '*'
   state.chains = ['A', 'B']
+  state.paint.clear()
+  state.replaced.clear()
 })
 
 describe('surface', () => {
@@ -81,6 +98,22 @@ describe('surface', () => {
       ['dsurface', 'chx:surface:B', '(chain B) and (protein or nucleic)'],
     ])
     expect([...state.showsel.values()]).toEqual(['(resi 1:10) and (chain A)', '(resi 1:10) and (chain B)'])
+  })
+
+  it('colours a new surface from the cartoon, and leaves an unstyled molecule\'s surface as made', async () => {
+    const rows = [{ selStr: '*', colorValue: '#ff0000' }, { selStr: 'chain B', colorValue: '#00ff00' }]
+    state.owned.set('chx:cartoon', 50)
+    state.paint.set(50, rows)
+    await run(REPR_COMMANDS.surface, { atoms: '' })
+    const made = [state.owned.get('chx:surface:A'), state.owned.get('chx:surface:B')]
+    expect([...state.replaced.keys()]).toEqual(made)
+    expect(state.replaced.get(made[0] as number)).toEqual(rows)
+
+    // A molecule opened from the GUI: no console renderer to copy from.
+    state.owned.clear()
+    state.replaced.clear()
+    expect((await run(REPR_COMMANDS.surface, { atoms: '' })).ok).toBe(true)
+    expect(state.replaced.size).toBe(0)
   })
 
   it('hides patches by narrowing what the surface shows, keeping the surface', async () => {

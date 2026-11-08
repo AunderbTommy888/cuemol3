@@ -1,7 +1,7 @@
 /**
  * Cryo-EM post-load helpers (worker side): the dialog's map-kind override
  * lands on the DensityMap, the view fit runs DensityMap.fitView on every view
- * of the scene, and the dialog's view policy picks between that fit and
+ * of the scene (a map with no shown contour to fit, `mapFit.ts`), and the dialog's view policy picks between that fit and
  * moving the map's display box to the view the user is already on. (The EM
  * contour level is no longer written here: it comes from the CryoEM style
  * and the map-kind resolution of siglevel, see mapRendererStyles.test.ts.)
@@ -13,6 +13,9 @@ import {
     fitViewsToMap,
 } from '@renderer/worker/server/services/map/emDefaults'
 import type { FormatOptions } from '@renderer/dialogs/fopen-opt-dlgs/types'
+
+/** The worker context: only a map with contours to fit uses it (`mapFit.ts`), and these mocks have none. */
+const CTX = {} as never
 
 function ccp4Format(mapType: 'auto' | 'xtal' | 'em'): FormatOptions {
     return {
@@ -52,7 +55,7 @@ describe('fitViewsToMap', () => {
             view_uids: '3, 7',
             getView: vi.fn((uid: number) => views[uid] ?? null),
         }
-        fitViewsToMap(scene as never, obj)
+        fitViewsToMap(CTX, scene as never, obj)
         expect(fitView).toHaveBeenCalledTimes(2)
         expect(fitView).toHaveBeenCalledWith(views[3], false)
         expect(fitView).toHaveBeenCalledWith(views[7], false)
@@ -60,8 +63,8 @@ describe('fitViewsToMap', () => {
 
     it('is a no-op without fitView or views', () => {
         const scene = { view_uids: '', getView: vi.fn() }
-        fitViewsToMap(scene as never, {})
-        fitViewsToMap(scene as never, { fitView: vi.fn() })
+        fitViewsToMap(CTX, scene as never, {})
+        fitViewsToMap(CTX, scene as never, { fitView: vi.fn() })
         expect(scene.getView).not.toHaveBeenCalled()
     })
 })
@@ -88,7 +91,7 @@ describe('applyMapCenterPolicy', () => {
         const obj = { map_type_resolved: 'em', fitView }
         const rend: Record<string, unknown> = { center: 'origin' }
 
-        expect(applyMapCenterPolicy(scene as never, obj, rend, 'auto')).toBe('moveViewCenter')
+        expect(applyMapCenterPolicy(CTX, scene as never, obj, rend, 'auto')).toBe('moveViewCenter')
         expect(fitView).toHaveBeenCalledTimes(2)
         expect(rend.center).toBe('origin')
     })
@@ -100,7 +103,7 @@ describe('applyMapCenterPolicy', () => {
         const obj = { map_type_resolved: 'xtal', fitView }
         const rend: Record<string, unknown> = { center: 'origin' }
 
-        expect(applyMapCenterPolicy(scene as never, obj, rend, 'auto')).toBe('setMapCenter')
+        expect(applyMapCenterPolicy(CTX, scene as never, obj, rend, 'auto')).toBe('setMapCenter')
         expect(fitView).not.toHaveBeenCalled()
         // The first view stands in for UXP's "current view".
         expect(rend.center).toBe('center-of-3')
@@ -110,14 +113,14 @@ describe('applyMapCenterPolicy', () => {
         const em = makeScene()
         const emObj = { map_type_resolved: 'em', fitView: em.fitView }
         const emRend: Record<string, unknown> = { center: 'origin' }
-        expect(applyMapCenterPolicy(em.scene as never, emObj, emRend, 'setMapCenter')).toBe('setMapCenter')
+        expect(applyMapCenterPolicy(CTX, em.scene as never, emObj, emRend, 'setMapCenter')).toBe('setMapCenter')
         expect(em.fitView).not.toHaveBeenCalled()
         expect(emRend.center).toBe('center-of-3')
 
         const xtal = makeScene()
         const xtalObj = { map_type_resolved: 'xtal', fitView: xtal.fitView }
         const xtalRend: Record<string, unknown> = { center: 'origin' }
-        expect(applyMapCenterPolicy(xtal.scene as never, xtalObj, xtalRend, 'moveViewCenter')).toBe('moveViewCenter')
+        expect(applyMapCenterPolicy(CTX, xtal.scene as never, xtalObj, xtalRend, 'moveViewCenter')).toBe('moveViewCenter')
         expect(xtal.fitView).toHaveBeenCalledTimes(2)
         expect(xtalRend.center).toBe('origin')
     })
@@ -126,7 +129,7 @@ describe('applyMapCenterPolicy', () => {
     it('is a no-op for a scalar object that is not a DensityMap', () => {
         const { scene, fitView } = makeScene()
         const rend: Record<string, unknown> = { center: 'origin' }
-        expect(applyMapCenterPolicy(scene as never, { fitView }, rend, 'auto')).toBeNull()
+        expect(applyMapCenterPolicy(CTX, scene as never, { fitView }, rend, 'auto')).toBeNull()
         expect(fitView).not.toHaveBeenCalled()
         expect(rend.center).toBe('origin')
     })

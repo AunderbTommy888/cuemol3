@@ -9,9 +9,12 @@
  * anything changed -> commit, even when a later command failed; nothing
  * changed -> roll back, so a read-only line does not cost the user their redo.
  *
- * A failure stops the rest of the submission. PyMOL can be told to carry on,
- * but carrying on inside a single transaction makes what Cmd+Z will do
- * impossible to state.
+ * A failure stops the rest of the submission. A command the dialect knows
+ * it does not do (an `unsupported` outcome, or `unsupportedCommand` for a
+ * command it lacks) is said as a warning and skipped, and the rest runs: a
+ * script of the original program goes on past what the dialect cannot do.
+ * The transaction is unchanged by that: whatever changed is still committed
+ * as one undo step.
  *
  * `undo` and `redo` are intercepted here rather than implemented as commands:
  * they cannot run inside the transaction this opens.
@@ -248,8 +251,14 @@ async function runSpec(spec: ConsoleCommand, ctx: WorkerContext, bound: Record<s
   }
 }
 
+/** A skipped command's reason as a warning: `Error: x` becomes `Warning: x; skipped`. */
+export function skippedText(reason: string): string {
+  return `Warning: ${reason.replace(/^(Error|Warning):\s*/, '')}; skipped`
+}
+
 /**
- * Run commands in order until one fails or Stop is pressed.
+ * Run commands in order until one fails (one the dialect does not do is
+ * skipped, `skippedText`) or Stop is pressed.
  *
  * @param depth - 0 for what the user typed, 1 and up inside scripts.
  * @returns whether every command ran.
@@ -281,6 +290,11 @@ async function runLines(sub: Submission, commands: DialectLine[], depth: number)
 
     const resolved = resolveCommand(dialect, cmd.text)
     if (resolved.kind === 'error') {
+      const skipped = dialect.unsupportedCommand?.(cmd.text) ?? null
+      if (skipped !== null) {
+        sink.push('warning', skippedText(skipped))
+        continue
+      }
       sink.push('error', resolved.error)
       return false
     }
@@ -294,6 +308,10 @@ async function runLines(sub: Submission, commands: DialectLine[], depth: number)
     const result = dialect.syntax.bind(spec, cmd.text, { ctx, sceneId: args.sceneId })
     if (result.kind === 'usage') {
       sink.push('output', result.usage)
+      continue
+    }
+    if (result.kind === 'error' && result.unsupported) {
+      sink.push('warning', skippedText(result.error))
       continue
     }
     if (result.kind === 'error') {
@@ -330,6 +348,11 @@ async function runLines(sub: Submission, commands: DialectLine[], depth: number)
     const outcome = await runSpec(spec, ctx, bound, cc)
 
     if (outcome.ok && (spec.mutates || commandMutated)) sub.mutated = true
+    if (!outcome.ok && outcome.unsupported && !isStopped(args.runId)) {
+      if (commandMutated) sub.mutated = true
+      sink.push('warning', skippedText(outcome.error))
+      continue
+    }
     if (!outcome.ok) {
       // A stopped download fails as canceled; say it was Stop, not a fault.
       if (isStopped(args.runId)) {

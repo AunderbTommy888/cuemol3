@@ -34,7 +34,7 @@ import { splitColorArg } from '../colors'
 import { runOp, targetsOf } from '../display'
 import type { NumberedObject } from '../models'
 import { objectsOf } from './fileCommands'
-import { warnIgnored } from './warn'
+import { unsupported, warnIgnored } from './warn'
 
 /** The map renderer types `volume` acts on, and the style each draws. */
 const MAP_STYLES: Readonly<Record<string, 'mesh' | 'surface'>> = { contour: 'mesh', gpu_mapmesh: 'mesh', isosurf: 'surface' }
@@ -87,10 +87,48 @@ function setProp(ctx: WorkerContext, cc: CmdContext, rendId: number, prop: strin
   return runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: rendId, prop, value })
 }
 
+/** ChimeraX's first map colour (`map/defaultsettings.py`, 0.7 grey). */
+const XRAY_MAP_COLOR = '#b2b2b2'
+
+/** The fraction of grid points ChimeraX's initial level encloses (`volume.py` `initial_surface_levels`). */
+const XRAY_TOP_FRACTION = 0.01
+
+/**
+ * Draw a map just opened as ChimeraX draws an X-ray map it fetches
+ * (`eds_fetch.py`: a mesh in the first map colour over the whole map, at the
+ * level enclosing the top 1% of the grid points), instead of CueMol's
+ * crystallographic default (a blue box about the view centre at 1 sigma).
+ */
+export async function applyXrayMapDefaults(ctx: WorkerContext, cc: CmdContext, obj: NumberedObject): Promise<CmdOutcome> {
+  const map = getSceneOrNull(ctx, cc.sceneId)?.getObject(obj.uid) as unknown as { getLevelAtTopFraction?: (f: number) => number } | null
+  let level: number | null = null
+  try {
+    const v = map?.getLevelAtTopFraction?.(XRAY_TOP_FRACTION)
+    level = typeof v === 'number' && Number.isFinite(v) ? v : null
+  } catch {
+    level = null
+  }
+  for (const r of mapRenderers(ctx, cc.sceneId, obj.uid)) {
+    const region = await setProp(ctx, cc, r.id, 'region_mode', 'full')
+    if (!region.ok) return region
+    if (level !== null) {
+      const lv = await setProp(ctx, cc, r.id, 'level', String(level))
+      if (!lv.ok) return lv
+    }
+    const colored = await runOp(ctx, cc, 'set_map_contour', { rendId: r.id, level: null, extent: null, color: XRAY_MAP_COLOR, alpha: null })
+    if (!colored.ok) return colored
+  }
+  return { ok: true }
+}
+
 /** The keywords `volume` reads but does not act on. */
 const VOLUME_IGNORED = ['subdivide', 'subdivisionLevels', 'smoothLines', 'squareMesh', 'capFaces', 'meshLighting', 'brightness', 'dimTransparency']
 
-/** The keywords `volume` refuses, with the reason. */
+/**
+ * The keywords `volume` does not do, with the reason. Each is display
+ * settings of its own, so it is skipped with a warning and the rest of the
+ * command (colour, step, level...) is applied.
+ */
 const VOLUME_REFUSED: Readonly<Record<string, string>> = {
   surfaceLevels: 'a CueMol map renderer draws one level; give level once',
   meshLevels: 'a CueMol map renderer draws one level; give level once',
@@ -122,11 +160,12 @@ const volume = chxCommand({
   summary: 'Set how density maps are drawn: level, style mesh/surface, color, transparency, step, region all, show / hide.',
   async run(ctx, args, cc): Promise<CmdOutcome> {
     warnIgnored(cc, 'volume', args, VOLUME_IGNORED)
-    const refused = Object.keys(VOLUME_REFUSED).find((k) => args[k] !== '' && !(k === 'showOutlineBox' && args[k] === 'false'))
-    if (refused) return { ok: false, error: `Error: volume: ${refused} is not supported (${VOLUME_REFUSED[refused]})` }
-    if (args.style === 'image') return { ok: false, error: 'Error: volume: style image is not supported (CueMol draws a map as a mesh or a surface)' }
+    for (const k of Object.keys(VOLUME_REFUSED)) {
+      if (args[k] !== '' && !(k === 'showOutlineBox' && args[k] === 'false')) cc.warn(`volume: ${k} is not supported (${VOLUME_REFUSED[k]}); skipped`)
+    }
+    if (args.style === 'image') return unsupported('Error: volume: style image is not supported (CueMol draws a map as a mesh or a surface)')
     if (args.region !== '' && args.region !== 'all') {
-      return { ok: false, error: 'Error: volume: region is all only (CueMol draws a box about the centre or the whole map)' }
+      cc.warn('volume: a region other than all is not supported (CueMol draws a box about the centre or the whole map); skipped')
     }
     let step: string | null = null
     if (args.step !== '') {
@@ -205,8 +244,8 @@ const volumeZone = chxCommand({
   async run(ctx, args, cc): Promise<CmdOutcome> {
     warnIgnored(cc, 'volume zone', args, ['minimalBounds'])
     if (args.nearAtoms === '') return { ok: false, error: 'Error: volume zone: give nearAtoms' }
-    if (args.newMap === 'true') return { ok: false, error: 'Error: volume zone: newMap true is not supported (CueMol does not cut out a new map)' }
-    if (args.invert === 'true') return { ok: false, error: 'Error: volume zone: invert is not supported' }
+    if (args.newMap === 'true') return unsupported('Error: volume zone: newMap true is not supported (CueMol does not cut out a new map)')
+    if (args.invert === 'true') return unsupported('Error: volume zone: invert is not supported')
     const near = targetsOf(ctx, cc.sceneId, args.nearAtoms)
     if (!near.ok) return near
     if (near.targets.length === 0) return { ok: false, error: 'Error: volume zone: no atoms specified' }
@@ -215,13 +254,9 @@ const volumeZone = chxCommand({
     }
     const found = mapsOf(ctx, cc.sceneId, args.volumes)
     if (!found.ok) return found
+    // The boundary names its molecule; C++ takes the molecule of that name,
+    // passing over a map of the same name (`Scene::getObjectByNameAs`).
     const t = near.targets[0]
-    // The boundary names its molecule; another object of the same name (a map
-    // fetched for the entry) would be found instead.
-    const named = getSceneOrNull(ctx, cc.sceneId)?.getObjectByName(t.obj.name) as { uid?: number } | null | undefined
-    if (named?.uid !== t.obj.uid) {
-      return { ok: false, error: `Error: volume zone: another model is also named "${t.obj.name}"; rename #${t.obj.model} (a CueMol map boundary finds its molecule by name)` }
-    }
     for (const r of found.maps.flatMap((m) => m.rends)) {
       for (const [prop, value] of [['bndry_molname', t.obj.name], ['bndry_sel', t.sel], ['bndry_rng', args.range]] as const) {
         const res = await setProp(ctx, cc, r.id, prop, value)
@@ -265,7 +300,7 @@ function refusedOperation(op: string): ChxCommand {
     args: [{ name: 'rest', type: RestOfLine, role: 'optional' }],
     mutates: false,
     summary: `Not supported: makes a new map (${op}).`,
-    run: () => ({ ok: false, error: `Error: volume ${op} is not supported (map operations that make a new map are not available)` }),
+    run: () => unsupported(`Error: volume ${op} is not supported (map operations that make a new map are not available)`),
   })
 }
 

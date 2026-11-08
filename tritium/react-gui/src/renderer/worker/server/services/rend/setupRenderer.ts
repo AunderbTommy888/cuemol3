@@ -24,7 +24,6 @@ import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { MolRenderer } from '@cuemol/core/src/wrappers/MolRenderer';
 import type { Renderer } from '@cuemol/core/src/wrappers/Renderer';
 import type { Scene } from '@cuemol/core/src/wrappers/Scene';
-import type { View } from '@cuemol/core/src/wrappers/View';
 import type { RendererOptions } from '@renderer/worker/shared/fileOpenTypes';
 import { getDefaultStyleName } from '@renderer/worker/server/services/helpers/getDefaultStyleName';
 import { resolveMapKind } from '@renderer/worker/server/services/helpers/mapRendererStyles';
@@ -35,34 +34,19 @@ import {
     listRendererNamesByType,
 } from '@renderer/worker/server/services/helpers/rendererNames';
 import { safeRead } from '@renderer/worker/server/services/helpers/safeRead';
+import { focusOnNode } from '@renderer/worker/server/services/sceneTree/sceneOps';
 import { NON_MOL_CLASSES, isScalarMapClass } from '@renderer/worker/shared/objectClasses';
 
 const log = console;
 
 /**
- * Recenter every view in `scene` on `pos`. Mirrors the `if (m_bRecenView)`
- * block in `NewRendererCommand::run()` (uses scene.view_uids since the
- * C++ `getViewTable()` accessor is not wrapped to TS).
- */
-function recenterAllViews(scene: Scene, pos: unknown): void {
-    const uidStr = scene.view_uids;
-    if (!uidStr) return;
-    for (const tok of uidStr.split(',')) {
-        const uid = Number(tok.trim());
-        if (!Number.isFinite(uid)) continue;
-        try {
-            const view = scene.getView(uid) as View | null;
-            if (view) view.setViewCenter(pos as never);
-        } catch (e) {
-            log.warn(`setViewCenter failed for view ${uid}:`, e);
-        }
-    }
-}
-
-/**
- * Recenter the views on the new renderer when the dialog asked for it.
- * Works for both plain renderers and preset groups (RendGroup.getCenter
- * averages its members' centers).
+ * Fit every view of the scene to the new renderer when the caller asked for
+ * it (the dialog's center view, `centerView: true`), as the scene pane's
+ * Focus button frames it (`focusOnNode`: the centre and the zoom). Called
+ * once the renderer's selection and its post-processing are set, so a
+ * renderer of one chain frames that chain. Not recorded on its own: it is
+ * part of creating the renderer. A preset group frames its molecule, as
+ * Focus on the group does.
  *
  * A volume object is excluded: `MapRenderer::getCenter()` returns the map's
  * DISPLAY center, which a fresh renderer has at the origin, so recentering
@@ -70,17 +54,22 @@ function recenterAllViews(scene: Scene, pos: unknown): void {
  * (0,0,0). What the view should do for a map is a policy of its own
  * (`applyMapCenterPolicy`, run by the caller once the map kind is known).
  */
-function recenterIfRequested(mol: any, rend: Renderer, rendOpts: RendererOptions): void {
+function fitViewsIfRequested(ctx: WorkerContext, mol: any, rend: Renderer, rendOpts: RendererOptions): void {
     if (!rendOpts.centerView) return;
     if (isScalarMapClass(safeRead(() => mol.getClassName() as string) ?? '')) return;
-    try {
-        const scene = mol.getScene() as Scene | null;
-        if (scene && typeof (rend as unknown as { getCenter?: () => unknown }).getCenter === 'function') {
-            const pos = (rend as unknown as { getCenter: () => unknown }).getCenter();
-            recenterAllViews(scene, pos);
+    const scene = safeRead(() => mol.getScene() as Scene | null) ?? null;
+    const rendId = safeRead(() => (rend as unknown as { uid: number }).uid);
+    if (!scene || rendId === undefined) return;
+    // scene.view_uids: the C++ getViewTable() accessor is not wrapped to TS.
+    const uidStr = safeRead(() => scene.view_uids) ?? '';
+    for (const tok of uidStr.split(',')) {
+        const viewId = Number(tok.trim());
+        if (tok.trim() === '' || !Number.isFinite(viewId)) continue;
+        try {
+            focusOnNode(ctx, { sceneId: scene.uid, viewId, nodeId: rendId, nodeType: 'renderer', record: false });
+        } catch (e) {
+            log.warn(`fitting view ${viewId} to the new renderer failed:`, e);
         }
-    } catch (e) {
-        log.warn('recenter view failed:', e);
     }
 }
 
@@ -131,10 +120,10 @@ export function setupRenderer(
         // Selection is not applied either: RendGroup has no sel, and the
         // children's sel comes from the preset (the UI disables the
         // Selection field while a preset is picked).
-        recenterIfRequested(mol, rend, rendOpts);
         if (!NON_MOL_CLASSES.includes(mol.getClassName())) {
             molPostProc(ctx, mol, true, safeRead(() => (mol.getScene() as Scene | null)?.uid) ?? 0);
         }
+        fitViewsIfRequested(ctx, mol, rend, rendOpts);
         return rend;
     }
 
@@ -162,8 +151,6 @@ export function setupRenderer(
         rend.applyStyles(styleName);
     }
 
-    recenterIfRequested(mol, rend, rendOpts);
-
     log.info('renderer created: rend=', rend);
 
     const className = mol.getClassName();
@@ -186,5 +173,6 @@ export function setupRenderer(
             }
         }
     }
+    fitViewsIfRequested(ctx, mol, rend, rendOpts);
     return rend;
 }

@@ -115,6 +115,7 @@ helper)。
 | scene tree の delete / rename (`sceneTree/sceneOps.ts`) | `delete_node` / `rename_node`。scene の改名は `set_node_prop name` |
 | `focusOnNode` | `focus_node` |
 | `focusOnNodes` (scene tree の Focus) | `focus_nodes` (node が 1 つでも。中で `focusOnNode` を呼ぶときは記録しない) |
+| `setupRenderer` の center view (open ダイアログ、`centerView: true`) | 記録しない (`focusOnNode` を `record: false` で呼ぶ。renderer の作成の一部) |
 | `setNodeVisible` (`sceneTree/sceneTree.ts`) | `set_visible` |
 | `applyMolSelString` | `set_mol_selection` |
 | `selectAndFocusMol` (MolStruct pane の Center / Zoom) | 同じ step に `set_mol_selection`、続けて `focus_selection` (selection は null = いま設定したもの)。Selection pane の Center (`focusMolSelection`) は視点だけなので記録しない |

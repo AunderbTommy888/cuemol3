@@ -39,14 +39,17 @@ import type { ChxCommand } from '../cli/command'
 import { ELEMENT_COLORS } from '../colorTables'
 import { splitColorArg } from '../colors'
 import { chainColor, modelColor, paletteColors, plddtEntries, RAINBOW, rainbowRanges, readPalette, VALUE_STEPS, valueEntries, valueRange } from '../colorSchemes'
-import { atomRenderers, cartoonRenderers, emitContext, ensureOwned, ensurePaint, forEachAtom, intersect, paintCount, runOp, targetsOf } from '../display'
-import type { Target } from '../display'
+import { ATOM_STYLES, atomRenderers, cartoonRenderers, emitContext, ensureOwned, ensurePaint, forEachAtom, intersect, isPaintColoring, ownedOn, paintCount, prependPaint, readPaint, replacePaint, runOp, targetsOf } from '../display'
+import type { PaintRow, Target } from '../display'
 import type { NumberedObject } from '../models'
 import { surfacesOn } from '../surface'
-import { warnIgnored } from './warn'
+import { unsupported, warnIgnored } from './warn'
 
 /** The colourings by name the console does. */
 const SPECIAL = ['byhetero', 'byelement', 'bychain', 'bymodel']
+
+/** Surfaces coloured from their atoms (`colorFromAtoms`); a word of the colour argument as the others. */
+const FROM_ATOMS = 'fromatoms'
 
 /** Those that colour atoms only, leaving the cartoon as it is. */
 const ATOMS_ONLY = ['byhetero', 'byelement']
@@ -60,7 +63,6 @@ const REFUSED: Readonly<Record<string, string>> = {
   byidentity: 'it needs ChimeraX\'s seeded random colour per sequence',
   bynucleotide: 'not supported yet',
   byatom: 'use byelement',
-  fromatoms: 'not supported yet',
   fromcartoons: 'not supported yet',
   fromribbons: 'not supported yet',
   random: 'a colour per atom makes the paint table as long as the molecule',
@@ -167,7 +169,7 @@ const color: ChxCommand = chxCommand({
   words: ['color'],
   args: [
     { name: 'objects', type: SpecArg, role: 'optional' },
-    { name: 'color', type: Or(ColorArg, EnumOf([...SPECIAL, ...Object.keys(REFUSED)])), role: 'optional' },
+    { name: 'color', type: Or(ColorArg, EnumOf([...SPECIAL, FROM_ATOMS, ...Object.keys(REFUSED)])), role: 'optional' },
     { name: 'what', type: StringArg, role: 'optional', ignored: true },
     { name: 'target', type: StringArg, role: 'keyword' },
     { name: 'transparency', type: StringArg, role: 'keyword', ignored: true },
@@ -179,7 +181,8 @@ const color: ChxCommand = chxCommand({
     warnIgnored(cc, 'color', args, ['what', 'transparency', 'halfbond'])
     if (args.color === '') return { ok: false, error: 'Error: color: give a colour or one of byhetero, byelement, bychain, bymodel' }
     const refused = REFUSED[args.color]
-    if (refused) return { ok: false, error: `Error: color: ${args.color} is not supported (${refused})` }
+    if (refused) return unsupported(`Error: color: ${args.color} is not supported (${refused})`)
+    if (args.color === FROM_ATOMS) return colorFromAtoms(ctx, cc, args.objects, args.target)
     // CueMol's paint has no alpha; a colour that states one is drawn opaque.
     const { hex: colorValue, alpha } = SPECIAL.includes(args.color) ? { hex: args.color, alpha: null } : splitColorArg(args.color)
     if (alpha !== null && alpha < 1) cc.warn('color: transparency in a colour is not supported yet; drawn opaque')
@@ -195,6 +198,51 @@ const color: ChxCommand = chxCommand({
     return { ok: true }
   },
 })
+
+/**
+ * `color <spec> fromatoms`: the surface patches of the atoms named take the
+ * atoms' colours, copied once from the console's atom renderers (ChimeraX
+ * copies the colours once too; later changes to the atoms do not follow).
+ * On a whole molecule the surface's table is replaced; on part of one the
+ * copied entries, limited to the part, go first in the surface's table. A
+ * surface not coloured by paint (the default colouring) cannot keep the rest
+ * of its colours that way, so part of one is left as it is, with a warning;
+ * so is a molecule whose atoms the console has not painted.
+ */
+async function colorFromAtoms(ctx: WorkerContext, cc: CmdContext, spec: string, target: string): Promise<CmdOutcome> {
+  if (target !== '' && !target.includes('s')) cc.warn('color fromatoms: only surfaces are coloured from atoms; target is ignored')
+  const found = targetsOf(ctx, cc.sceneId, spec)
+  if (!found.ok) return found
+  for (const t of found.targets) {
+    const surfaces = surfacesOn(ctx, cc.sceneId, t.obj.uid)
+    if (surfaces.length === 0) continue
+    const owned = ownedOn(ctx, cc.sceneId, t.obj.uid)
+    let rows: PaintRow[] | null = null
+    for (const name of [ATOM_STYLES.sphere.name, ATOM_STYLES.stick.name, ATOM_STYLES.ball.name]) {
+      const id = owned.get(name)
+      rows = id === undefined ? null : await readPaint(ctx, cc, id)
+      if (rows) break
+    }
+    if (!rows) {
+      cc.warn(`color fromatoms: the atoms of #${t.obj.model} have no console colours to copy; its surfaces are left as they are`)
+      continue
+    }
+    for (const s of surfaces) {
+      if (t.sel === '*') {
+        const res = await replacePaint(ctx, cc, s.id, rows)
+        if (!res.ok) return res
+        continue
+      }
+      if (!isPaintColoring(ctx, cc.sceneId, s.id)) {
+        cc.warn(`color fromatoms: a surface of #${t.obj.model} is not painted; colour the whole model from atoms first (color #${t.obj.model} fromatoms)`)
+        continue
+      }
+      const res = await prependPaint(ctx, cc, s.id, rows.map((r) => ({ selStr: intersect(r.selStr, t.sel), colorValue: r.colorValue })))
+      if (!res.ok) return res
+    }
+  }
+  return { ok: true }
+}
 
 /** The atom values `color byattribute` colours by, and CueMol's selection keyword for each. */
 const VALUE_ATTRS: Readonly<Record<string, 'bfac' | 'occ'>> = {
@@ -237,7 +285,7 @@ function colorByAttr(words: string[], attr: string | null): ChxCommand {
       warnIgnored(cc, name, args, BYATTR_IGNORED)
       const attrName = attr ?? args.attrName
       const kw = VALUE_ATTRS[attrName]
-      if (!kw) return { ok: false, error: `Error: ${name}: attribute "${attrName}" is not supported (bfactor or occupancy)` }
+      if (!kw) return unsupported(`Error: ${name}: attribute "${attrName}" is not supported (bfactor or occupancy)`)
       const pal = readPalette(args.palette === '' ? 'blue-white-red' : args.palette)
       if (!pal.ok) return { ok: false, error: `Error: ${name}: ${pal.error}` }
       const range = readRange(args.range)
@@ -286,7 +334,7 @@ const rainbow: ChxCommand = chxCommand({
   summary: 'Colour residues along each chain (or chains, or models) through a palette, blue to red.',
   async run(ctx, args, cc): Promise<CmdOutcome> {
     warnIgnored(cc, 'rainbow', args, ['transparency'])
-    if (args.level === 'polymers') return { ok: false, error: 'Error: rainbow: polymers is not supported (the console does not compare sequences)' }
+    if (args.level === 'polymers') return unsupported('Error: rainbow: polymers is not supported (the console does not compare sequences)')
     const pal = args.palette === '' ? { ok: true as const, palette: RAINBOW } : readPalette(args.palette)
     if (!pal.ok) return { ok: false, error: `Error: rainbow: ${pal.error}` }
     const target = args.target === '' ? DEFAULT_TARGET : args.target

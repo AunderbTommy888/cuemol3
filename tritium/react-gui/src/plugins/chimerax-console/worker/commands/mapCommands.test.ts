@@ -6,7 +6,10 @@
  * instead of the map's own value, transparency written as opacity, a step
  * written where CueMol ignores it (a contour over a box is always drawn at
  * step 1), and an `unzone` that empties the boundary selection -- which
- * means every atom of the molecule -- instead of the molecule name.
+ * means every atom of the molecule -- instead of the molecule name; a
+ * keyword the console does not do that throws away the rest of the command
+ * (`color tan` after `encloseVolume`); and an EDS map left in CueMol's blue
+ * box instead of ChimeraX's grey mesh of the whole map at its top 1% level.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -49,10 +52,10 @@ vi.mock('@renderer/worker/server/services/props/read', () => ({
   }),
 }))
 vi.mock('@renderer/worker/server/services/helpers/sceneResolver', () => ({
-  getSceneOrNull: () => ({ getObjectByName: (name: string) => ({ uid: Number(name.slice(1)) }) }),
+  getSceneOrNull: () => ({ getObject: () => ({ getLevelAtTopFraction: (f: number) => (f === 0.01 ? 1.5 : NaN) }) }),
 }))
 
-import { MAP_COMMANDS } from './mapCommands'
+import { applyXrayMapDefaults, MAP_COMMANDS } from './mapCommands'
 
 const ctx = {} as WorkerContext
 const cc = { sceneId: 1, viewId: 2, print: vi.fn(), warn: vi.fn() } as unknown as CmdContext
@@ -86,6 +89,19 @@ describe('volume', () => {
     // Over the whole map it thins.
     expect((await run('volume', { volumes: '#2', step: '2', region: 'all' })).ok).toBe(true)
     expect(writes()).toEqual(['region_mode=full', 'lod=step2'])
+  })
+
+  it('skips a keyword it does not do with a warning and applies the rest of the command', async () => {
+    expect((await run('volume', { volumes: '#2', encloseVolume: '1e6', color: 'tan' })).ok).toBe(true)
+    expect(writes()).toEqual(['set_map_contour {"rendId":50,"level":null,"extent":null,"color":"tan","alpha":null}'])
+    expect(cc.warn).toHaveBeenCalledWith(expect.stringMatching(/^volume: encloseVolume is not supported .*; skipped$/))
+  })
+
+  it('draws an EDS map as ChimeraX does: grey, the whole map, the top 1% level', async () => {
+    expect((await applyXrayMapDefaults(ctx, cc, { uid: 20, model: 2, name: 'eds 1a0m' } as never)).ok).toBe(true)
+    expect(writes()).toEqual([
+      'region_mode=full', 'level=1.5', 'set_map_contour {"rendId":50,"level":null,"extent":null,"color":"#b2b2b2","alpha":null}',
+    ])
   })
 })
 

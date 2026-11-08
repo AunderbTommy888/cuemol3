@@ -16,6 +16,9 @@
 #include "xtal/DensityMap.hpp"
 #include "xtal/MapRenderer.hpp"
 #include "xtal/MapSurfRenderer.hpp"
+#include "molstr/MolCoord.hpp"
+#include <qsys/TTYView.hpp>
+#include <cstdio>
 
 using qlib::Vector4D;
 using xtal::DensityMap;
@@ -249,3 +252,64 @@ TEST_F(MapRegionTest, CryoEMStyleIsResetTarget)
     EXPECT_NEAR(m_pMSR->getSigLevel(), 1.1, 1e-9);
     EXPECT_FALSE(m_pMSR->isUseAbsLev());
 }
+
+/**
+ * A map is fitted to its data block, not its unit cell, and to the grid
+ * points that reach a level (the drawn contour's extent).
+ *
+ * An EMDB map often starts at -n/2: fitting the cell put the view half a
+ * cell away from the particle. And the whole block of a cryo-EM map is
+ * several times the particle, so the view fits what the contour draws.
+ */
+TEST_F(MapRegionTest, FitBoxesFollowTheDataBlockAndTheLevel)
+{
+    const int n = 4;
+    std::vector<float> data((size_t)n * n * n, 0.0f);
+    // One point above the rest, at grid index (1, 2, 3) (column fastest).
+    data[1 + n * (2 + n * 3)] = 10.0f;
+    DensityMap *pMap = MB_NEW DensityMap();
+    pMap->setMapFloatArray(data.data(), n, n, n, 0, 1, 2);
+    // Starts at -2 on every axis; a 4 A cell of 4 points: 1 A spacing.
+    pMap->setMapParams(-2, -2, -2, n, n, n);
+    pMap->setXtalParams(double(n), double(n), double(n), 90.0, 90.0, 90.0);
+    qsys::ObjectPtr pObj(pMap);
+
+    qsys::ViewPtr pView(MB_NEW qsys::TTYView());
+    // The box JSON's six numbers ({"min":[x,y,z],"max":[x,y,z]}), compared with
+    // a tolerance: the cell matrix leaves rounding (-0.9999999999999999, 6e-17).
+    auto expectBox = [](const qlib::LString &json, const double (&want)[6]) {
+        double got[6] = {0, 0, 0, 0, 0, 0};
+        ASSERT_EQ(std::sscanf(json.c_str(), "{\"min\":[%lf,%lf,%lf],\"max\":[%lf,%lf,%lf]}",
+                              &got[0], &got[1], &got[2], &got[3], &got[4], &got[5]), 6) << json.c_str();
+        for (int i = 0; i < 6; ++i)
+            EXPECT_NEAR(got[i], want[i], 1.0e-9) << json.c_str();
+    };
+    // The block: index 0..4 from start -2, not the cell (0..4 A).
+    expectBox(pMap->getFitBoxJSON(pView), {-2, -2, -2, 2, 2, 2});
+    // Only the point at (1, 2, 3) + start reaches 5.
+    expectBox(pMap->getLevelFitBoxJSON(pView, 5.0), {-1, 0, 1, -1, 0, 1});
+    EXPECT_TRUE(pMap->getLevelFitBoxJSON(pView, 100.0).isEmpty());
+}
+
+/**
+ * Looking an object up by name for a type passes over another object of
+ * the same name and a different type.
+ *
+ * A map fetched for an entry is named after it, as the molecule opened next
+ * is: the map boundary (bndry_molname) then found the map, took it for no
+ * molecule and dropped the boundary.
+ */
+TEST_F(MapRegionTest, TypedLookupPassesOverASameNamedObjectOfAnotherType)
+{
+    molstr::MolCoordPtr pMol(MB_NEW molstr::MolCoord());
+    pMol->setName("regmap");
+    m_pScene->addObject(pMol);
+
+    // The map came first (the smaller uid), so the untyped lookup gets it.
+    EXPECT_EQ(m_pScene->getObjectsByName("regmap").size(), 2u);
+    EXPECT_EQ(m_pScene->getObjectByName("regmap").get(), m_pObj.get());
+    EXPECT_EQ(m_pScene->getObjectByNameAs<molstr::MolCoord>("regmap").get(), pMol.get());
+    EXPECT_EQ(m_pScene->getObjectByNameAs<qsys::ScalarObject>("regmap").get(), static_cast<qsys::ScalarObject *>(m_pMap));
+    EXPECT_TRUE(m_pScene->getObjectByNameAs<molstr::MolCoord>("nothing").isnull());
+}
+

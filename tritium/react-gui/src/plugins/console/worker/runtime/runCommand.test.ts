@@ -46,6 +46,16 @@ const failing: PymCommand = {
   run: () => ({ ok: false, error: 'Error: boom' }),
 }
 
+/** Stands for what the dialect knows it does not do (a refused keyword): skipped, the rest runs. */
+const unsupportedCmd: PymCommand = {
+  name: 'unsup',
+  params: [],
+  mode: 'strict',
+  mutates: true,
+  summary: 'stub',
+  run: () => ({ ok: false, error: 'Error: unsup is not supported', unsupported: true }),
+}
+
 /** Waits on a download until the test lets it go, as `fetch` does. */
 let releaseDownload: () => void = () => undefined
 let downloadReqId = ''
@@ -102,7 +112,7 @@ const sceneCmd: PymCommand = {
     cc.requestScene({ op: 'new', name: '' }) ? { ok: true } : { ok: false, error: 'Error: not in a script' },
 }
 
-const STUBS = [mutating, readOnly, failing, downloading, outside, chdir, sceneCmd]
+const STUBS = [mutating, readOnly, failing, unsupportedCmd, downloading, outside, chdir, sceneCmd]
 
 vi.mock('@renderer/worker/server/services/helpers/streamFetchToReader', () => ({
   cancelStream: vi.fn(() => true),
@@ -136,6 +146,8 @@ vi.mock('../dialects', async () => {
     commands: () => STUBS,
     refuseScript: () => null,
     candidates: () => null,
+    // A command of the original program the dialect lacks (`legacy`): skipped.
+    unsupportedCommand: (text: string) => (text.startsWith('legacy') ? 'Error: legacy is not supported' : null),
   }) }
 })
 
@@ -193,6 +205,20 @@ describe('runCommand', () => {
     // The third command never ran: two echoes, not three.
     const echoes = res.ok ? res.entries.filter((e) => e.kind === 'echo') : []
     expect(echoes.map((e) => e.text)).toEqual(['PyM> mutate', 'PyM> boom'])
+    expect(scene.undo.committed).toHaveLength(1)
+  })
+
+  it('skips what the dialect does not do with a warning and runs the rest, in one transaction', async () => {
+    const { scene, ctx } = setup()
+    const res = await runCommand(ctx, { dialect: 'pymol', sceneId: 1, viewId: 7, runId: 'r1', text: 'mutate; unsup; legacy 1; mutate' })
+    expect(res.ok && res.aborted).toBe(false)
+    const entries = res.ok ? res.entries : []
+    expect(entries.filter((e) => e.kind === 'echo')).toHaveLength(4)
+    expect(entries.filter((e) => e.kind === 'warning').map((e) => e.text)).toEqual([
+      'Warning: unsup is not supported; skipped',
+      'Warning: legacy is not supported; skipped',
+    ])
+    expect(entries.some((e) => e.kind === 'error')).toBe(false)
     expect(scene.undo.committed).toHaveLength(1)
   })
 

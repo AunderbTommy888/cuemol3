@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 
+// A selection is its expression here, so a test can read what was fitted.
+vi.mock('@renderer/worker/server/services/helpers/makeSel', () => ({
+    makeSel: (_ctx: unknown, expr: string) => ({ expr }),
+}))
+
 import { services } from '@renderer/worker/server/services/sceneTree/sceneTree.service'
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 
@@ -58,6 +63,31 @@ describe('sceneOps service', () => {
             })
             expect(res.ok).toBe(true)
             expect(fitView).toHaveBeenCalledWith(mockView, false)
+        })
+
+        // ChimeraX fits to what is displayed: a hidden renderer's atoms do
+        // not count, and an unset selection (empty text) means every atom,
+        // not none -- joining it as "()" would be a broken expression.
+        it('fits a molecule to the atoms its shown renderers draw', () => {
+            const rends: Record<number, unknown> = {
+                1: { visible: true, sel: { toString: () => 'chain A' } },
+                2: { visible: false, sel: { toString: () => '' } },
+                3: { visible: true, sel: { toString: () => '' } },
+            }
+            const fitView2 = vi.fn()
+            const mol = {
+                fitView: vi.fn(), fitView2, rend_uids: '1,2',
+                getFitBoxJSON: () => '{"min":[0,0,0],"max":[1,1,1]}',
+            }
+            const { ctx, mockView, mockScene } = makeCtx({ getObject: vi.fn(() => mol) })
+            ;(mockScene as unknown as { getRenderer: (uid: number) => unknown }).getRenderer = (uid: number) => rends[uid] ?? null
+            services.focusOnNode(ctx, { sceneId: 1, viewId: 2, nodeId: 10, nodeType: 'object' })
+            expect(fitView2).toHaveBeenLastCalledWith(mockView, { expr: '(chain A)' })
+
+            mol.rend_uids = '1,2,3'
+            services.focusOnNode(ctx, { sceneId: 1, viewId: 2, nodeId: 10, nodeType: 'object' })
+            expect(fitView2).toHaveBeenLastCalledWith(mockView, { expr: '*' })
+            expect(mol.fitView).not.toHaveBeenCalled()
         })
 
         it('returns ok:false for object node when fitView is unavailable', () => {

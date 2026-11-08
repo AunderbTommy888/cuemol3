@@ -604,8 +604,8 @@ void MapRenderer::setupMolBndry()
   if (m_strBndryMol.isEmpty())
     return;
 
-  qsys::ObjectPtr pobj = ensureNotNull(getScene())->getObjectByName(m_strBndryMol);
-  MolCoordPtr pMol = MolCoordPtr(pobj, qlib::no_throw_tag());
+  // The molecule of that name: a map named after it is passed over.
+  MolCoordPtr pMol = ensureNotNull(getScene())->getObjectByNameAs<molstr::MolCoord>(m_strBndryMol);
 
   if (pMol.isnull()) {
     m_strBndryMol = LString();
@@ -648,8 +648,12 @@ void MapRenderer::setupMolBndry()
 
 qsys::ObjectPtr MapRenderer::getColorMapObj() const
 {
-  qsys::ObjectPtr pobj = ensureNotNull(getScene())->getObjectByName(getColorMapName());
-  return pobj;
+  // The map of that name: a molecule of the same name is passed over.
+  for (const qsys::ObjectPtr &pobj : ensureNotNull(getScene())->getObjectsByName(getColorMapName())) {
+    if (dynamic_cast<qsys::ScalarObject *>(pobj.get()) != NULL)
+      return pobj;
+  }
+  return qsys::ObjectPtr();
 }
 
 void MapRenderer::propChanged(qlib::LPropEvent &ev)

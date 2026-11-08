@@ -127,7 +127,7 @@ export function loadObject(ctx: WorkerContext, args: LoadObjectArgs): LoadObject
             // What the view does for a volume object (UXP's scalar-object
             // deck). Runs here rather than in setupRenderer because `auto`
             // reads the map kind, which only exists once the reader has run.
-            applyMapCenterPolicy(scene, obj, rend, args.options.renderer.mapCenterPolicy);
+            applyMapCenterPolicy(ctx, scene, obj, rend, args.options.renderer.mapCenterPolicy);
         }
         return ok({ objId: (obj as unknown as { uid: number }).uid });
     });

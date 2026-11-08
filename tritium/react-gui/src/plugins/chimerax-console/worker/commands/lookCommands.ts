@@ -28,7 +28,7 @@ import { hideSurfaces } from '../surface'
 import { runChxLines } from './aliasCommands'
 import { objectsOf } from './fileCommands'
 import { silhouettes } from './viewCommands'
-import { warnIgnored } from './warn'
+import { unsupported, warnIgnored } from './warn'
 
 // --- lighting ---
 
@@ -112,7 +112,7 @@ const camera = chxCommand({
   summary: 'Set the projection: mono (perspective) or ortho (orthographic).',
   async run(ctx, args, cc): Promise<CmdOutcome> {
     warnIgnored(cc, 'camera', args, ['eyeSeparation', 'pixelEyeSeparation', 'convergence', 'cubeMapSize'])
-    if (args.fieldOfView !== '') return { ok: false, error: 'Error: camera: fieldOfView is not supported (CueMol sets the view by its zoom)' }
+    if (args.fieldOfView !== '') return unsupported('Error: camera: fieldOfView is not supported (CueMol sets the view by its zoom)')
     if (args.type === '') {
       const res = await runOp(ctx, cc, 'set_projection', { perspective: null })
       if (!res.ok) return res
@@ -121,7 +121,7 @@ const camera = chxCommand({
       return { ok: true }
     }
     if (args.type !== 'mono' && args.type !== 'ortho') {
-      return { ok: false, error: `Error: camera: ${args.type} is not supported (mono and ortho only)` }
+      return unsupported(`Error: camera: ${args.type} is not supported (mono and ortho only)`)
     }
     const res = await runOp(ctx, cc, 'set_projection', { perspective: args.type === 'mono' })
     return res.ok ? { ok: true } : res
@@ -253,7 +253,7 @@ const PRESETS: Readonly<Record<string, Readonly<Record<string, PresetAction>>>> 
   },
   'Molecular Surfaces': {
     'ghostly white': { run: noSpheres, then: 'surface; color white target s; transparency 80 target s' },
-    'atomic coloring (transparent)': { refuse: 'it colours surfaces from the atoms (color fromatoms), which the console does not do' },
+    'atomic coloring (transparent)': { run: noSpheres, then: 'surface; color fromatoms target s; transparency 70 target s' },
     'chain ID coloring (opaque)': { run: noSpheres, then: 'surface; color bychain target s; transparency 0 target s' },
   },
   'Overall Look': {
@@ -307,7 +307,7 @@ const preset = chxCommand({
     const found = findPreset(args.text1, args.text2)
     if ('error' in found) return { ok: false, error: found.error }
     const action = PRESETS[found.category][found.name]
-    if ('refuse' in action) return { ok: false, error: `Error: preset ${found.name} is not supported (${action.refuse})` }
+    if ('refuse' in action) return unsupported(`Error: preset ${found.name} is not supported (${action.refuse})`)
     cc.print(`Using preset: ${found.category} / ${found.name}`)
     const done = await action.run(ctx, cc)
     if (!done.ok || !action.then) return done

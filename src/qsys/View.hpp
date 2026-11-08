@@ -206,12 +206,17 @@ namespace qsys {
     /// coordinates multiplied by Matrix4D::makeRotMat(getRotQuat()):
     /// centre the view on it, zoom to its width or height by the view's
     /// aspect, and set the slab to its depth. An axis thinner than
-    /// FIT_MIN_EXTENT is grown about its own centre first. An empty box
-    /// leaves the view alone. (impl: View.cpp)
+    /// FIT_MIN_EXTENT is grown about its own centre first, and the zoom is
+    /// never below FIT_MIN_ZOOM. An empty box leaves the view alone.
+    /// (impl: View.cpp)
     void fitToBox(const qlib::Vector4D &vmin, const qlib::Vector4D &vmax);
 
     /// The thinnest a fitted box may be along any axis, in angstroms.
     static const double FIT_MIN_EXTENT;
+
+    /// The smallest zoom (view height, in angstroms) a fit sets, so that a
+    /// lone atom or a tiny ligand is not blown up to fill the view.
+    static const double FIT_MIN_ZOOM;
 
     /// Flush a pending center change as a non-drag "center" property change.
     /// This is what ends an interactive center move for listeners that only

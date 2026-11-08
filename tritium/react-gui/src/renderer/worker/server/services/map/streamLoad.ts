@@ -6,9 +6,9 @@
 
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext';
 import type { ObjReader } from '@cuemol/core/src/wrappers/ObjReader';
-import type { DensityMap } from '@cuemol/core/src/wrappers/DensityMap';
 import { setupDensityMapRenderers, type DensityMapType } from './setupRenderers';
 import { isEmDensityMap } from './emDefaults';
+import { fitViewToMap } from './mapFit';
 import { undoTxnResult } from '../withUndoTxn';
 import { streamFetchToReader } from '@renderer/worker/server/services/helpers/streamFetchToReader';
 import { fail, failFrom, ok, type Result } from '@renderer/worker/shared/result';
@@ -182,9 +182,9 @@ export async function streamLoadDensityMap(
         const kind: DensityMapType = args.mapType === 'auto' ? (isEmDensityMap(obj) ? 'em' : '2fofc') : args.mapType;
         setupDensityMapRenderers(ctx, scene, obj, kind, args.contourLevel ?? null);
 
-        // Center view on the new map (UXP renderer.js L196-198).
-        // fitView is on DensityMap; obj is typed as Object so cast.
-        (obj as unknown as DensityMap).fitView(view, false);
+        // Fit the view to the new map as it is drawn (UXP renderer.js
+        // L196-198 centred it on the whole map): its contour's extent.
+        fitViewToMap(ctx, scene, obj, view);
 
         return ok({ objId: (obj as unknown as { uid: number }).uid });
     });

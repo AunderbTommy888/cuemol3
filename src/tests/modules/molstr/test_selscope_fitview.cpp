@@ -163,12 +163,13 @@ TEST(FitViewGuardTest, EmptySelectionLeavesTheViewAlone)
 }
 
 /**
- * A single atom is framed at the minimum extent, not at infinite
+ * A single atom is framed at the minimum zoom, not at infinite
  * magnification.
  *
  * The 20 percent margin is a fraction of the box, so it adds nothing to a
  * box with no size: the zoom came out zero and View::setZoom clamped it to
- * F_EPS4.
+ * F_EPS4. The minimum extent (4 A) alone still filled the view with one
+ * atom; the fit's zoom floor (View::FIT_MIN_ZOOM) keeps a few residues in view.
  */
 TEST(FitViewGuardTest, SingleAtomGetsAWorkableZoom)
 {
@@ -183,7 +184,7 @@ TEST(FitViewGuardTest, SingleAtomGetsAWorkableZoom)
 
     f.pMol->fitView(pView, true);
 
-    EXPECT_GE(pView->getZoom(), 1.0);
+    EXPECT_DOUBLE_EQ(pView->getZoom(), qsys::View::FIT_MIN_ZOOM);
     EXPECT_GE(pView->getSlabDepth(), 1.0);
     // Centred on the atom (added at x = resid).
     EXPECT_NEAR(pView->getViewCenter().x(), 3.0, 1.0e-6);

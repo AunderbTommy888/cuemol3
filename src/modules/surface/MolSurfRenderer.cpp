@@ -440,8 +440,7 @@ MolCoordPtr MolSurfRenderer::resolveMolIDImpl(const LString &name)
   if (pScene.isnull())
     return MolCoordPtr();
 
-  qsys::ObjectPtr pobj = pScene->getObjectByName(name);
-  MolCoordPtr pMol= MolCoordPtr(pobj, qlib::no_throw_tag());
+  MolCoordPtr pMol = pScene->getObjectByNameAs<MolCoord>(name);
   if (pMol.isnull()) {
     return pMol;
   }

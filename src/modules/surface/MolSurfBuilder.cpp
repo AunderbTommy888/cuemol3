@@ -350,7 +350,7 @@ void MolSurfObj::regenerateSES(double density, double probe_r, SelectionPtr pSel
   qsys::ScenePtr pScene = getScene();
   molstr::MolCoordPtr pMol;
   if (m_nOrigMolID==qlib::invalid_uid)
-    pMol = pScene->getObjectByName(m_sOrigMol); 
+    pMol = pScene->getObjectByNameAs<molstr::MolCoord>(m_sOrigMol);
   else
     pMol = pScene->getObject(m_nOrigMolID); 
 

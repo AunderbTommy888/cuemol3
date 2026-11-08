@@ -163,14 +163,14 @@ export function emitContext(ctx: WorkerContext, sceneId: number): EmitContext {
 }
 
 /** A specification read into its tree, with the scene's named selections as selectors. */
-export function readSpec(ctx: WorkerContext, sceneId: number, spec: string): { ok: true; node: SpecNode } | { ok: false; error: string } {
+export function readSpec(ctx: WorkerContext, sceneId: number, spec: string): { ok: true; node: SpecNode } | { ok: false; error: string; unsupported?: true } {
   try {
     const names = selectionNames(ctx, sceneId)
     const read = withSceneSelectors(names, () => parseSpec(spec, isSelector))
     if (!read) return { ok: false, error: `Error: "${spec}" is not an atom specification` }
     return { ok: true, node: read.node }
   } catch (e) {
-    if (e instanceof SpecError) return { ok: false, error: specError(spec, e) }
+    if (e instanceof SpecError) return { ok: false, error: specError(spec, e), ...(e.unsupported ? { unsupported: true as const } : {}) }
     throw e
   }
 }
@@ -180,7 +180,7 @@ export function readSpec(ctx: WorkerContext, sceneId: number, spec: string): { o
  *
  * @param text - the specification's text, for the caret of an error
  */
-export function targetsOfNode(ctx: WorkerContext, sceneId: number, node: SpecNode, text: string): { ok: true; targets: Target[] } | { ok: false; error: string } {
+export function targetsOfNode(ctx: WorkerContext, sceneId: number, node: SpecNode, text: string): { ok: true; targets: Target[] } | { ok: false; error: string; unsupported?: true } {
   const mols = numberedObjects(ctx, sceneId).filter(isMolecule)
   try {
     const ec = emitContext(ctx, sceneId)
@@ -191,7 +191,7 @@ export function targetsOfNode(ctx: WorkerContext, sceneId: number, node: SpecNod
     }
     return { ok: true, targets }
   } catch (e) {
-    if (e instanceof SpecError) return { ok: false, error: specError(text, e) }
+    if (e instanceof SpecError) return { ok: false, error: specError(text, e), ...(e.unsupported ? { unsupported: true as const } : {}) }
     throw e
   }
 }
@@ -200,7 +200,7 @@ export function targetsOfNode(ctx: WorkerContext, sceneId: number, node: SpecNod
  * The molecules a specification reaches, each with what it means there.
  * An empty specification is every molecule, whole.
  */
-export function targetsOf(ctx: WorkerContext, sceneId: number, spec: string): { ok: true; targets: Target[] } | { ok: false; error: string } {
+export function targetsOf(ctx: WorkerContext, sceneId: number, spec: string): { ok: true; targets: Target[] } | { ok: false; error: string; unsupported?: true } {
   if (spec.trim() === '') {
     return { ok: true, targets: numberedObjects(ctx, sceneId).filter(isMolecule).map((obj) => ({ obj, sel: '*' })) }
   }
@@ -230,7 +230,7 @@ export function readSel(ctx: WorkerContext, sceneId: number, rendId: number): st
  * The console's renderers on `obj`, made now if missing (drawing nothing),
  * with the styles of their kind.
  */
-export async function ensureOwned(ctx: WorkerContext, cc: CmdContext, obj: NumberedObject): Promise<{ ok: true; ids: Map<string, number> } | { ok: false; error: string }> {
+export async function ensureOwned(ctx: WorkerContext, cc: CmdContext, obj: NumberedObject): Promise<{ ok: true; ids: Map<string, number> } | { ok: false; error: string; unsupported?: true }> {
   const ids = ownedOn(ctx, cc.sceneId, obj.uid)
   for (const kind of ALL_KINDS) {
     if (ids.has(kind.name)) continue
@@ -317,4 +317,64 @@ export async function ensurePaint(ctx: WorkerContext, cc: CmdContext, rendId: nu
   const rend = getSceneOrNull(ctx, cc.sceneId)?.getRenderer(rendId)
   if (rend && getColoringClassName(rend as Parameters<typeof getColoringClassName>[0]) === 'PaintColoring') return { ok: true }
   return runOp(ctx, cc, 'set_renderer_coloring', { nodeId: rendId, nodeType: 'renderer', mode: 'paint-type-paint', styleName: null })
+}
+
+/** One paint entry as `list_paint` reports it (and `add_paint_at` takes it back). */
+export interface PaintRow {
+  selStr: string
+  colorValue: string
+}
+
+/** Whether a renderer is coloured by paint (a PaintColoring), whatever its table holds. */
+export function isPaintColoring(ctx: WorkerContext, sceneId: number, rendId: number): boolean {
+  const rend = getSceneOrNull(ctx, sceneId)?.getRenderer(rendId)
+  return !!rend && getColoringClassName(rend as Parameters<typeof getColoringClassName>[0]) === 'PaintColoring'
+}
+
+/**
+ * A renderer's paint entries, in order (the first that matches an atom
+ * colours it); null when the renderer is not painted or its table is empty,
+ * so it cannot be copied from. Checked before `list_paint`, which refuses a
+ * renderer that is not a PaintColoring.
+ */
+export async function readPaint(ctx: WorkerContext, cc: CmdContext, rendId: number): Promise<PaintRow[] | null> {
+  if (!isPaintColoring(ctx, cc.sceneId, rendId) || paintCount(ctx, cc.sceneId, rendId) === 0) return null
+  const res = await runOp(ctx, cc, 'list_paint', { nodeId: rendId, nodeType: 'renderer' })
+  if (!res.ok) return null
+  const rows = (res.data as { entries?: PaintRow[] } | undefined)?.entries ?? []
+  return rows.length > 0 ? rows : null
+}
+
+/**
+ * Give a renderer exactly `rows` as its paint: switched to paint if it is
+ * not (which seeds the app's default table), emptied, then the rows in order.
+ */
+export async function replacePaint(ctx: WorkerContext, cc: CmdContext, rendId: number, rows: readonly PaintRow[]): Promise<OpRun> {
+  const painted = await ensurePaint(ctx, cc, rendId)
+  if (!painted.ok) return painted
+  if (paintCount(ctx, cc.sceneId, rendId) > 0) {
+    const cleared = await runOp(ctx, cc, 'clear_paint', { nodeId: rendId, nodeType: 'renderer' })
+    if (!cleared.ok) return cleared
+  }
+  for (const r of rows) {
+    const res = await runOp(ctx, cc, 'add_paint_at', { nodeId: rendId, nodeType: 'renderer', selection: r.selStr, color: r.colorValue, at: null })
+    if (!res.ok) return res
+  }
+  return { ok: true }
+}
+
+/**
+ * Put `rows` first in a painted renderer's table, keeping their order, so
+ * they win over the entries already there. The renderer must already be a
+ * PaintColoring (switching would seed the default table over the colours
+ * the rest of it keeps).
+ */
+export async function prependPaint(ctx: WorkerContext, cc: CmdContext, rendId: number, rows: readonly PaintRow[]): Promise<OpRun> {
+  // An empty table takes them appended (there is no entry to insert before).
+  const empty = paintCount(ctx, cc.sceneId, rendId) === 0
+  for (const [i, r] of rows.entries()) {
+    const res = await runOp(ctx, cc, 'add_paint_at', { nodeId: rendId, nodeType: 'renderer', selection: r.selStr, color: r.colorValue, at: empty ? null : i + 1 })
+    if (!res.ok) return res
+  }
+  return { ok: true }
 }

@@ -672,22 +672,84 @@ using qlib::Matrix4D;
 using qlib::Matrix3D;
 using qlib::Box3D;
 
+namespace {
+  /// The box of the map's data block, in scene coordinates (orth) and in the
+  /// view's rotated frame (rot: makeRotMat(q).mulvec(p), the convention of
+  /// MolCoord::fitView). The data block, not the unit cell: an MRC/CCP4 map's
+  /// start indices may put the data anywhere in or beyond the cell (an EMDB
+  /// map often starts at -n/2, so the particle sits around the origin, half a
+  /// cell away from the cell's centre).
+  void dataBoxes(const DensityMap &map, const Matrix4D &rmat, Box3D &orth, Box3D &rot)
+  {
+    const double nc = map.getColNo(), nr = map.getRowNo(), ns = map.getSecNo();
+    for (int i=0; i<8; ++i) {
+      // convToOrth adds the start indices, the grid spacing, the origin
+      // and the object's xform.
+      Vector4D p = map.convToOrth(Vector4D((i&1) ? nc : 0, (i&2) ? nr : 0, (i&4) ? ns : 0));
+      p.w() = 1.0;
+      orth.merge(p);
+      rot.merge(rmat.mulvec(p));
+    }
+  }
+}
+
 LString DensityMap::getFitBoxJSON(const qsys::ViewPtr &pView) const
 {
-  // Fractional unit cell -> scene coordinates, as fitView maps it.
-  Matrix4D xform = getXformMatrix();
-  if (!m_vOrigin.isZero3D())
-    xform.matprod( Matrix4D::makeTransMat(m_vOrigin) );
-  xform.matprod( Matrix4D(getXtalInfo().getOrthMat()) );
-
   const Matrix4D rmat = Matrix4D::makeRotMat(pView->getRotQuat());
+  Box3D orth, bbox;
+  dataBoxes(*this, rmat, orth, bbox);
 
-  qlib::Box3D bbox;
-  for (int i=0; i<8; ++i) {
-    const Vector4D corner((i&1) ? 1 : 0, (i&2) ? 1 : 0, (i&4) ? 1 : 0, 1);
-    bbox.merge( rmat.mulvec(xform.mulvec(corner)) );
+  return LString::format(
+      "{\"min\":[%.17g,%.17g,%.17g],\"max\":[%.17g,%.17g,%.17g]}",
+      bbox.vstart.x(), bbox.vstart.y(), bbox.vstart.z(),
+      bbox.vend.x(), bbox.vend.y(), bbox.vend.z());
+}
+
+LString DensityMap::getLevelFitBoxJSON(const qsys::ViewPtr &pView, double level) const
+{
+  if (m_map.empty())
+    return LString();
+
+  // The grid holds 8-bit values (atFloat(b) = b*step + base): compare bytes.
+  int bmin = 0;
+  if (m_dLevelStep > 0.0) {
+    const double b = std::ceil((level - m_dLevelBase) / m_dLevelStep - 1e-9);
+    if (b > 255.0)
+      return LString();
+    bmin = b < 0.0 ? 0 : int(b);
+  }
+  else if (level > m_dLevelBase) {
+    return LString();
   }
 
+  const int nc = m_map.cols(), nr = m_map.rows(), ns = m_map.secs();
+  int lo[3] = {nc, nr, ns}, hi[3] = {-1, -1, -1};
+  for (int k=0; k<ns; ++k) {
+    const quint8 *p = m_map.slice(k);
+    for (int j=0; j<nr; ++j) {
+      const quint8 *row = p + size_t(j) * size_t(nc);
+      for (int i=0; i<nc; ++i) {
+        if (row[i] < bmin)
+          continue;
+        if (i < lo[0]) lo[0] = i;
+        if (i > hi[0]) hi[0] = i;
+        if (j < lo[1]) lo[1] = j;
+        if (j > hi[1]) hi[1] = j;
+        if (k < lo[2]) lo[2] = k;
+        if (k > hi[2]) hi[2] = k;
+      }
+    }
+  }
+  if (hi[0] < 0)
+    return LString();
+
+  const Matrix4D rmat = Matrix4D::makeRotMat(pView->getRotQuat());
+  Box3D bbox;
+  for (int c=0; c<8; ++c) {
+    Vector4D p = convToOrth(Vector4D((c&1) ? hi[0] : lo[0], (c&2) ? hi[1] : lo[1], (c&4) ? hi[2] : lo[2]));
+    p.w() = 1.0;
+    bbox.merge(rmat.mulvec(p));
+  }
   return LString::format(
       "{\"min\":[%.17g,%.17g,%.17g],\"max\":[%.17g,%.17g,%.17g]}",
       bbox.vstart.x(), bbox.vstart.y(), bbox.vstart.z(),
@@ -696,52 +758,13 @@ LString DensityMap::getFitBoxJSON(const qsys::ViewPtr &pView) const
 
 void DensityMap::fitView(const qsys::ViewPtr &pView, bool dummy) const
 {
-  qlib::LQuat rotq = pView->getRotQuat();
-  Matrix4D ecmat = Matrix4D::makeRotMat(rotq);
+  const Matrix4D ecmat = Matrix4D::makeRotMat(pView->getRotQuat());
 
   Box3D bbox, ecbbox;
+  dataBoxes(*this, ecmat, bbox, ecbbox);
 
-  {
-    Vector4D vpos;
-
-    // get object xform
-    Matrix4D xform = getXformMatrix();
-
-    // map origin (MRC ORIGIN; zero for crystallographic maps)
-    if (!m_vOrigin.isZero3D())
-      xform.matprod( Matrix4D::makeTransMat(m_vOrigin) );
-
-    // get frac-->orth matrix
-    Matrix3D orthmat = getXtalInfo().getOrthMat();
-    xform.matprod( Matrix4D(orthmat) );
-
-    bbox.merge( xform.mulvec(Vector4D(0,0,0,1)) );
-    bbox.merge( xform.mulvec(Vector4D(1,0,0,1)) );
-    bbox.merge( xform.mulvec(Vector4D(0,1,0,1)) );
-    bbox.merge( xform.mulvec(Vector4D(0,0,1,1)) );
-    bbox.merge( xform.mulvec(Vector4D(1,1,0,1)) );
-    bbox.merge( xform.mulvec(Vector4D(0,1,1,1)) );
-    bbox.merge( xform.mulvec(Vector4D(1,0,1,1)) );
-    bbox.merge( xform.mulvec(Vector4D(1,1,1,1)) );
-
-    // xform = xform * ecmat
-    xform.matprod( ecmat );
-
-    ecbbox.merge( xform.mulvec(Vector4D(0,0,0,1)) );
-    ecbbox.merge( xform.mulvec(Vector4D(1,0,0,1)) );
-    ecbbox.merge( xform.mulvec(Vector4D(0,1,0,1)) );
-    ecbbox.merge( xform.mulvec(Vector4D(0,0,1,1)) );
-    ecbbox.merge( xform.mulvec(Vector4D(1,1,0,1)) );
-    ecbbox.merge( xform.mulvec(Vector4D(0,1,1,1)) );
-    ecbbox.merge( xform.mulvec(Vector4D(1,0,1,1)) );
-    ecbbox.merge( xform.mulvec(Vector4D(1,1,1,1)) );
-  }
-  
   MB_DPRINTLN("map bbox start: (%f,%f,%f)", bbox.vstart.x(), bbox.vstart.y(), bbox.vstart.z());
   MB_DPRINTLN("map bbox   end: (%f,%f,%f)", bbox.vend.x(), bbox.vend.y(), bbox.vend.z());
-
-  MB_DPRINTLN("map ec bbox start: (%f,%f,%f)", ecbbox.vstart.x(), ecbbox.vstart.y(), ecbbox.vstart.z());
-  MB_DPRINTLN("map ec bbox   end: (%f,%f,%f)", ecbbox.vend.x(), ecbbox.vend.y(), ecbbox.vend.z());
 
   /*{
     // inflate box by 20%
@@ -787,7 +810,7 @@ void DensityMap::fitView(const qsys::ViewPtr &pView, bool dummy) const
   }
 
   // MB_DPRINTLN("Zoom: %f", zoom);
-  pView->setZoom(zoom);
+  pView->setZoom(qlib::max(qsys::View::FIT_MIN_ZOOM, zoom));
 
   double sd = qlib::abs(ecboxen.z()-ecboxst.z());
   if (pView->getSlabDepth()>sd)

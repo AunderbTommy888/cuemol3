@@ -11,7 +11,7 @@ import type { ChxCommand } from '../cli/command'
 import { resolveWords, usageOf } from '../cli/syntax'
 import { framingOf } from '../camera'
 import { readSpec, runOp, targetsOf } from '../display'
-import { warnIgnored } from './warn'
+import { unsupported, warnIgnored } from './warn'
 import { recallView } from './viewCommands'
 
 /** A view name (cli.py `NamedViewArg`): a word that is not a specification. */
@@ -35,7 +35,7 @@ const view = chxCommand({
     // cofr false keeps the centre of rotation while fitting; CueMol always
     // turns about the view's centre, which the fit moves.
     if (args.cofr === 'false') {
-      return { ok: false, error: 'Error: view: cofr false is not supported (CueMol turns about the centre of the view, which fitting moves)' }
+      return unsupported('Error: view: cofr false is not supported (CueMol turns about the centre of the view, which fitting moves)')
     }
     const spec = args.objects.trim() === '' ? null : readSpec(ctx, cc.sceneId, args.objects)
     if (spec && !spec.ok) {

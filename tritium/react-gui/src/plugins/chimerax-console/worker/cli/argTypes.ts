@@ -29,6 +29,8 @@ export class ArgError extends Error {
   constructor(
     message: string,
     readonly pos: number,
+    /** What ChimeraX accepts but the console does not support (skipped, not an error). */
+    readonly unsupported = false,
   ) {
     super(message)
   }
@@ -222,7 +224,7 @@ export const SpecArg: ArgType = {
     try {
       read = parseSpec(text, isSelector)
     } catch (e) {
-      if (e instanceof SpecError) throw new ArgError(e.message, e.pos)
+      if (e instanceof SpecError) throw new ArgError(e.message, e.pos, e.unsupported)
       throw e
     }
     if (!read) return null

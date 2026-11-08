@@ -49,15 +49,19 @@ qsys::ScalarObject *ScalarColorSupport::resolveScalarObj(const qsys::ScenePtr &p
   const LString name = getScalarTargetName(mode);
   if (name.isEmpty())
     return NULL;
-  qsys::ObjectPtr pobj = pScene->getObjectByName(name);
-  return dynamic_cast<qsys::ScalarObject *>(pobj.get());
+  return pScene->getObjectByNameAs<qsys::ScalarObject>(name).get();
 }
 
 qsys::ObjectPtr ScalarColorSupport::getColorMapObjImpl(const qsys::ScenePtr &pScene) const
 {
   if (pScene.isnull() || m_sColorMap.isEmpty())
     return qsys::ObjectPtr();
-  return pScene->getObjectByName(m_sColorMap);
+  // The map of that name: a molecule of the same name is passed over.
+  for (const qsys::ObjectPtr &pobj : pScene->getObjectsByName(m_sColorMap)) {
+    if (dynamic_cast<qsys::ScalarObject *>(pobj.get()) != NULL)
+      return pobj;
+  }
+  return qsys::ObjectPtr();
 }
 
 ColorPtr ScalarColorSupport::rampColor(double par) const

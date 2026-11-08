@@ -9,6 +9,8 @@
  * renderers, styled as ChimeraX's automatic styling would style it
  * (`autoStyle.ts`); an AlphaFold model is then coloured by pLDDT, as
  * ChimeraX colours it. Anything else (a map) opens as File > Open would.
+ * The first models of an empty scene set the camera as ChimeraX's first
+ * models do (`initialView`); later opens leave it where it is.
  *
  * `save` writes an image (`.png`), the scene (`.qsc`, CueMol's session) or
  * one molecule (`.pdb`). A ChimeraX session (`.cxs`) cannot be written.
@@ -34,7 +36,9 @@ import { applyAutoStyle } from '../autoStyle'
 import { openTarget } from '../openTarget'
 import { assemblyFetch } from '@renderer/worker/shared/dbSources'
 import { colorByPlddt } from './colorCommands'
-import { warnIgnored } from './warn'
+import { applyXrayMapDefaults } from './mapCommands'
+import { inheritSilhouettes } from './viewCommands'
+import { unsupported, warnIgnored } from './warn'
 
 /** The ribbon renderer a molecule is opened with, by the load itself. */
 const OPEN_CARTOON = { rendererType: 'ribbon', rendererName: CARTOONS[0].name, selection: CARTOONS[0].scope ?? 'protein' }
@@ -56,7 +60,31 @@ async function adopt(ctx: WorkerContext, cc: CmdContext, before: Set<number>, pl
       if (!colored.ok) return colored
     }
   }
-  return { ok: true }
+  if (added.length === 0) return { ok: true }
+  // The view's silhouettes reach the new models' renderers too.
+  const addedUids = new Set(added.map((o) => o.uid))
+  const outlined = await inheritSilhouettes(ctx, cc, (r) => addedUids.has(r.objUid))
+  if (!outlined.ok) return outlined
+  if (before.size > 0) return { ok: true }
+  return initialView(ctx, cc, added)
+}
+
+/**
+ * The first models of an empty scene are viewed as ChimeraX views them
+ * (`models.py` `add` -> `View.initial_camera_view`): the camera turned back
+ * to look down -z, then fitted to them as the scene pane's Focus button fits
+ * (`focus_nodes`: a molecule's displayed atoms, a map's data block). Later
+ * opens leave the camera where it is, so the console opens with
+ * `centerView: false`.
+ */
+async function initialView(ctx: WorkerContext, cc: CmdContext, objs: readonly NumberedObject[]): Promise<CmdOutcome> {
+  // Every argument of set_view is given: one left out reaches the op as undefined, not null.
+  const turned = await runOp(ctx, cc, 'set_view', {
+    zoom: null, slab: null, distance: null, center: null, rotation: [1, 0, 0, 0], fitSlab: null, objId: null,
+  })
+  if (!turned.ok) return turned
+  const fitted = await runOp(ctx, cc, 'focus_nodes', { nodeIds: objs.map((o) => o.uid) })
+  return fitted.ok ? { ok: true } : fitted
 }
 
 /** Open one name (`openTarget.ts` says what it is). */
@@ -67,10 +95,10 @@ async function openOne(ctx: WorkerContext, cc: CmdContext, name: string, args: R
   if ((args.maxAssemblies ?? '') !== '' && target.kind !== 'assemblies') cc.warn('open: maxAssemblies is used with rcsb_bio and pdbe_bio only; ignored')
   switch (target.kind) {
     case 'error':
-      return { ok: false, error: target.error }
+      return target.unsupported ? unsupported(target.error) : { ok: false, error: target.error }
     case 'entry': {
       const res = await runOp(ctx, cc, 'fetch_entry', {
-        source: target.source, id: target.id, format: target.format, ...OPEN_CARTOON, name: objectName, preset: null, centerView: true,
+        source: target.source, id: target.id, format: target.format, ...OPEN_CARTOON, name: objectName, preset: null, centerView: false,
       })
       if (!res.ok) return res
       return adopt(ctx, cc, before, target.source === 'alphafold')
@@ -79,15 +107,21 @@ async function openOne(ctx: WorkerContext, cc: CmdContext, name: string, args: R
       if (args.format !== '') cc.warn('open: format is not used for a URL (its extension says it)')
       const res = await runOp(ctx, cc, 'fetch_url', {
         url: target.spec.url, reader: target.spec.readerName, name: objectName ?? target.spec.name,
-        gzip: target.spec.gzip ? true : null, ...OPEN_CARTOON, preset: null, centerView: true,
+        gzip: target.spec.gzip ? true : null, ...OPEN_CARTOON, preset: null, centerView: false,
       })
       if (!res.ok) return res
       return adopt(ctx, cc, before)
     }
     case 'mapUrl': {
       if (args.format !== '') cc.warn('open: format is not used for a URL (its extension says it)')
-      const res = await runOp(ctx, cc, 'fetch_map_url', { url: target.spec.url, name: objectName, gzip: null })
+      const res = await runOp(ctx, cc, 'fetch_map_url', { url: target.spec.url, name: objectName ?? target.name ?? null, gzip: null })
       if (!res.ok) return res
+      if (target.xrayDefaults) {
+        for (const obj of numberedObjects(ctx, cc.sceneId).filter((o) => !before.has(o.uid))) {
+          const styled = await applyXrayMapDefaults(ctx, cc, obj)
+          if (!styled.ok) return styled
+        }
+      }
       return adopt(ctx, cc, before)
     }
     case 'assemblies':
@@ -111,7 +145,7 @@ async function openOne(ctx: WorkerContext, cc: CmdContext, name: string, args: R
   const res = await runOp(ctx, cc, 'load_file', {
     path,
     ...(molecule ? OPEN_CARTOON : { rendererType: null, selection: null, rendererName: null }),
-    name: objectName, preset: null, centerView: true, mapCenterPolicy: null,
+    name: objectName, preset: null, centerView: false, mapCenterPolicy: null,
   })
   if (!res.ok) return res
   return adopt(ctx, cc, before)
@@ -132,7 +166,7 @@ async function openAssemblies(
     if (!spec) return { ok: false, error: `Error: open: "${id}" is not a PDB id` }
     const res = await runOp(ctx, cc, 'fetch_url', {
       url: spec.url, reader: spec.readerName, name: args.name !== '' && n === 1 ? args.name : spec.name,
-      gzip: spec.gzip ? true : null, ...OPEN_CARTOON, preset: null, centerView: n === 1,
+      gzip: spec.gzip ? true : null, ...OPEN_CARTOON, preset: null, centerView: false,
     })
     if (!res.ok) {
       if (n === 1) return { ok: false, error: `Error: open: no biological assembly of ${id} could be fetched (${res.error.replace(/^Error: /, '')})` }
@@ -192,7 +226,7 @@ const alphafoldFetch = chxCommand({
 })
 
 /** The objects a model specification names (every object for none). */
-export function objectsOf(ctx: WorkerContext, sceneId: number, spec: string): { ok: true; objs: NumberedObject[] } | { ok: false; error: string } {
+export function objectsOf(ctx: WorkerContext, sceneId: number, spec: string): { ok: true; objs: NumberedObject[] } | { ok: false; error: string; unsupported?: true } {
   const all = numberedObjects(ctx, sceneId)
   if (spec.trim() === '') return { ok: true, objs: all }
   try {
@@ -201,7 +235,7 @@ export function objectsOf(ctx: WorkerContext, sceneId: number, spec: string): { 
     if (!read) return { ok: false, error: `Error: "${spec}" is not a model specification` }
     return { ok: true, objs: all.filter((o) => emitFor(read.node, o.model, ec) !== NONE) }
   } catch (e) {
-    if (e instanceof SpecError) return { ok: false, error: `${spec}\n${' '.repeat(e.pos)}^ ${e.message}` }
+    if (e instanceof SpecError) return { ok: false, error: `${spec}\n${' '.repeat(e.pos)}^ ${e.message}`, ...(e.unsupported ? { unsupported: true as const } : {}) }
     throw e
   }
 }
@@ -283,7 +317,7 @@ const save = chxCommand({
   async run(ctx, args, cc) {
     warnIgnored(cc, 'save', args, SAVE_IGNORED)
     const refused = SAVE_REFUSED.find((k) => args[k] !== '')
-    if (refused) return { ok: false, error: `Error: save: ${refused} is not supported` }
+    if (refused) return unsupported(`Error: save: ${refused} is not supported`)
     const path = resolvePath(cc.cwd, args.filename)
     const ext = (args.format !== '' ? args.format : path.match(/\.([^./\\]+)$/)?.[1] ?? '').toLowerCase()
     if (ext === 'cxs' || ext === 'session') {
@@ -304,7 +338,7 @@ const save = chxCommand({
       if (mols.length !== 1) return { ok: false, error: `Error: save: a .pdb file holds one model here; name it with models (${mols.length} given)` }
       return runOp(ctx, cc, 'save_object', { objId: mols[0].uid, fileName: path, selection: null, format: null, link: false })
     }
-    return { ok: false, error: `Error: save: "${ext}" files are not supported (png, qsc, pdb)` }
+    return unsupported(`Error: save: "${ext}" files are not supported (png, qsc, pdb)`)
   },
 })
 

@@ -32,6 +32,22 @@ ChimeraX のソース (`~/ext/ChimeraX/src/bundles/`) のうち、写したも�
   (`helpers/sceneResolver`)、object の一覧 (`scene/listSceneObjects`)。
 - 意味が一致するものだけ移す。近いもので違う結果を出すより、理由を言って断る。読めるが未対応の
   keyword は受け付けて `<cmd>: <keyword> is not supported yet; ignored` と warn し、スクリプトを先へ進める。
+- **断ったものは飛ばして最後まで続ける。想定外の誤りだけで止める**。ChimeraX の script を流したときに、未対応の
+  1 か所でそれ以降が止まると見た目の再現がそこで途切れるため。
+  - 想定内の未対応 (断るキーワード・値・コマンド、ChX の atom spec で断る書き方、ChimeraX にあって ChX に無い
+    コマンド) は、結果に `unsupported` の印を付けて返す (`commands/warn.ts` の `unsupported()`、spec は
+    `SpecError` / `ArgError` の `unsupported`)。console 共通の実行部 (`runtime/runCommand.ts` の `runLines`) が
+    `Warning: <理由>; skipped` と出して次のコマンドへ進む。
+  - ChimeraX にあって ChX に無いコマンドは、ChimeraX 1.12 のソースの bundle の metadata から生成した名前の一覧
+    (`chimeraxCommands.ts`。先頭の語 203 と、複数語の名前 233) で判定する (dialect の `unsupportedCommand`)。完全一致か、
+    ChimeraX と同じく曖昧でない前方一致 (`fit` → `fitmap`)。ChX にある語で始まる行は、ChimeraX にその 2 語の
+    コマンド (`alphafold match`) があるときだけ飛ばす。
+  - 想定外 (書式の誤り、atom spec の誤り、存在しない model、ChimeraX にも無い名前、実行時の失敗) は今どおり止める。
+    飛ばしたコマンドが作るはずだった model を後のコマンドが指した場合 (`molmap` を飛ばした後の `vol #3 ...`) も、
+    参照の誤りとして止める。
+  - `volume` の断るキーワード (`encloseVolume` など) は、他のキーワードと独立した表示設定なので、そのキーワード
+    だけ warn して飛ばし、残り (`color` など) は適用する。出力そのものが変わるキーワード (`save` の
+    `selectedOnly`、`align` の `each` など) は、コマンドごと飛ばす。
 - **分離**: console の内部は `@plugins/console/worker/dialect-api` (と `shared/dialectMeta`) からしか使わず、
   PyMOL の plugin とは互いを import しない。console も この plugin を import しない (登録を通して受け取る)。
   eslint (`eslint.config.mjs`) が、この向きと worker service の許可リストを検査する。ChX を外すには、
@@ -223,8 +239,18 @@ renderer で表し、**その selection と paint が表示の状態そのもの
   を `delete_node` する。patch の境界の細部は ChimeraX と違いうる。
 - **surface の色・透明度**: `color` の target `s` (既定の `acsbpf` も) は、**ある** `chx:surface:*` に atom と同じ paint
   entry を入れる (色を付けるだけで surface は作らない)。surface の色付けは `colormode=molecule` で、その renderer の
-  paint を使う。最初の `color` で paint に切り替わるので、指定していない部分も paint の既定の色になる。透明度は renderer
-  の `alpha` (§6 `transparency`)。
+  paint を使う。透明度は renderer の `alpha` (§6 `transparency`)。
+- **新しい surface の色**: ChimeraX は新しい chain の表面を ribbon の色で塗る (`molsurf.py` `surface_initial_color`)
+  ので、新しい `chx:surface:*` には、その分子の `chx:cartoon` の paint 表を順番どおりにコピーする (`display.ts` の
+  `readPaint` / `replacePaint`。読み取りは `list_paint` op)。cartoon が paint でなければ atom renderer の表を使う。
+  ChimeraX は chain ごとに平均色 1 色、こちらは残基ごとの色なので、`color bychain` の後は同じ絵、`rainbow` などの後は
+  違う絵になる (近似)。コピー元が無い分子 (GUI で開いた分子) では、コピー先には何もせず既定の色付け
+  (`DefaultCPKColoring`: 炭素は分子の色、他は元素色) のまま残す。
+- **`color <spec> fromatoms`**: spec が届く surface に、atom renderer の paint 表を一度だけコピーする (ChimeraX も一度
+  だけで、以後は連動しない)。分子全体なら置き換え、一部なら各 entry を spec と交わらせて表の先頭に差し込む
+  (`prependPaint`。最初に合った entry が勝つ)。paint でない surface への一部の `fromatoms` は、paint に切り替えると
+  既定の二次構造別の表が種として入って他の部分の色まで変わるので、surface を変えずに warn する。atom renderer が
+  paint でない分子も warn して飛ばす。
 - **ラベル**: 残基ラベルは `chx:label:residues`、原子ラベルは `chx:label:atoms` (`*namelabel`)。種類ごとに renderer を
   分けるのは、`label delete` で種類を省いたとき両方から、指定したときその種類からだけ外すため (1 つの renderer では、
   残基ラベルを消すと同じ原子の原子ラベルまで消える)。CueMol のラベルは原子に付くので、残基ラベルは残基ごとの代表原子
@@ -259,7 +285,7 @@ renderer で表し、**その selection と paint が表示の状態そのもの
 
 | コマンド | 引数 | op | 備考 |
 |---|---|---|---|
-| `open` | `names` (空白で区切って複数。次の keyword まで)、`name`、`format`、`fromDatabase` | `fetch_entry`、`fetch_url`、`fetch_emdb`、`load_file`、`create_renderer`、`set_renderer_styles`、`set_renderer_selection`、`set_renderer_coloring`、`add_paint_at` | 4 文字の PDB id、`db:id` (`pdb` `pdbe` `pdbj` `redo` `alphafold` `pubchem` `emdb` ほか)、`id fromDatabase db`、http(s) の URL はデータベースから取得する ([database-fetch](database-fetch.md) §3。ファイルとの優先順位は ChimeraX と同じ)。AlphaFold は開いた後に pLDDT で塗る。`.cxc` は script として実行。`.qsc` は scene として開く (txn の外、行に単独)。molecule は ribbon (`chx:cartoon`) で読み、ChimeraX の auto style で表示と色を決める (§5)。molecule でないもの (map) は File > Open と同じに開く。`Opened <name> as #N` と言う。複数の名前は順に開き、1 つ失敗したらそこで止める。`name` は名前が 1 つのときだけ、`.qsc` は単独のときだけ。`eds` は PDBe の 2Fo-Fc の地図を `fetch_map_url` で ([database-fetch](database-fetch.md) §3) |
+| `open` | `names` (空白で区切って複数。次の keyword まで)、`name`、`format`、`fromDatabase` | `fetch_entry`、`fetch_url`、`fetch_emdb`、`load_file`、`create_renderer`、`set_renderer_styles`、`set_renderer_selection`、`set_renderer_coloring`、`add_paint_at` | 4 文字の PDB id、`db:id` (`pdb` `pdbe` `pdbj` `redo` `alphafold` `pubchem` `emdb` ほか)、`id fromDatabase db`、http(s) の URL はデータベースから取得する ([database-fetch](database-fetch.md) §3。ファイルとの優先順位は ChimeraX と同じ)。AlphaFold は開いた後に pLDDT で塗る。`.cxc` は script として実行。`.qsc` は scene として開く (txn の外、行に単独)。molecule は ribbon (`chx:cartoon`) で読み、ChimeraX の auto style で表示と色を決める (§5)。molecule でないもの (map) は File > Open と同じに開く。`Opened <name> as #N` と言う。複数の名前は順に開き、1 つ失敗したらそこで止める。`name` は名前が 1 つのときだけ、`.qsc` は単独のときだけ。`eds` は PDBe の 2Fo-Fc の地図を `fetch_map_url` で ([database-fetch](database-fetch.md) §3)。名前は ChimeraX と同じ `eds <id>`、表示は ChimeraX の X 線の地図の既定 (`volume` の下記)。視点は「**open の視点**」 |
 | `open ... from rcsb_bio / pdbe_bio` | `maxAssemblies` | `fetch_url` | 生物学的会合体を 1 番から順に、無くなるまで (`maxAssemblies` があればその数まで) 別の model として開く (ChimeraX の `pdb_bio/fetch_pdb_bio.py`)。1 番が取れなければ error、2 番以降で取れなくなったらそこで終わる。URL は `dbSources.ts` の `assemblyFetch` ([database-fetch](database-fetch.md) §3)。`from pdb_nmr` (NMR-STAR の拘束) は reader が無いので断る |
 | `alphafold fetch` | `uniprotId`、`pae` (warn)、`alignTo` `trim` `ignoreCache` `version` (無視) | `open alphafold:<id>` と同じ | pLDDT の色も同じ |
 | `close` | `[models]` | `delete_node` | spec が無ければ全部 |
@@ -269,7 +295,7 @@ renderer で表し、**その selection と paint が表示の状態そのもの
 | `cartoon` / `cartoon hide` | `[spec]`、`smooth` / `suppressBackboneDisplay` (無視) | `set_renderer_selection` | |
 | `cartoon style` | `[spec]`、`width`、`thickness`、`xsection`、`modeHelix` `sides` `arrows` など (無視) | `set_node_prop` (`helix.*` `sheet.*` `coil.*` `section.*`) | 下記。option が無ければ今の断面を ChimeraX の名前で出す |
 | `style` | `[spec] stick\|ball\|sphere`、`dashes` / `ringFill` (無視) | `set_renderer_selection` | |
-| `color` | `[spec] [色 \| byhetero \| byelement \| bychain \| bymodel]`、`target`、`transparency` / `halfbond` / `what` (無視) | `set_renderer_coloring`、`clear_paint`、`add_paint_at` | target の既定は ChimeraX と同じ `acsbpf` (`s` はある surface に塗る)。色は名前、hex (`#rgb` から 16 桁まで、alpha 付きも)、`rgb()` `rgba()` `hsl()` `hsla()` `gray()` (数値は整数なら 0-255、小数点付きなら 0-1、`%`、色相は `deg` / `rad` / `grad` / `turn`)、`r,g,b[,a]` の百分率 (`colors.ts`)。CueMol の paint は alpha を持たないので、色が alpha を述べていれば warn して不透明で塗る |
+| `color` | `[spec] [色 \| byhetero \| byelement \| bychain \| bymodel \| fromatoms]`、`target`、`transparency` / `halfbond` / `what` (無視) | `set_renderer_coloring`、`clear_paint`、`add_paint_at` | target の既定は ChimeraX と同じ `acsbpf` (`s` はある surface に塗る)。色は名前、hex (`#rgb` から 16 桁まで、alpha 付きも)、`rgb()` `rgba()` `hsl()` `hsla()` `gray()` (数値は整数なら 0-255、小数点付きなら 0-1、`%`、色相は `deg` / `rad` / `grad` / `turn`)、`r,g,b[,a]` の百分率 (`colors.ts`)。CueMol の paint は alpha を持たないので、色が alpha を述べていれば warn して不透明で塗る |
 | `color byattribute` / `color bfactor` | `attrName` (byattribute だけ)、`[spec] [what]`、`target`、`palette`、`range`、`average` `noValueColor` `transparency` `key` (無視) | `set_renderer_coloring`、`clear_paint`、`add_paint_at` | §5。`N atoms, atom bfactor range lo to hi` と出す |
 | `colour` | `color` と同じ | | ChimeraX の英綴りの別名 |
 | `rainbow` | `[spec] [residues\|chains\|structures]`、`target`、`palette`、`transparency` (無視) | `set_renderer_coloring`、`add_paint_at` | §5。`polymers` は断る (配列を比べない) |
@@ -337,11 +363,26 @@ renderer で表し、**その selection と paint が表示の状態そのもの
   distance はそこまでの距離にする。zoom は ChimeraX の水平の視野角 30° になる高さ (`2·d·tan15°/縦横比`)、投影は透視投影
   (`set_projection`)、slab は分子に合わせ直す (`set_view` の `fitSlab`)。引数無しは `view matrix camera ...` を `%.5g` で出す。
   model の行列は無い (CueMol の object は位置を持たない)。
-- `graphics silhouettes`: ChimeraX は view 全体の設定、CueMol は renderer ごとの輪郭線 (`egtype=silhouette`) なので、面を描く
-  全 renderer (Inspector の `NO_EDGE_LINE_TYPES` 以外) に書く。幅は ChimeraX が pixel、CueMol が Å なので、今の zoom で
+- `graphics silhouettes`: ChimeraX は view 全体の設定、CueMol は renderer ごとの輪郭線なので、面を描く全 renderer
+  (Inspector の `NO_EDGE_LINE_TYPES` 以外) に書く。モードは `egtype=edges`: ChimeraX は奥行きが急に変わる場所すべてに
+  線を引き (手前の原子と奥の原子の境界も)、これは CueMol の `edges` に当たる。CueMol の `silhouette` は外側の輪郭だけ
+  (`test_umbreon_export.cpp` の `SilhouetteModeInksOnlyTheOuterContour`)。on かどうかは `egtype` が `none` 以外かで見る。
+  ChimeraX の silhouettes は後から開いた model にも付くので、ChX が renderer を新しく作るとき (`open` の後の
+  `adopt`、新しい surface) に、scene に `edges` の renderer があればその `egtype` / `eglinew` / `egcolor` を写す
+  (`viewCommands.ts` の `inheritSilhouettes`)。状態は別に持たず scene の renderer から読むので、保存した scene でも同じ。幅は ChimeraX が pixel、CueMol が Å なので、今の zoom で
   換算する (以後の zoom で太さが変わることを warn)。`width` を省いて**新しく有効にする** renderer には、ChimeraX の
   既定の太さ (1 pixel、`graphics/opengl.py` の `Silhouette.thickness`) を今の zoom で換算して書く。CueMol の既定
   (`eglinew` 0.01 Å) は今の zoom で 1 pixel に満たず、ほとんど見えないため。既に有効な renderer の太さは変えない。
+
+**open の視点**: ChimeraX は model が 1 つも無い状態で最初の model を足したときだけ、向きを初期値に戻して全体に
+合わせる (`models.py` の `add` -> `View.initial_camera_view`)。ChX の `open` も、開く前の scene に object が無く、何か
+追加されたときだけ、`set_view` で `rotation: [1, 0, 0, 0]` にしてから `focus_nodes` (scene pane の Focus ボタンと同じ
+`focusOnNodes`) に追加した object を渡す (`fileCommands.ts` の `initialView`)。分子は表示中の原子、地図は表示中の等値面の
+範囲に合う ([cryo-em-map-mode](cryo-em-map-mode.md))。2 つ目以降の open は ChimeraX と同じく視点を動かさないので、ChX の
+open は `centerView: false` で op を呼ぶ (EMDB と URL の地図は、op 側が毎回地図に合わせるので、そこだけ動く)。
+ChimeraX の fit との差 (近似): 余白は CueMol が箱の各辺 20%、ChimeraX が視野角 30° の視錐台に箱の角を収めて窓の 5%
+(対象が画面の約 7 割と約 9 割)。CueMol は原子の中心座標、ChimeraX は半径込みの球の範囲。CueMol は slab を箱の奥行きに
+設定し、ChimeraX は切らない (near/far を毎フレーム表示中の範囲から決める)。
 
 **view**: ChimeraX の `view` と同じく、向きを変えずに、名指したもの (無ければ全部) が収まるように center・zoom・slab を
 1 回の `set_view` で書く。範囲は object ごとの式の原子を、view の軸 (`right_vec` / `up_vec` / `forward_vec`) で読んで求める
@@ -398,18 +439,22 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
   `full`、EM の地図の `auto` を含む) `contour` だけ (`MapMeshRenderer::generate` は box の範囲では間引きを 1 に固定する)。
   結晶の地図の box の `contour` に `step > 1` を書いても何も変わらないので、書く前に断る (同じ行の `region all` か
   `style surface` があれば受ける)。
-- `region all`: `region_mode = full`。格子の範囲の指定は断る (CueMol は中心 +- extent の箱か全体だけ)。
-- `show` / `hide`: renderer の `set_visible`。`showOutlineBox true` は断り、`subdivide` など見た目の細部は warn。
+- `region all`: `region_mode = full`。格子の範囲の指定は warn して飛ばす (CueMol は中心 +- extent の箱か全体だけ)。
+- `show` / `hide`: renderer の `set_visible`。`showOutlineBox true` は warn して飛ばし、`subdivide` など見た目の細部は warn。
+- **EDS の地図の既定** (`open <id> from eds`): ChimeraX が取得した X 線の地図の見せ方 (`eds_fetch.py`) に合わせ、地図の
+  renderer に `region_mode = full`、色 `#b2b2b2` (ChimeraX の最初の地図の色)、level = 上位 1% の格子点を囲む値
+  (`DensityMap.getLevelAtTopFraction(0.01)`、`volume.py` の `initial_surface_levels`) を書く (`mapCommands.ts` の
+  `applyXrayMapDefaults`)。GUI の X 線の地図の既定 (青、1σ 前後、視点のまわりの箱) はモデル構築向けなので変えない。
 - `volume zone`: 地図の renderer の分子の境界 (`bndry_molname` / `bndry_sel` / `bndry_rng`) に書く。表示範囲 (`region_mode`)
   には触らない (ChimeraX の zone も region を変えない)。境界は 1 つの molecule の選択式なので、`nearAtoms` が 2 つ以上の
-  molecule にまたがれば断る。境界は molecule を名前で引くので、その名前で引いた先が別の object (同じ名前の地図など) に
-  なるときも、理由を言って断る。`newMap true` と `invert` は断る。
+  molecule にまたがれば断る。境界は molecule を名前で引くが、C++ は同じ名前の地図などを飛ばして分子を選ぶ
+  (`Scene::getObjectByNameAs`)。`newMap true` と `invert` は断る (飛ばして続ける)。
 - `volume unzone`: `bndry_molname` を空にする (`MapRenderer::setupMolBndry` は名前が空のときだけ境界を外す。CueMol の
   空の選択式は「全原子」なので、`bndry_sel` を空にしても分子全体の周りに広がるだけ)。ChimeraX と同じく表示範囲も全体に
   戻す (`region_mode = full`)。
-- 既知の問題: 表示範囲が全体 (full) のときに zone を掛けると、mesh が全部消える (box なら正しい)。C++ の地図の renderer の
-  不具合で、[261107-map-full-region-boundary-bug-plan](../plans/261107-map-full-region-boundary-bug-plan.md) に記録して
-  ある。ChX 側では避けない (避けると不具合が見えなくなり、直った後にも ChimeraX と違う動作が残る)。
+- 表示範囲が全体 (full) の地図は周期の折り返しをしないので、地図のデータの範囲の外にある原子の周りは、zone を掛けても
+  描かない (ChimeraX も同じ: 周期の隣まで描くのは `volume cover` だけ)。box の表示範囲は、結晶の地図なら PBC で
+  折り返すので描ける。1a0m の EDS の地図 (単位胞 1 つ分) では、分子の一部 (水 HOH 20 など) がデータの範囲の外にある。
 
 **`lighting`** (`commands/lookCommands.ts`、ChimeraX の `std_commands/lighting.py`): **ChX の方針 (意味が一致しないものは
 断る) の、明示した例外**。CueMol の scene が持つのは画面空間の ambient occlusion (`aoEnabled`) と renderer の輪郭線だけで、
@@ -435,7 +480,7 @@ warn して無視。引数無しは AO の on / off を出す。
 |---|---|---|
 | Initial Styles | Original Look、Sticks、Cartoon、Space-Filling (chain colors / single color) | ChimeraX の `atomic/presets.py` と同じく、表面を隠してから (`chx:surface:*` の `showsel` を `none`)、auto style を当てる (`autoStyle.ts`。Original Look は大きさから決め、他は non-polymer / small / medium / large polymer を指定する。指定したときは短いペプチドでも cartoon にする (ChimeraX の `explicit_style`))。auto style の最初の色は分子全体を塗るので、paint の表を空にしてから入れる |
 | Molecular Surfaces | ghostly white、chain ID coloring (opaque) | sphere の polymer と溶媒の原子を stick にし (`nospheres`)、`surface`、`color ... target s`、`transparency ... target s` を実行 |
-| | atomic coloring (transparent) | 断る (`color fromatoms` が無い) |
+| | atomic coloring (transparent) | `surface; color fromatoms target s; transparency 70 target s` |
 | Cartoons/Nucleotides | ribbons/slabs、cylinders/stubs、licorice/ovals | 断る (`nucleotides` と helix の tube が無い。一部だけ実行すると違う見た目になる) |
 | Overall Look | publication 1 / 2、interactive | `set bgColor`、`graphics silhouettes`、`lighting depthCue` を実行 (`interactive` の背景は ChimeraX の既定の黒) |
 
@@ -480,6 +525,18 @@ warn して無視。引数無しは AO の on / off を出す。
   青から赤で、`^` で逆になること
 - `autoStyle.test.ts`: ChimeraX の大きさの閾値、短いペプチドを stick にすること、small polymer の selection の式
 - (`cli/syntax.test.ts` の前方一致に、`sel` `su` `tr` `tu` `sa` `la` `di` `mm` `al` の短縮形)
+- `chimeraxCommands.test.ts`: ChimeraX にあって ChX に無いコマンド (`sym`、前方一致の `fit`、2 語の `alphafold match`)
+  は飛ばし、打ち間違い (`symx`、`alphafold fetchx`) はエラーのままにすること
+- `commands/fileCommands.test.ts`: 空の scene への open だけ `set_view` (向きの初期化) → `focus_nodes` を呼び、2 つ目の
+  open では呼ばないこと、open が `centerView: false` で op を呼ぶこと
+- `commands/reprCommands.test.ts`: 新しい surface に cartoon の paint 表がコピーされ、ChX の renderer が無い分子では
+  何もしないこと。`commands/colorCommands.test.ts`: `fromatoms` が paint の surface の先頭に spec と交わった entry を
+  差し込み、paint でない surface は変えずに warn すること
+- `commands/mapCommands.test.ts`: `volume` の断るキーワードを warn して飛ばし `color` を適用すること、EDS の地図の既定
+  (`region_mode full`、灰色、上位 1% の level)
+- `commands/silhouettes.test.ts`: 輪郭線を `edges` で書き、後から作った renderer に同じ輪郭線を写すこと
+- console 共通の `runtime/runCommand.test.ts`: `unsupported` の結果と `unsupportedCommand` の知らないコマンドを warning
+  で飛ばして残りを実行し、1 つの txn にすること
 
 dialect に依存しない基盤 (ダミーの文法の dialect で補完と実行が同じ文法を通ること、別 dialect の script を断る文言) は
 `runtime/dialectNeutral.test.ts`。
