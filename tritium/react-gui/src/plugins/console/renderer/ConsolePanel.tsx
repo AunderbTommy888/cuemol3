@@ -423,7 +423,7 @@ export const ConsolePanel: BottomTabComponent = ({
             {/* Stops before the next command, and cancels a download in
                 progress; what already ran is kept. */}
             <FormButton
-              minimal
+              icon={<AppIcon name="ui.stop" className="console-stop-icon" aria-hidden />}
               text="Stop"
               onClick={() => { stopper?.() }}
               disabled={!stopper}

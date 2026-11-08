@@ -18,6 +18,8 @@ import { useRevealWindow } from '@renderer/shell/reveal/useRevealWindow'
 import { useAppInitialization } from '@renderer/hooks/useAppInitialization'
 import { useNewSceneAction } from '@renderer/hooks/useNewSceneAction'
 import { useShellOpenFiles } from '@renderer/features/file-io/useShellOpenFiles'
+import { usePlugins } from '@renderer/plugin-host/pluginContext'
+import { markStartupReady } from '@renderer/plugin-host/startupGate'
 import { useWindowCloseHandler } from '@renderer/hooks/useWindowCloseHandler'
 import { useWindowTitleSync } from '@renderer/hooks/useWindowTitleSync'
 import { useTextContextMenu } from '@renderer/hooks/useTextContextMenu'
@@ -79,6 +81,15 @@ export const AppBoot: React.FC = () => {
   // that the user watched the splitters appear, the colours flip and the
   // welcome pane give way to the molview.
   useRevealWindow(layoutLoaded && themeLoaded && initialSceneSettled)
+
+  // The launch is ready for its startup work (the console's startup scripts)
+  // once the saved plugin preferences say which plugins are on and the first
+  // scene is in. The shell-opened files and command-line requests wait for
+  // that work (plugin-host/startupGate.ts).
+  const { prefsLoaded } = usePlugins()
+  useEffect(() => {
+    if (cueMolReady && prefsLoaded && initialSceneSettled) markStartupReady()
+  }, [cueMolReady, prefsLoaded, initialSceneSettled])
 
   // OS shell / command-line file open (UXP openFromShell parity).
   useShellOpenFiles({ cm, cueMolReady, initialSceneSettled })

@@ -87,6 +87,7 @@ import {
   SquaresFour,
   Stack,
   Stop,
+  Prohibit,
   Tag,
   Terminal,
   TerminalWindow,
@@ -179,6 +180,8 @@ export const APP_ICONS = {
   "ui.info": { lib: "phosphor", Comp: Info },
   "ui.warning": { lib: "phosphor", Comp: Warning },
   "ui.error": { lib: "phosphor", Comp: WarningCircle },
+  // Stop a running command or script (media.stop is playback's square).
+  "ui.stop": { lib: "phosphor", Comp: Prohibit },
   "ui.download": { lib: "phosphor", Comp: DownloadSimple },
   "ui.properties": { lib: "phosphor", Comp: SlidersHorizontal },
   "ui.menu": { lib: "phosphor", Comp: List },

@@ -14,12 +14,13 @@ export const consoleManifest: PluginManifest = {
   name: 'Console',
   version: '1.0.0',
   description:
-    'Experimental. A command line for CueMol. The PyM console and ChX console plugins add their dialects to it.',
+    'Experimental. A command line for CueMol. The PyM console and ChX console plugins add their dialects to it. ' +
+    'At launch it runs ~/.cuemol/startup.txt, .qax, .pml and .cxc, those that exist, in that order.',
   // On by default: tritium_cli needs it, and a launch from the command line
   // cannot turn a plugin on.
   defaultEnabled: true,
   contributes: {
-    statusBar: [{ id: 'cli' }],
+    statusBar: [{ id: 'startup' }, { id: 'cli' }],
     settings: [
       {
         key: REMOTE_ACCESS_PREF,
@@ -27,7 +28,7 @@ export const consoleManifest: PluginManifest = {
         description:
           'Let the tritium_cli command line run commands in this window, against the ' +
           'active tab. It uses the local server the MCP plugin also uses, and finds the port ' +
-          'and token in ~/.cuemol/local-api.json. A CueMol3 started by tritium_cli allows it ' +
+          'and token in ~/.cuemol/local-api.json ($CUEMOL_HOME/local-api.json when set). A CueMol3 started by tritium_cli allows it ' +
           'for that run without changing this setting.',
         control: { kind: 'toggle' },
         default: false,

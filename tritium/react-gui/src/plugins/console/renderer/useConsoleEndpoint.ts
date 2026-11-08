@@ -21,6 +21,7 @@ import {
   useOpenSceneFile,
   usePluginPrefs,
   useSceneTabs,
+  startupSettled,
   useTrackedEndpointCalls,
 } from '@renderer/plugin-host/api'
 import type {
@@ -102,6 +103,13 @@ export function useConsoleEndpoint(): void {
       const runId = `cli-${reqId}`
       const end = beginCliRun()
       return calls.track(reqId, runId, async () => {
+        // After the startup scripts: an app the command line started may still
+        // be running them, and both would want the worker's transaction.
+        await startupSettled()
+        if (calls.stopped(reqId)) {
+          const cancelled: ConsoleRunResponse = { entries: [], aborted: true, interrupted: true, cwd: p.cwd }
+          return cancelled
+        }
         const res = await runSubmission(
           { cm, ensureActiveScene, tabs, openScene },
           // A script can run for minutes; the busy indicator is not the place.

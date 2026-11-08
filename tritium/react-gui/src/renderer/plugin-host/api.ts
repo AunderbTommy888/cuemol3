@@ -84,6 +84,10 @@ export type { OpenScene, SceneTabs } from './sceneTabs'
 // Hold Undo / Redo off while the plugin is in the middle of an edit the user
 // must not be able to unwind halfway.
 export { useSuppressUndoRedo } from '@renderer/contexts/UndoRedoLockContext'
+// Run startup work before the OS-opened files and command-line requests (the
+// console's startup scripts); see startupGate.ts.
+export { holdStartup, startupReady, startupSettled } from './startupGate'
+export type { StartupHold } from './startupGate'
 
 // --- Shell chrome a pane is built from ---
 export { PaneSectionHeader } from '@renderer/shell/PaneSectionHeader'

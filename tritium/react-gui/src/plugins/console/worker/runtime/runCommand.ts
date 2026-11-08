@@ -35,8 +35,9 @@ import type {
   SceneRequest,
 } from '../../shared/consoleTypes'
 import * as fs from 'fs'
+import * as nodePath from 'path'
 import { dialectOf, registeredMetas } from '../dialects'
-import { scriptOwner } from '../../shared/dialectMeta'
+import { NATIVE_META, scriptOwner } from '../../shared/dialectMeta'
 import { resolvePath } from './paths'
 import { beginRun, endRun, isStopped, noteRunStream } from './runControl'
 import { writeLog } from './commandLog'
@@ -533,11 +534,24 @@ async function runWithoutScene(
 }
 
 /**
- * Run a script file sent by its path (`RunCommandArgs.scriptPath`): one whose
- * dialect reads the file itself (`submit: 'path'` in `dialectMeta.ts`).
+ * The dialect a script file belongs to: the one claiming its extension
+ * (`dialectMeta.ts`), and native for a `.txt` no dialect claims (native
+ * command lines, as the startup script `startup.txt`).
+ */
+function scriptDialectId(scriptPath: string): string | null {
+  const owner = scriptOwner(registeredMetas(), scriptPath)?.meta
+  if (owner) return owner.id
+  return /\.txt$/i.test(scriptPath) ? NATIVE_META.id : null
+}
+
+/**
+ * Run a script file sent by its path (`RunCommandArgs.scriptPath`).
  *
- * The file must be a script of the dialect the call names; a qax file runs
- * as `@file.qax` alone on the line would, one undo step per action.
+ * The file must be a script of the dialect the call names. A qax file runs
+ * as `@file.qax` alone on the line would, one undo step per action; any
+ * other script is read and run as one submission of its text (one undo
+ * step, split where a scene command splits it, as a typed submission is),
+ * with the file's folder as the working directory unless the call gives one.
  */
 async function runScriptPath(
   dialect: ConsoleDialect,
@@ -545,14 +559,22 @@ async function runScriptPath(
   args: RunCommandArgs,
   scriptPath: string,
 ): Promise<RunCommandResult> {
-  const owner = scriptOwner(registeredMetas(), scriptPath)?.meta
-  if (!owner || owner.id !== dialect.meta.id) {
+  if (scriptDialectId(scriptPath) !== dialect.meta.id) {
     return fail(`${scriptPath} is not a script of the ${dialect.meta.label} console`, 'invalid-args')
+  }
+  if (!isQaxPath(scriptPath)) {
+    let text: string
+    try {
+      text = fs.readFileSync(scriptPath, 'utf8')
+    } catch {
+      return fail(`cannot read script: ${scriptPath}`, 'io')
+    }
+    const { scriptPath: _path, ...rest } = args
+    return runText(dialect, ctx, { ...rest, text, cwd: args.cwd ?? nodePath.dirname(scriptPath) })
   }
   const scene = getSceneOrNull(ctx, args.sceneId)
   if (!scene) return fail(`scene ${args.sceneId} not found`, 'not-found')
   if (txnBusy()) return fail(TXN_BUSY_MESSAGE, 'unsupported')
-  if (!isQaxPath(scriptPath)) return fail(`${scriptPath}: this script cannot be run by its path`, 'unsupported')
   const cmd: DialectLine = { text: scriptPath, display: `@${scriptPath}`, quiet: false, scriptPath, source: `@${scriptPath}` }
   return runQaxStandalone(dialect, ctx, args, scene, cmd, scriptPath)
 }
@@ -569,6 +591,15 @@ export async function runCommand(
 ): Promise<RunCommandResult> {
   const dialect = dialectOf(args.dialect)
   if (args.scriptPath !== undefined) return runScriptPath(dialect, ctx, args, args.scriptPath)
+  return runText(dialect, ctx, args)
+}
+
+/** Run a submission's text: its commands in one transaction (split by scene commands). */
+async function runText(
+  dialect: ConsoleDialect,
+  ctx: WorkerContext,
+  args: RunCommandArgs,
+): Promise<RunCommandResult> {
   const commands = dialect.syntax.split(args.text)
   const scene = getSceneOrNull(ctx, args.sceneId)
   if (!scene) {

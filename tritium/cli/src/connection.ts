@@ -16,9 +16,16 @@ import { TRITIUM_CLI_FLAG, TRITIUM_CLI_MCP_FLAG } from '@cuemol/console-kit'
 import type { AppQuitResponse, LocalApiEndpoint, LocalApiInfoFile } from '@cuemol/console-kit'
 import { DOWNLOAD_URL, locateApp } from './appLocator'
 
-/** Where the app writes its port and token. */
+/**
+ * Where the app writes its port and token: `CUEMOL_LOCAL_API_INFO`, else
+ * `local-api.json` in the dot directory (`$CUEMOL_HOME`, else `~/.cuemol`).
+ * The app resolves it by the same rule (react-gui `main/localApi`
+ * `localApiInfoFile`, `main/dotDir.ts`), so a CUEMOL_HOME the app was
+ * started with is the one the command line reads.
+ */
 export function infoFilePath(env: NodeJS.ProcessEnv = process.env): string {
-  return env.CUEMOL_LOCAL_API_INFO || path.join(os.homedir(), '.cuemol', 'local-api.json')
+  if (env.CUEMOL_LOCAL_API_INFO) return env.CUEMOL_LOCAL_API_INFO
+  return path.join(env.CUEMOL_HOME || path.join(os.homedir(), '.cuemol'), 'local-api.json')
 }
 
 export const NOT_RUNNING =

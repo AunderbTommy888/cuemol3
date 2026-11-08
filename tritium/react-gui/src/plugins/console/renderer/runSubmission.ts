@@ -55,6 +55,11 @@ export async function runSubmission(deps: SubmissionDeps, args: SubmissionArgs):
     return { entries, aborted: true, interrupted: false, cwd }
   }
 
+  // The script file is sent until a call has read it. Once one has, what is
+  // sent again after a scene command is the rest of its text: the worker
+  // reads `scriptPath` in place of `text`, so sending the path again would
+  // run the file from the top (and its scene commands) every time.
+  let scriptPath = args.scriptPath
   const run = (target: { scene_uid: number; view_id: number }, text: string) =>
     consoleServices.invoke(
       deps.cm,
@@ -66,7 +71,7 @@ export async function runSubmission(deps: SubmissionDeps, args: SubmissionArgs):
         text,
         runId: args.runId,
         cwd,
-        ...(args.scriptPath !== undefined ? { scriptPath: args.scriptPath } : {}),
+        ...(scriptPath !== undefined ? { scriptPath } : {}),
       },
       args.quiet ? { quiet: true } : undefined,
     )
@@ -83,6 +88,7 @@ export async function runSubmission(deps: SubmissionDeps, args: SubmissionArgs):
       res = await run(target, text)
     }
     if (!res.ok) return failed(`Error: ${res.error}`)
+    scriptPath = undefined
     entries.push(...res.entries)
     cwd = res.cwd ?? cwd
     if (res.aborted) return { entries, aborted: true, interrupted: res.interrupted, cwd }

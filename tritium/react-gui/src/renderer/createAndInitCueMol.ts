@@ -16,10 +16,15 @@ import {
 // The path is forwarded to the Web Worker, which passes it to
 // cuemol_internal.initCueMol(path) before any scene operations are performed.
 export async function createAndInitCueMol(): Promise<AsyncCueMol> {
-    const { sysConfigPath, userStylePath, userStyleExists } =
+    const { sysConfigPath, userStylePath, userStyleExists, dotStyleFiles } =
         await window.electronAPI.invoke(IPC.APP_PATH)
     const cm = new AsyncCueMol()
     await cm.initCueMol(sysConfigPath || undefined)
+
+    // The dot directory's styles (~/.cuemol/styles/*.xml), read-only, before
+    // the user style: each set loaded goes first in the list, so the user
+    // style (the GUI settings) ends up above them.
+    if (dotStyleFiles?.length) await cm.loadDotStyles(dotStyleFiles)
 
     // Load user-defined global styles (uxp_gui cuemol2.js L48-55 equivalent).
     // Pass undefined when the file is missing so Worker falls back to
