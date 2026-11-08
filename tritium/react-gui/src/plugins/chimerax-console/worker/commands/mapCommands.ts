@@ -90,6 +90,14 @@ function setProp(ctx: WorkerContext, cc: CmdContext, rendId: number, prop: strin
 /** ChimeraX's first map colour (`map/defaultsettings.py`, 0.7 grey). */
 const XRAY_MAP_COLOR = '#b2b2b2'
 
+/**
+ * The line width of an X-ray map's mesh (pixels; CueMol's default is 1).
+ * CueMol's mesh lines are unlit and uniform, so at 1 pixel the whole-map
+ * mesh ChimeraX shows reads as a solid block; thinner lines keep it legible.
+ * ChimeraX's lit, tube-like mesh is not copied.
+ */
+const XRAY_MESH_WIDTH = 0.5
+
 /** The fraction of grid points ChimeraX's initial level encloses (`volume.py` `initial_surface_levels`). */
 const XRAY_TOP_FRACTION = 0.01
 
@@ -111,6 +119,10 @@ export async function applyXrayMapDefaults(ctx: WorkerContext, cc: CmdContext, o
   for (const r of mapRenderers(ctx, cc.sceneId, obj.uid)) {
     const region = await setProp(ctx, cc, r.id, 'region_mode', 'full')
     if (!region.ok) return region
+    if (MAP_STYLES[r.type] === 'mesh') {
+      const width = await setProp(ctx, cc, r.id, 'width', String(XRAY_MESH_WIDTH))
+      if (!width.ok) return width
+    }
     if (level !== null) {
       const lv = await setProp(ctx, cc, r.id, 'level', String(level))
       if (!lv.ok) return lv

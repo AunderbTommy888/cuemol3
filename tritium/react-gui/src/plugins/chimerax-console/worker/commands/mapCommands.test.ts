@@ -97,10 +97,10 @@ describe('volume', () => {
     expect(cc.warn).toHaveBeenCalledWith(expect.stringMatching(/^volume: encloseVolume is not supported .*; skipped$/))
   })
 
-  it('draws an EDS map as ChimeraX does: grey, the whole map, the top 1% level', async () => {
+  it('draws an EDS map as ChimeraX does: grey, the whole map, the top 1% level, in thin mesh lines', async () => {
     expect((await applyXrayMapDefaults(ctx, cc, { uid: 20, model: 2, name: 'eds 1a0m' } as never)).ok).toBe(true)
     expect(writes()).toEqual([
-      'region_mode=full', 'level=1.5', 'set_map_contour {"rendId":50,"level":null,"extent":null,"color":"#b2b2b2","alpha":null}',
+      'region_mode=full', 'width=0.5', 'level=1.5', 'set_map_contour {"rendId":50,"level":null,"extent":null,"color":"#b2b2b2","alpha":null}',
     ])
   })
 })
