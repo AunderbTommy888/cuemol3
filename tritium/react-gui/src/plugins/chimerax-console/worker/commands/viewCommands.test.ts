@@ -22,6 +22,7 @@ vi.mock('../display', async (importOriginal) => ({
     return { ok: true }
   },
   targetsOf: () => ({ ok: true, targets: [] }),
+  wholeMapsOf: () => [],
 }))
 vi.mock('../camera', async (importOriginal) => ({
   ...(await importOriginal<object>()),

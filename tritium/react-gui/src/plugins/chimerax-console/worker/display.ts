@@ -40,7 +40,7 @@ import { makeSel } from '@renderer/worker/server/services/helpers/makeSel'
 import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneResolver'
 import type { CmdContext, OpRun } from '@plugins/console/worker/dialect-api'
 import { runOp as runConsoleOp } from '@plugins/console/worker/dialect-api'
-import { emitFor, NONE } from './spec/emit'
+import { ALL, emitFor, NONE } from './spec/emit'
 import type { EmitContext } from './spec/emit'
 import type { SpecNode } from './spec/parse'
 import { parseSpec, SpecError } from './spec/parse'
@@ -299,6 +299,35 @@ export async function ensureOwned(ctx: WorkerContext, cc: CmdContext, obj: Numbe
 export function isVisible(ctx: WorkerContext, sceneId: number, rendId: number): boolean {
   const props = getGenericProps(ctx, { sceneId, nodeId: rendId, nodeType: 'renderer' })
   return props.ok ? props.entries.find((e) => e.key === 'visible')?.value !== false : false
+}
+
+/** Whether an object is shown (its `visible`; `hide ... models` clears it). */
+export function isObjectVisible(ctx: WorkerContext, sceneId: number, objUid: number): boolean {
+  const props = getGenericProps(ctx, { sceneId, nodeId: objUid, nodeType: 'object' })
+  return props.ok ? props.entries.find((e) => e.key === 'visible')?.value !== false : false
+}
+
+/**
+ * The objects other than molecules (maps) a specification reaches as a
+ * whole: every one for an empty specification, else those a model part
+ * names with nothing below it (`#1`, `#1-3`). A chain, residue, atom or
+ * selector part reaches atoms only, so no map (as in ChimeraX, where a
+ * volume has none).
+ */
+export function wholeMapsOf(ctx: WorkerContext, sceneId: number, spec: string): NumberedObject[] {
+  const maps = numberedObjects(ctx, sceneId).filter((o) => !isMolecule(o))
+  if (spec.trim() === '' || maps.length === 0) return maps
+  const read = readSpec(ctx, sceneId, spec)
+  if (!read.ok) return []
+  const ec = emitContext(ctx, sceneId)
+  return maps.filter((o) => {
+    try {
+      return emitFor(read.node, o.model, ec) === ALL
+    } catch (e) {
+      if (e instanceof SpecError) return false
+      throw e
+    }
+  })
 }
 
 /** How a molecule's bases are drawn: as atoms, or by `chx:nuclbase` as slabs or a ladder. */

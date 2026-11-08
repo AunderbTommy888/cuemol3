@@ -22,6 +22,7 @@ import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneRe
 import { makeSel } from '@renderer/worker/server/services/helpers/makeSel'
 import { displayedMapFitBox } from '@renderer/worker/server/services/map/mapFitBox'
 import type { Target } from './display'
+import { isObjectVisible } from './display'
 
 interface Vec {
   x: number
@@ -65,7 +66,8 @@ export interface Framing {
  * pane's Focus (`mapFit.ts`); that box is in the view's rotated frame, the
  * same coordinates as the atoms projected on the view's axes
  * (`View::convXYTrans` / `convZTrans`), so both go into one box, and the
- * margin is added once.
+ * margin is added once. Hidden objects do not count (ChimeraX fits what is
+ * displayed).
  */
 export function framingOf(ctx: WorkerContext, sceneId: number, viewId: number, targets: readonly Target[], maps: readonly number[] = []): Framing | null {
   const view = ctx.sceMgr.getView(viewId) as unknown as ViewAxes | null
@@ -75,6 +77,7 @@ export function framingOf(ctx: WorkerContext, sceneId: number, viewId: number, t
   const lo = [Infinity, Infinity, Infinity]
   const hi = [-Infinity, -Infinity, -Infinity]
   for (const t of targets) {
+    if (!isObjectVisible(ctx, sceneId, t.obj.uid)) continue
     const mol = scene.getObject(t.obj.uid)
     const sel = makeSel(ctx, t.sel, sceneId)
     const iter = ctx.svc.createObj('AtomIterator') as unknown as AtomIter | null
@@ -91,6 +94,7 @@ export function framingOf(ctx: WorkerContext, sceneId: number, viewId: number, t
     }
   }
   for (const uid of maps) {
+    if (!isObjectVisible(ctx, sceneId, uid)) continue
     const box = displayedMapFitBox(scene, scene.getObject(uid), view, 0)
     if (!box) continue
     for (let i = 0; i < 3; i++) {

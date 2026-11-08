@@ -337,7 +337,7 @@ renderer で表し、**その selection と paint が表示の状態そのもの
 | `close` | `[models]` | `delete_node` | spec が無ければ全部 |
 | `close session` | | `delete_node` | 全 object を閉じる。ChimeraX は設定も戻すが、CueMol に session ごとの設定は無いので戻さない |
 | `delete` | `atoms`、`attachedHyds` (無視) | `delete_atoms` | |
-| `show` / `hide` (別名 `display`、`~show` / `~display`) | `[spec] [what]`、`target`、`only` (show だけ) | `set_renderer_selection`、`set_visible`、`create_renderer`・`set_node_prop` (surface) | what: `atoms` `bonds` `cartoons` `ribbons` `surfaces` `models` (`pseudobonds` は warn)。target の文字 `a b c r m s p`。surface は §5。別名は ChimeraX と同じく同じコマンド (`std_commands/__init__.py`) で、`di` が `distance` のままになるよう `distance` の後に登録する |
+| `show` / `hide` (別名 `display`、`~show` / `~display`) | `[spec] [what]`、`target`、`only` (show だけ) | `set_renderer_selection`、`set_visible`、`create_renderer`・`set_node_prop` (surface) | what: `atoms` `bonds` `cartoons` `ribbons` `surfaces` `models` (`pseudobonds` は warn)。target の文字 `a b c r m s p`。surface は §5。`models` は、spec が model の番号だけで名指す地図 (`wholeMapsOf`) にも効く。別名は ChimeraX と同じく同じコマンド (`std_commands/__init__.py`) で、`di` が `distance` のままになるよう `distance` の後に登録する |
 | `cartoon` / `cartoon hide` | `[spec]`、`smooth` (無視)、`suppressBackboneDisplay` | `set_renderer_selection` | ChX は cartoon で主鎖の原子を隠さないので、`suppressBackboneDisplay false` は黙って受け、`true` だけ not supported yet と warn |
 | `cartoon style` | `[spec]`、`width`、`thickness`、`xsection`、`modeHelix`、`radius`、`arrows`、`arrowsHelix`、`arrowScale`、`sides`、`divisions`、`barScale` `barSides` `worm` (無視) | `set_node_prop` (`helix.*` `sheet.*` `coil.*` `section.*`)、`set_renderer_type`、`reset_prop` | 下記。option が無ければ今の断面を ChimeraX の名前で出す |
 | `nucleotides` | `[spec] atoms\|fill\|slab\|tube/slab\|ladder\|stubs`、`shape` `dimensions` など (無視) | `set_node_prop` (`base_type`)、`set_visible` | §5 の「核酸の塩基」。核酸に当たらなければ何もしない (ChimeraX と同じ) |
@@ -443,7 +443,11 @@ ChimeraX の fit との差 (近似): 余白は CueMol が箱の各辺 20%、Chim
 **view**: ChimeraX の `view` と同じく、向きを変えずに、名指したもの (無ければ全部) が収まるように center・zoom・slab を
 1 回の `set_view` で書く。範囲は object ごとの式の原子を、view の軸 (`right_vec` / `up_vec` / `forward_vec`) で読んで求める
 (`camera.ts`)。名指したもの (無ければ全部) に地図の object があれば、その表示中の等値面の範囲 (scene pane の Focus と
-同じ、`mapFit.ts` の `displayedMapFitBox`。余白は付けずに受け取る) も同じ箱に入れる。その箱は view の回転後の座標で、
+同じ、`mapFitBox.ts` の `displayedMapFitBox`。余白は付けずに受け取る) も同じ箱に入れる。地図を名指すのは model の番号
+だけの指定 (`#1`、`#1-3`) と空の指定で、chain・残基・原子・selector を含む指定 (`/b:16-24` や、それを中に持つ名前) は
+原子だけに届き、地図には届かない (ChimeraX の volume は原子を持たない。`display.ts` の `wholeMapsOf`)。隠した object
+(`hide ... models`) は数えない (ChimeraX も表示中のものに合わせる)。何も残らなければ「nothing to show」のエラーで、
+視点は変えない。その箱は view の回転後の座標で、
 原子を view の軸に投影した座標と同じ (`View::convXYTrans` / `convZTrans`) ので、そのまま合わせ、余白は最後に 1 回だけ
 足す。等値面を表示していない地図は数えない。計算は `MolCoord::fitView` (`MolCoordGeomImpl.cpp`) と同じ: 各辺 20% 広げ、4 A より細い軸は 4 A に、zoom は
 幅か高さを view の縦横比で、slab は奥行き。既存の op を使わないのは、`focus_node` は node 1 つ、`focus_selection` は molecule
@@ -579,7 +583,7 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
   未対応の語を断ること
 - `display.test.ts`: show / hide / style / cartoon の合成 (式は小さな原子の集合で評価して比べる)、他の renderer に
   触らないこと、今の selection から始めること (undo / GUI の編集に追従)、style を変えても色が残り paint への切り替えは
-  1 度だけであること
+  1 度だけであること、地図に届くのは model の番号だけの指定であること
 - `models.test.ts`: 番号を詰めず、使い回さないこと
 - `commands/mapCommands.test.ts`: `volume` の `level` が地図の値のまま、`transparency` が `alpha = 1 - t` で書かれ、box の
   `contour` の `step > 1` と 1・2・4・8 以外の `step` を何も書かずに断り、`region all` なら `lod` を書くこと、`volume zone` が
@@ -623,7 +627,7 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
 - `spec/translate.test.ts` (追加分): `#!1` が `#1` と同じになること、ChX の名前が使う場所で model ごとに翻訳され
   (model を指す名前、名前の中の名前)、自分自身を使う名前を断ること。`commands/selectCommands.test.ts`: 分子ごとに違う
   名前を ChX の表だけに持ち、同じ名前は CueMol の名前付き selection も作ること
-- `camera.test.ts`: `view` の枠に地図の表示中の箱が入り、余白が 1 回だけ足されること
+- `camera.test.ts`: `view` の枠に地図の表示中の箱が入り、余白が 1 回だけ足されること。隠した object は数えないこと
 - 図の script の段階 B の後の追加分: snake_case の keyword・`graphics bgColor`・`color modify` の演算子の読み方
   (`cli/syntax.test.ts`)、`cartoon style` の `arrows` / `sides` / `divisions` の property (`displayCommands.test.ts`)、
   地図への `surface zone` が `zoneMaps` を呼ぶこと (`reprCommands.test.ts`)、ColorBrewer の名前と `color modify` の色の計算 (`colorSchemes.test.ts`)

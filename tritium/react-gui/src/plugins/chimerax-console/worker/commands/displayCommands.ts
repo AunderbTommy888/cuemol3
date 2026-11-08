@@ -29,10 +29,12 @@ import {
   runOp,
   targetsOf,
   union,
+  wholeMapsOf,
   writeSel,
 } from '../display'
 import type { AtomStyle, BaseMode, Target } from '../display'
 import { numberedObjects } from '../models'
+import type { NumberedObject } from '../models'
 import { hideSurfaces, showSurfaces } from '../surface'
 import { warnIgnored } from './warn'
 
@@ -73,12 +75,20 @@ function partsOf(what: string, target: string): { ok: true; parts: Set<Part> } |
  *   `models` every object of the scene not reached is hidden
  * @param wholeScene - the specification was empty, so `models only` has no
  *   other object to hide
+ * @param maps - the maps the specification names as models (`wholeMapsOf`),
+ *   shown or hidden with `models`
  */
 async function showHide(
   ctx: WorkerContext, cc: CmdContext, targets: readonly Target[], parts: Set<Part>, show: boolean,
-  only = false, wholeScene = false,
+  only = false, wholeScene = false, maps: readonly NumberedObject[] = [],
 ): Promise<CmdOutcome> {
   if (parts.has('pseudobonds')) cc.warn(`${show ? 'show' : 'hide'}: pseudobonds are not supported yet; ignored`)
+  if (parts.has('models')) {
+    for (const m of maps) {
+      const res = await runOp(ctx, cc, 'set_visible', { nodeId: m.uid, nodeType: 'object', visible: show })
+      if (!res.ok) return res
+    }
+  }
   for (const t of targets) {
     if (parts.has('models')) {
       const res = await runOp(ctx, cc, 'set_visible', { nodeId: t.obj.uid, nodeType: 'object', visible: show })
@@ -126,7 +136,7 @@ async function showHide(
   }
   if (only && parts.has('models') && !wholeScene) {
     // show_models(only=True): every model not specified is hidden.
-    const reached = new Set(targets.map((t) => t.obj.uid))
+    const reached = new Set([...targets.map((t) => t.obj.uid), ...maps.map((m) => m.uid)])
     for (const o of numberedObjects(ctx, cc.sceneId)) {
       if (reached.has(o.uid)) continue
       const res = await runOp(ctx, cc, 'set_visible', { nodeId: o.uid, nodeType: 'object', visible: false })
@@ -157,7 +167,8 @@ function showHideCommand(show: boolean, word = show ? 'show' : 'hide'): ChxComma
       if (!parts.ok) return parts
       const found = targetsOf(ctx, cc.sceneId, args.objects)
       if (!found.ok) return found
-      return showHide(ctx, cc, found.targets, parts.parts, show, args.only === 'true', args.objects.trim() === '')
+      const maps = parts.parts.has('models') ? wholeMapsOf(ctx, cc.sceneId, args.objects) : []
+      return showHide(ctx, cc, found.targets, parts.parts, show, args.only === 'true', args.objects.trim() === '', maps)
     },
   })
 }

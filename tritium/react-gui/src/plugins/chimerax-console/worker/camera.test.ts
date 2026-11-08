@@ -4,13 +4,14 @@
  *
  * What the scene would get quietly wrong: a map left out of the framing
  * (`view #1` on a map was "nothing to show"), or its box given the margin
- * twice (the map box's own and the framing's), which frames it too loosely.
+ * twice (the map box's own and the framing's), which frames it too loosely;
+ * or a hidden object counted (ChimeraX fits what is displayed).
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 
-const { margins } = vi.hoisted(() => ({ margins: [] as number[] }))
+const { margins, hidden } = vi.hoisted(() => ({ margins: [] as number[], hidden: new Set<number>() }))
 
 vi.mock('@renderer/worker/server/services/helpers/sceneResolver', () => ({
   getSceneOrNull: () => ({ getObject: () => ({}) }),
@@ -22,6 +23,8 @@ vi.mock('@renderer/worker/server/services/map/mapFitBox', () => ({
     return { min: [0, 0, 0], max: [10, 20, 4] }
   },
 }))
+
+vi.mock('./display', () => ({ isObjectVisible: (_ctx: unknown, _scene: number, uid: number) => !hidden.has(uid) }))
 
 import { framingOf } from './camera'
 
@@ -36,5 +39,11 @@ describe('framingOf', () => {
     expect(f!.center).toEqual([5, 10, 2])
     // 20% on each side of the 20 A height (the taller side for a 2:1 view): 28 A.
     expect(f!.zoom).toBeCloseTo(28, 9)
+  })
+
+  it('leaves hidden objects out', () => {
+    hidden.add(20)
+    expect(framingOf(ctx, 1, 2, [], [20])).toBeNull()
+    hidden.clear()
   })
 })
