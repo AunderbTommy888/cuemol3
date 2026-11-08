@@ -16,7 +16,7 @@ vi.mock('@renderer/worker/server/services/helpers/sceneResolver', () => ({
   getSceneOrNull: () => ({ getObject: () => ({}) }),
 }))
 // The map draws a box 10 x 20 x 4 A (in the view's rotated frame) with no margin asked for.
-vi.mock('@renderer/worker/server/services/map/mapFit', () => ({
+vi.mock('@renderer/worker/server/services/map/mapFitBox', () => ({
   displayedMapFitBox: (_scene: unknown, _obj: unknown, _view: unknown, margin: number) => {
     margins.push(margin)
     return { min: [0, 0, 0], max: [10, 20, 4] }

@@ -20,7 +20,7 @@ import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 // operation of its own (op-catalog.md 3.1).
 import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneResolver'
 import { makeSel } from '@renderer/worker/server/services/helpers/makeSel'
-import { displayedMapFitBox } from '@renderer/worker/server/services/map/mapFit'
+import { displayedMapFitBox } from '@renderer/worker/server/services/map/mapFitBox'
 import type { Target } from './display'
 
 interface Vec {
