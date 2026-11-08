@@ -35,7 +35,7 @@
 
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
-import { ColorArg, EnumOf, FloatArg, ListOf, Or, SpecArg, StringArg } from '../cli/argTypes'
+import { ColorArg, EnumOf, FloatArg, ListOf, Or, RestOfLine, SpecArg, StringArg } from '../cli/argTypes'
 import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
 import { BUILTIN_COLORS, ELEMENT_COLORS } from '../colorTables'
@@ -46,7 +46,6 @@ import type { PaintRow, Target } from '../display'
 import type { NumberedObject } from '../models'
 import { surfacesOn } from '../surface'
 import { unsupported, warnIgnored } from './warn'
-import { mapObjectsOf, mapSurfaceRenderers } from './mapCommands'
 import { modifyColor } from '../colorModify'
 import type { Adjuster, ModifyOp } from '../colorModify'
 import { NONE } from '../spec/emit'
@@ -378,68 +377,17 @@ const rainbow: ChxCommand = chxCommand({
 })
 
 /**
- * `color zone <surfaces> near <atoms> [distance d]` on maps: an isosurface
- * renderer can colour its surface by the nearest atom of one molecule
- * (`colormode molecule`, its `target` and `sel`; `MapSurfRenderer::
- * getColorMol`), the colours taken from the molecule's atom renderers'
- * paint table, copied once. CueMol has no distance limit there: the whole
- * surface takes the nearest atom's colour (ChimeraX leaves farther parts as
- * they were), said by a warning. A mesh has no such colouring; molecular
- * surfaces are not done yet.
+ * `color zone`: not supported yet. A map isosurface can take the colour of
+ * the nearest atoms (`colormode molecule`), but with that colouring
+ * CueMol's image export fails (`ImgSceneExporter::write` throws), so every
+ * later `save` would fail; it waits for that to be fixed in C++.
  */
-const COLOR_ZONE_IGNORED = ['sharpEdges', 'bondPointSpacing', 'farColor', 'update']
-
 const colorZone: ChxCommand = chxCommand({
   words: ['color', 'zone'],
-  args: [
-    { name: 'surfaces', type: SpecArg, role: 'required' },
-    { name: 'near', type: SpecArg, role: 'keyword' },
-    { name: 'distance', type: FloatArg, role: 'keyword' },
-    ...COLOR_ZONE_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
-  ],
-  mutates: true,
-  summary: 'Colour map surfaces by the nearest atoms of a molecule.',
-  async run(ctx, args, cc): Promise<CmdOutcome> {
-    warnIgnored(cc, 'color zone', args, COLOR_ZONE_IGNORED)
-    if (args.near === '') return { ok: false, error: 'Error: color zone: give near' }
-    const near = targetsOf(ctx, cc.sceneId, args.near)
-    if (!near.ok) return near
-    if (near.targets.length !== 1) {
-      return { ok: false, error: `Error: color zone: the atoms must be in one model (a map surface is coloured from one molecule; they are in ${near.targets.length})` }
-    }
-    const t = near.targets[0]
-    const maps = mapObjectsOf(ctx, cc.sceneId, args.surfaces)
-    if (maps.length === 0) {
-      const mols = targetsOf(ctx, cc.sceneId, args.surfaces)
-      if (mols.ok && mols.targets.length > 0) return unsupported('Error: color zone on molecular surfaces is not supported yet (maps only)')
-      return { ok: false, error: 'Error: color zone: no surfaces specified' }
-    }
-    const surfaces = maps.flatMap((m) => mapSurfaceRenderers(ctx, cc.sceneId, m.uid))
-    if (surfaces.length === 0) cc.warn('color zone: a map drawn as a mesh cannot be coloured by atoms; draw it as a surface (volume style surface)')
-    let rows: PaintRow[] | null = null
-    const owned = ownedOn(ctx, cc.sceneId, t.obj.uid)
-    for (const name of [ATOM_STYLES.sphere.name, ATOM_STYLES.stick.name, ATOM_STYLES.ball.name]) {
-      const id = owned.get(name)
-      rows = id === undefined ? null : await readPaint(ctx, cc, id)
-      if (rows) break
-    }
-    if (surfaces.length > 0 && !rows) cc.warn(`color zone: the atoms of #${t.obj.model} have no console colours to copy; the surface takes the default atom colours`)
-    for (const id of surfaces) {
-      if (rows) {
-        // Switching to paint also puts the renderer in molecule colour mode.
-        const painted = await replacePaint(ctx, cc, id, rows)
-        if (!painted.ok) return painted
-      }
-      for (const [prop, value] of [['colormode', 'molecule'], ['target', t.obj.name], ['sel', t.sel]] as const) {
-        const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: id, prop, value })
-        if (!res.ok) return res
-      }
-    }
-    if (surfaces.length > 0 && args.distance !== '') {
-      cc.warn('color zone: distance is not supported yet (the whole map surface takes the colour of the nearest atom)')
-    }
-    return { ok: true }
-  },
+  args: [{ name: 'rest', type: RestOfLine, role: 'optional' }],
+  mutates: false,
+  summary: 'Not supported yet: colour surfaces by nearby atoms.',
+  run: () => unsupported('Error: color zone is not supported yet (colouring a map surface by atoms breaks image export in CueMol for now)'),
 })
 
 /** The adjusters `color modify` takes (ChimeraX `ADJUST_TYPES`). */

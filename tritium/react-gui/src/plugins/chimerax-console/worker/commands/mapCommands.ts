@@ -350,11 +350,6 @@ export async function unzoneMaps(ctx: WorkerContext, cc: CmdContext, maps: reado
   return { ok: true }
 }
 
-/** The isosurface renderers (`isosurf`) of a map object, the ones that can be coloured by nearby atoms. */
-export function mapSurfaceRenderers(ctx: WorkerContext, sceneId: number, objUid: number): number[] {
-  return mapRenderers(ctx, sceneId, objUid).filter((r) => r.type === 'isosurf').map((r) => r.id)
-}
-
 /** The map objects among an object specification's objects (those with map renderers). */
 export function mapObjectsOf(ctx: WorkerContext, sceneId: number, spec: string): NumberedObject[] {
   const found = objectsOf(ctx, sceneId, spec)

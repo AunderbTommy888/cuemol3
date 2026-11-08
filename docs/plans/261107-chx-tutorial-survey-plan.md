@@ -152,7 +152,7 @@ polymer の open 時の色) は対応しない (ユーザー判断)。
 | `surface dust`、`surface zone ... maxComponents` | `261108-map-surface-dust-plan.md` |
 | `label ... bgColor`、`lighting depthCueStart/End`、`set silhouetteDepthJump` | ラベルの背景、slab と別の fog の範囲、輪郭線の深さの閾値 |
 | `::area` | 残基の溶媒露出面積の属性 |
-| `color zone` の `distance` | 最も近い原子の探索の距離の上限 (`MapSurfRenderer::getColorMol`) |
+| `color zone` | 地図の等値面を近くの原子の色で塗る色付け (`colormode molecule`) は C++ にあるが、その状態で画像を書き出すと `ImgSceneExporter::write` が例外になる (1a0m とその EDS の地図で再現: `volume #2 style surface` の後に原子の色付けにすると、以後の `save` がすべて失敗する)。この不具合を直してから使う。距離の上限 (`MapSurfRenderer::getColorMol` の最も近い原子の探索) も無い |
 | `transparency` / `cartoon style modeHelix` を分子の一部に | renderer を分ける `display.ts` の設計の拡張 (原則 4) |
 
 `windowsize` は対応しない (ユーザー判断。画像は `save` の `width` / `height` で決まる)。`preset pub` は ChimeraX 1.12

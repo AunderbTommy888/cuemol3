@@ -343,7 +343,7 @@ renderer で表し、**その selection と paint が表示の状態そのもの
 | `nucleotides` | `[spec] atoms\|fill\|slab\|tube/slab\|ladder\|stubs`、`shape` `dimensions` など (無視) | `set_node_prop` (`base_type`)、`set_visible` | §5 の「核酸の塩基」。核酸に当たらなければ何もしない (ChimeraX と同じ) |
 | `style` | `[spec] stick\|ball\|sphere`、`ringFill on\|off\|thin\|thick`、`dashes` (無視) | `set_renderer_selection`、`set_node_prop` (`ring` `thickness` `ringcolor`) | `ringFill` は `chx:stick` / `chx:ball` の環の板 (`ring`、色は `$molcol`)。thin は厚さ 0.05 Å、thick は renderer の `bondw` (ChimeraX の thick は stick の幅に合わせる)。`thickness=0` は環を描かなくなるので使わない。renderer に 1 つの値なので model 全体だけ (一部なら warn) |
 | `color` | `[spec] [色 \| byhetero \| byelement \| bychain \| bymodel \| bynucleotide \| fromatoms \| fromcartoons]`、`target`、`transparency` / `halfbond` / `what` (無視) | `set_renderer_coloring`、`clear_paint`、`add_paint_at` | target の既定は ChimeraX と同じ `acsbpf` (`s` はある surface に塗る)。色は名前、hex (`#rgb` から 16 桁まで、alpha 付きも)、`rgb()` `rgba()` `hsl()` `hsla()` `gray()` (数値は整数なら 0-255、小数点付きなら 0-1、`%`、色相は `deg` / `rad` / `grad` / `turn`)、`r,g,b[,a]` の百分率 (`colors.ts`)。CueMol の paint は alpha を持たないので、色が alpha を述べていれば warn して不透明で塗る |
-| `color zone` | `surfaces near atoms [distance]`、`sharpEdges` `bondPointSpacing` `farColor` `update` (無視) | `set_renderer_coloring`、`add_paint_at`、`set_node_prop` (`colormode` `target` `sel`) | 地図の等値面 (`isosurf`) を近くの原子の色で塗る: `colormode molecule`、`target` は `near` の分子 (1 つ) の名前、`sel` はその原子、色は分子の atom renderer の paint 表を一度だけ写す (`MapSurfRenderer::getColorMol` が最も近い原子の色を使う)。CueMol の最も近い原子の探索には距離の上限が無いので、`distance` は使えず、面全体が最も近い原子の色になる (ChimeraX は遠い部分を元の色のままにする) と warn する。メッシュの地図には原子の色付けが無いので warn。分子の表面の `color zone` は not supported yet |
+| `color zone` | | | not supported yet。地図の等値面には近くの原子の色で塗る色付け (`colormode molecule`) があるが、その色付けにすると CueMol の画像の書き出し (`ImgSceneExporter::write`) が例外になり、以後の `save` がすべて失敗する (C++ の不具合。直るまで使わない) |
 | `color modify` | `[spec] adjuster [+\|-\|*] [number] [what]`、`target` | `add_paint_at` | `hue` `saturation` `lightness` (HLS)、`whiteness` `blackness` (HWB)、`red` `green` `blue` を ChimeraX の `color_modify` と同じ式で変える (`colorModify.ts`。ChimeraX は float32 で計算するので、0.5 付近の成分は 1 違いうる)。ChimeraX は原子ごとの色を変えるが、ここでは target が届く renderer の paint の entry を、色を変えて spec と交わらせ、同じ順で表の先頭に差し込む (atom は元の entry の色を変えた色になる)。paint でない renderer は変えずに warn。`contrast` は not supported yet |
 | `color list` | `[all\|custom\|builtin]` | (読み取り) | ChimeraX の書式 (`148 builtin colors: aliceblue, ... and yellowgreen.`)。custom の色は持たないので `No custom colors.` |
 | `color byattribute` / `color bfactor` | `attrName` (byattribute だけ)、`[spec] [what]`、`target`、`palette`、`range`、`average` `noValueColor` `transparency` `key` (無視) | `set_renderer_coloring`、`clear_paint`、`add_paint_at` | §5。`N atoms, atom bfactor range lo to hi` と出す |
@@ -626,8 +626,7 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
 - `camera.test.ts`: `view` の枠に地図の表示中の箱が入り、余白が 1 回だけ足されること
 - 図の script の段階 B の後の追加分: snake_case の keyword・`graphics bgColor`・`color modify` の演算子の読み方
   (`cli/syntax.test.ts`)、`cartoon style` の `arrows` / `sides` / `divisions` の property (`displayCommands.test.ts`)、
-  地図への `surface zone` が `zoneMaps` を呼ぶこと (`reprCommands.test.ts`)、地図の `color zone` が molecule の色付けと
-  paint 表を書くこと (`colorCommands.test.ts`)、ColorBrewer の名前と `color modify` の色の計算 (`colorSchemes.test.ts`)
+  地図への `surface zone` が `zoneMaps` を呼ぶこと (`reprCommands.test.ts`)、ColorBrewer の名前と `color modify` の色の計算 (`colorSchemes.test.ts`)
 - C++ の `src/tests/modules/molstr/test_namelabel.cpp` (`LabelAtomIDsJSON`): ラベルの付いた原子をラベルの順に返すこと
 - console 共通の `runtime/runCommand.test.ts`: `unsupported` の結果と `unsupportedCommand` の知らないコマンドを warning
   で飛ばして残りを実行し、1 つの txn にすること

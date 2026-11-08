@@ -14,10 +14,6 @@
  * `color fromatoms` on part of a molecule puts the atoms' entries, limited
  * to the part, first in a painted surface's table; a surface not coloured by
  * paint is left as it is (switching it would recolour the rest of it).
- *
- * `color zone` on a map colours its isosurface by the nearest atoms: the
- * renderer must get the molecule colour mode, the molecule (`target`, `sel`)
- * and the atoms' paint table, or the surface stays one colour.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -71,11 +67,6 @@ vi.mock('../display', async (importOriginal) => ({
   },
 }))
 vi.mock('../surface', () => ({ surfacesOn: () => (state.withSurface ? [{ id: 7, chain: 'A' }] : []) }))
-// One map (#2) drawn by an isosurface renderer (50).
-vi.mock('./mapCommands', () => ({
-  mapObjectsOf: () => [{ uid: 20, model: 2, name: 'map', className: 'DensityMap' }],
-  mapSurfaceRenderers: () => [50],
-}))
 
 import { COLOR_COMMANDS } from './colorCommands'
 
@@ -146,15 +137,5 @@ describe('color fromatoms', () => {
     await color({ objects: '/A', color: 'fromatoms' })
     expect(state.paintWrites.map((w) => [w.op, w.id, w.rows.map((r) => r.colorValue)])).toEqual([['prepend', 7, ['#ff0000']]])
     expect(state.paintWrites[0].rows[0].selStr).toContain('chain A')
-  })
-})
-
-describe('color zone', () => {
-  it('colours a map surface by the nearest atoms: molecule mode, the molecule, and the atoms\' paint table', async () => {
-    const cmd = COLOR_COMMANDS.colorZone
-    const args = Object.fromEntries(cmd.args.map((a) => [a.name, a.default ?? '']))
-    expect((await cmd.run(ctx, { ...args, surfaces: '#2', near: '#1' }, cc)).ok).toBe(true)
-    expect(state.paintWrites).toEqual([{ op: 'replace', id: 50, rows: [{ selStr: '*', colorValue: '#ff0000' }] }])
-    expect(state.ops.filter((o) => o.args.nodeId === 50).map((o) => `${o.args.prop}=${o.args.value}`)).toEqual(['colormode=molecule', 'target=m', 'sel=*'])
   })
 })
