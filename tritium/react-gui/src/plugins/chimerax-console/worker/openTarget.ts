@@ -25,11 +25,17 @@ export type OpenTarget =
   /** A URL: `fetch_url`. */
   | { kind: 'url'; spec: StructureFetchSpec }
   /** The URL of a density map (`.map`, `.mrc`, `.ccp4`): `fetch_map_url`. */
-  | { kind: 'mapUrl'; spec: MapUrlSpec }
+  /**
+   * A map file from a URL. `xrayDefaults`: drawn as ChimeraX draws an X-ray
+   * map it fetches (`eds_fetch.py`): a grey mesh of the whole map at the level
+   * enclosing the top 1% of the grid points, rather than CueMol's blue box.
+   */
+  | { kind: 'mapUrl'; spec: MapUrlSpec; xrayDefaults?: boolean; /** The object's name when none is given (ChimeraX's). */ name?: string }
   | { kind: 'emdb'; id: string; mirror: EmdbServerType }
   /** The biological assemblies of a PDB entry (`rcsb_bio` / `pdbe_bio`), fetched one by one. */
   | { kind: 'assemblies'; site: AssemblySite; id: string }
-  | { kind: 'error'; error: string }
+  /** `unsupported`: a source ChimeraX has that the console does not read (skipped, not an error). */
+  | { kind: 'error'; error: string; unsupported?: true }
 
 /** EMDB's ChimeraX names and the mirror `fetch_emdb` takes for each. */
 const EMDB_MIRRORS: Readonly<Record<string, EmdbServerType>> = { emdb: 'WWPDB', emdb_us: 'WWPDB', emdb_europe: 'EBI', emdb_japan: 'PDBJ' }
@@ -76,10 +82,12 @@ function fetchFrom(db: string, id: string, format: StructureFormat | null | 'oth
   if (db === 'eds') {
     // The PDBe 2Fo-Fc map file ChimeraX opens (`map/eds_fetch.py`), read as it is.
     const spec = edsMapFetch(id)
-    return spec ? { kind: 'mapUrl', spec } : { kind: 'error', error: `Error: open: "${id}" is not a PDB id` }
+    // Named as ChimeraX names it (`eds <id>`), not after the entry: the model
+    // opened next for the same entry keeps its name to itself.
+    return spec ? { kind: 'mapUrl', spec, xrayDefaults: true, name: `eds ${spec.name}` } : { kind: 'error', error: `Error: open: "${id}" is not a PDB id` }
   }
   const refused = REFUSED[db]
-  if (refused) return { kind: 'error', error: `Error: open: ${db} is not supported (${refused})` }
+  if (refused) return { kind: 'error', error: `Error: open: ${db} is not supported (${refused})`, unsupported: true }
   if (!(STRUCTURE_SOURCES as readonly string[]).includes(db)) {
     const known = [...STRUCTURE_SOURCES, ...Object.keys(EMDB_MIRRORS), 'eds', 'rcsb_bio', 'pdbe_bio'].join(', ')
     return { kind: 'error', error: `Error: open: unknown database "${db}" (${known})` }

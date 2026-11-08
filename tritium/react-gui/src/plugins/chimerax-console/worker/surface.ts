@@ -12,15 +12,24 @@
  *
  * `surface enclose` builds one surface around the atoms given, as its own
  * renderer `chx:surface:enclose`.
+ *
+ * A new surface is coloured from the molecule's cartoon (its atoms when the
+ * cartoon is not painted), as ChimeraX colours a new surface from the
+ * ribbon colours (`molsurf.py` `surface_initial_color`). ChimeraX takes one
+ * average colour per chain; the copy keeps each residue's colour, the same
+ * picture after `color bychain`. A molecule the console has not styled
+ * (opened from the GUI) has no painted renderer to copy, and its surface
+ * keeps the default colouring.
  */
 
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import { getGenericProps } from '@renderer/worker/server/services/props/read'
 import { simplifySel } from '@renderer/worker/server/services/helpers/simplifySel'
 import type { CmdContext, OpRun } from '@plugins/console/worker/dialect-api'
-import { emitContext, intersect, ownedOn, runOp } from './display'
-import type { Target } from './display'
+import { ATOM_STYLES, CARTOONS, emitContext, intersect, ownedOn, readPaint, replacePaint, runOp } from './display'
+import type { PaintRow, Target } from './display'
 import { NONE } from './spec/emit'
+import { inheritSilhouettes } from './commands/viewCommands'
 
 /** The prefix of the per-chain surfaces. */
 export const SURFACE_PREFIX = 'chx:surface:'
@@ -78,7 +87,31 @@ async function makeSurface(ctx: WorkerContext, cc: CmdContext, t: Target, name: 
   const id = ownedOn(ctx, cc.sceneId, t.obj.uid).get(name)
   if (id === undefined) return { ok: false, error: `Error: could not make ${name} on "${t.obj.name}"` }
   const hidden = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: id, prop: 'showsel', value: NONE })
-  return hidden.ok ? { ok: true, id } : hidden
+  if (!hidden.ok) return hidden
+  // The source is settled before the surface is touched: none leaves it as made.
+  const rows = await initialPaint(ctx, cc, t.obj.uid)
+  if (rows) {
+    const painted = await replacePaint(ctx, cc, id, rows)
+    if (!painted.ok) return painted
+  }
+  const outlined = await inheritSilhouettes(ctx, cc, (r) => r.id === id)
+  return outlined.ok ? { ok: true, id } : outlined
+}
+
+/**
+ * The paint a new surface of molecule `objUid` starts with: the console
+ * cartoon's, else the first painted atom renderer's; null when neither is
+ * painted (a molecule the console has not styled).
+ */
+async function initialPaint(ctx: WorkerContext, cc: CmdContext, objUid: number): Promise<PaintRow[] | null> {
+  const owned = ownedOn(ctx, cc.sceneId, objUid)
+  for (const name of [CARTOONS[0].name, ATOM_STYLES.sphere.name, ATOM_STYLES.stick.name, ATOM_STYLES.ball.name]) {
+    const id = owned.get(name)
+    if (id === undefined) continue
+    const rows = await readPaint(ctx, cc, id)
+    if (rows) return rows
+  }
+  return null
 }
 
 /**

@@ -25,7 +25,7 @@ import { splitColorArg } from '../colors'
 import { atomRenderers, cartoonRenderers, ensureOwned, ensurePaint, forEachAtom, ownedOn, runOp, targetsOf } from '../display'
 import type { Target } from '../display'
 import { closeSurfaces, encloseSurface, hideSurfaces, showSurfaces, surfacesOn } from '../surface'
-import { warnIgnored } from './warn'
+import { unsupported, warnIgnored } from './warn'
 
 // --- surface ---
 
@@ -162,7 +162,7 @@ const transparency = chxCommand({
     const fromWhat = args.what === '' ? '' : args.what.split(',').map((w) => WHAT_LETTERS[w]).join('')
     const target = args.target !== '' ? args.target : fromWhat !== '' ? fromWhat : 's'
     const bad = [...target].find((ch) => !'abcrs'.includes(ch))
-    if (bad !== undefined) return { ok: false, error: `Error: transparency: target "${bad}" is not supported (a b c r s)` }
+    if (bad !== undefined) return unsupported(`Error: transparency: target "${bad}" is not supported (a b c r s)`)
     const found = targetsOf(ctx, cc.sceneId, args.objects)
     if (!found.ok) return found
     const part = found.targets.find((t) => t.sel !== '*')
@@ -228,7 +228,7 @@ function formatOf(kind: LabelKind, text: string, attribute: string): { ok: true;
   if (attribute === '') return { ok: true, format: DEFAULT_FORMAT[kind] }
   const field = LABEL_FIELDS[kind][attribute]
   if (field === undefined) {
-    return { ok: false, error: `Error: label: ${kind} attribute "${attribute}" is not supported (${Object.keys(LABEL_FIELDS[kind]).join(', ')})` }
+    return unsupported(`Error: label: ${kind} attribute "${attribute}" is not supported (${Object.keys(LABEL_FIELDS[kind]).join(', ')})`)
   }
   return { ok: true, format: field }
 }
@@ -240,7 +240,7 @@ const LABEL_KINDS = ['atoms', 'residues', 'pseudobonds', 'bonds', 'models']
 function kindOf(otype: string): { ok: true; kinds: LabelKind[] } | { ok: false; error: string } {
   if (otype === '') return { ok: true, kinds: ['residues'] }
   if (otype === 'atoms' || otype === 'residues') return { ok: true, kinds: [otype] }
-  return { ok: false, error: `Error: label: ${otype} labels are not supported` }
+  return unsupported(`Error: label: ${otype} labels are not supported`)
 }
 
 const label = chxCommand({
@@ -344,8 +344,8 @@ const size = chxCommand({
   summary: 'Set the stick radius of whole molecules.',
   async run(ctx, args, cc) {
     warnIgnored(cc, 'size', args, ['pseudobondRadius', 'verbose'])
-    if (args.ballScale !== '') return { ok: false, error: 'Error: size: ballScale is not supported (a CueMol ball has one radius for every element, not a factor on the atom radius)' }
-    if (args.atomRadius !== '') return { ok: false, error: 'Error: size: atomRadius is not supported (CueMol has no radius per atom to set)' }
+    if (args.ballScale !== '') return unsupported('Error: size: ballScale is not supported (a CueMol ball has one radius for every element, not a factor on the atom radius)')
+    if (args.atomRadius !== '') return unsupported('Error: size: atomRadius is not supported (CueMol has no radius per atom to set)')
     if (args.stickRadius === '') return { ok: false, error: 'Error: size: give stickRadius' }
     const r = Number(args.stickRadius)
     if (!(r > 0)) return { ok: false, error: 'Error: size: stickRadius must be positive' }

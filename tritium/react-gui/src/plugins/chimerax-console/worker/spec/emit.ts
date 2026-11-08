@@ -96,7 +96,7 @@ function patternRegex(raw: string, ignoreCase: boolean, pos: number): string {
 
 /** One name for CueMol's name lists: as it is, or as a pattern when it has a wildcard. */
 function nameToken(raw: string, pos: number, ignoreCase = true): string {
-  if (raw.includes('"')) throw new SpecError('a quoted name is not supported yet', pos)
+  if (raw.includes('"')) throw new SpecError('a quoted name is not supported yet', pos, true)
   if (hasWildcard(raw) || !ignoreCase) return patternRegex(raw, ignoreCase, pos)
   return raw
 }
@@ -104,7 +104,7 @@ function nameToken(raw: string, pos: number, ignoreCase = true): string {
 /** `kw a,b,/re/` for a list of names. */
 function namesExpr(kw: string, parts: readonly ResiduePart[], what: string): string {
   if (parts.some((p) => p.start === '*' && p.end === null)) return ALL
-  for (const p of parts) if (p.end !== null) throw new SpecError(`a ${what} range is not supported`, p.pos)
+  for (const p of parts) if (p.end !== null) throw new SpecError(`a ${what} range is not supported`, p.pos, true)
   return `${kw} ${parts.map((p) => nameToken(p.start, p.pos)).join(',')}`
 }
 
@@ -209,7 +209,7 @@ const FLAGS: Readonly<Record<string, string>> = { is_helix: 'helix', is_strand: 
 function attrExpr(t: AttrTest, level: 'atom' | 'residue' | 'chain'): string {
   if (t.op === null) {
     const flag = level === 'residue' ? FLAGS[t.name] : undefined
-    if (flag === undefined) throw new SpecError(`the attribute "${t.name}" is not supported yet`, t.pos)
+    if (flag === undefined) throw new SpecError(`the attribute "${t.name}" is not supported yet`, t.pos, true)
     return t.negated ? not(flag) : flag
   }
   if (level === 'atom') {
@@ -226,7 +226,7 @@ function attrExpr(t: AttrTest, level: 'atom' | 'residue' | 'chain'): string {
   } else if (t.name === 'chain_id') {
     return nameCompare('chain', t)
   }
-  throw new SpecError(`the attribute "${t.name}" is not supported yet`, t.pos)
+  throw new SpecError(`the attribute "${t.name}" is not supported yet`, t.pos, true)
 }
 
 /** Every test of a list holds (ChimeraX's `,` in an attribute list). */
@@ -237,7 +237,7 @@ function testsExpr(tests: readonly AttrTest[] | null, level: 'atom' | 'residue' 
 /** Whether a model passes its `##` tests; only `name` is read (the object's name). */
 function modelPasses(tests: readonly AttrTest[], model: number, ec: EmitContext | undefined): boolean {
   return tests.every((t) => {
-    if (t.name !== 'name' || t.value === null) throw new SpecError(`the model attribute "${t.name}" is not supported yet`, t.pos)
+    if (t.name !== 'name' || t.value === null) throw new SpecError(`the model attribute "${t.name}" is not supported yet`, t.pos, true)
     const name = ec?.models.find((m) => m.model === model)?.name
     if (name === undefined) throw new SpecError('a model attribute test needs the scene', t.pos)
     const exact = t.op === '==' || t.op === '!=='
@@ -332,7 +332,7 @@ export function emitFor(node: SpecNode, model: number, ec?: EmitContext): string
       if (expr !== null) return expr
       // A named selection of the scene: CueMol reads the name as a reference.
       if (ec?.namedSelections.has(node.name)) return node.name
-      throw new SpecError(`the selector "${node.name}" is not supported yet`, node.pos)
+      throw new SpecError(`the selector "${node.name}" is not supported yet`, node.pos, true)
     }
     case 'zone':
       return zoneExpr(node, model, ec)

@@ -10,6 +10,10 @@
  *
  * `color bfactor` takes one value range over every atom named, in every
  * model: a range per model would give one value two colours.
+ *
+ * `color fromatoms` on part of a molecule puts the atoms' entries, limited
+ * to the part, first in a painted surface's table; a surface not coloured by
+ * paint is left as it is (switching it would recolour the rest of it).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,6 +27,10 @@ const { state } = vi.hoisted(() => ({
     sel: '*',
     /** The B-factors of each molecule's atoms; two molecules when set. */
     bfac: null as Record<number, number[]> | null,
+    /** Whether the molecule has a console surface (id 7), and whether it is coloured by paint. */
+    withSurface: false,
+    surfacePainted: false,
+    paintWrites: [] as { op: string; id: number; rows: { selStr: string; colorValue: string }[] }[],
   },
 }))
 
@@ -45,8 +53,20 @@ vi.mock('../display', async (importOriginal) => ({
   forEachAtom: (_ctx: unknown, _s: number, uid: number, _expr: string, visit: (a: { bfac: number; occ: number }) => void) => {
     for (const b of state.bfac?.[uid] ?? []) visit({ bfac: b, occ: 1 })
   },
+  ownedOn: () => new Map(OWNED),
+  // The atom renderers' colours: the sphere's table.
+  readPaint: async (_ctx: unknown, _cc: unknown, id: number) => (id === 3 ? [{ selStr: '*', colorValue: '#ff0000' }] : null),
+  isPaintColoring: () => state.surfacePainted,
+  replacePaint: async (_ctx: unknown, _cc: unknown, id: number, rows: { selStr: string; colorValue: string }[]) => {
+    state.paintWrites.push({ op: 'replace', id, rows })
+    return { ok: true }
+  },
+  prependPaint: async (_ctx: unknown, _cc: unknown, id: number, rows: { selStr: string; colorValue: string }[]) => {
+    state.paintWrites.push({ op: 'prepend', id, rows })
+    return { ok: true }
+  },
 }))
-vi.mock('../surface', () => ({ surfacesOn: () => [] }))
+vi.mock('../surface', () => ({ surfacesOn: () => (state.withSurface ? [{ id: 7, chain: 'A' }] : []) }))
 
 import { COLOR_COMMANDS } from './colorCommands'
 
@@ -66,6 +86,10 @@ beforeEach(() => {
   state.ops.length = 0
   state.sel = '*'
   state.bfac = null
+  state.withSurface = false
+  state.surfacePainted = false
+  state.paintWrites.length = 0
+  vi.mocked(cc.warn).mockClear()
 })
 
 describe('color', () => {
@@ -98,5 +122,20 @@ describe('color bfactor', () => {
       expect(entries(uid)[1][0]).toBe('bfac > 10')
       expect(entries(uid)[50]).toEqual(['bfac > 39.4', '#ff0505'])
     }
+  })
+})
+
+describe('color fromatoms', () => {
+  it('limits the atoms\' colours to the part named, first in a painted surface, and leaves an unpainted one', async () => {
+    state.withSurface = true
+    state.sel = 'chain A'
+    await color({ objects: '/A', color: 'fromatoms' })
+    expect(state.paintWrites).toEqual([])
+    expect(cc.warn).toHaveBeenCalledWith(expect.stringContaining('is not painted'))
+
+    state.surfacePainted = true
+    await color({ objects: '/A', color: 'fromatoms' })
+    expect(state.paintWrites.map((w) => [w.op, w.id, w.rows.map((r) => r.colorValue)])).toEqual([['prepend', 7, ['#ff0000']]])
+    expect(state.paintWrites[0].rows[0].selStr).toContain('chain A')
   })
 })

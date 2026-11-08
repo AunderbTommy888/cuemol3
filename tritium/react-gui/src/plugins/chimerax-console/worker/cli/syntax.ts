@@ -134,6 +134,13 @@ function caret(line: string, at: number, message: string): string {
  * ignored keywords are kept under their names, so the command can warn.
  */
 export function bindLine(spec: ChxCommand, line: string): BindResult {
+  // An argument the console does not support marks the error it ends in, so the runtime skips the command.
+  let unsupported = false
+  const result = bindArgs(spec, line, () => { unsupported = true })
+  return result.kind === 'error' && unsupported ? { ...result, unsupported: true } : result
+}
+
+function bindArgs(spec: ChxCommand, line: string, markUnsupported: () => void): BindResult {
   const full = line.trim()
   let rest = afterWords(full, spec.words.length)
   const at = () => full.length - rest.length
@@ -147,7 +154,10 @@ export function bindLine(spec: ChxCommand, line: string): BindResult {
       rest = r.rest
       return true
     } catch (e) {
-      if (e instanceof ArgError) return caret(full, start + e.pos, e.message)
+      if (e instanceof ArgError) {
+        if (e.unsupported) markUnsupported()
+        return caret(full, start + e.pos, e.message)
+      }
       throw e
     }
   }

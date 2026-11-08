@@ -39,6 +39,7 @@ import {
 } from '../camera'
 import type { CameraState } from '../camera'
 import { runOp, targetsOf } from '../display'
+import { unsupported } from './warn'
 
 // --- Helpers ---
 
@@ -65,7 +66,7 @@ function framesOf(raw: string): number | null {
 /** Refuse the keywords that move models or atoms, or set the centre: CueMol moves the camera only. */
 function refuseGiven(cmd: string, args: Record<string, string>, names: readonly string[], why: string): CmdOutcome | null {
   const given = names.find((n) => args[n] !== undefined && args[n] !== '')
-  return given ? { ok: false, error: `Error: ${cmd}: ${given} is not supported (${why})` } : null
+  return given ? unsupported(`Error: ${cmd}: ${given} is not supported (${why})`) : null
 }
 
 /** The camera, or the error for when there is no view. */
@@ -106,7 +107,8 @@ const turn = chxCommand({
     const axis = axisOf(args.axis || 'y')
     if (!axis) return { ok: false, error: `Error: turn: "${args.axis}" is not an axis (x, y, z or three numbers)` }
     const frames = framesOf(args.frames)
-    if (frames === null) return { ok: false, error: 'Error: turn: frames must be a whole number (forever is not supported)' }
+    if (args.frames === 'forever') return unsupported('Error: turn: frames forever is not supported (the console turns at once, not as an animation)')
+    if (frames === null) return { ok: false, error: 'Error: turn: frames must be a whole number' }
     if (args.frames !== '') cc.warn('turn: frames: turned at once, not animated')
     const angle = (args.angle === '' ? 90 : Number(args.angle)) * frames
     const cam = cameraOf(ctx, cc)
@@ -133,7 +135,8 @@ const move = chxCommand({
     const axis = axisOf(args.axis)
     if (!axis) return { ok: false, error: `Error: move: "${args.axis}" is not an axis (x, y, z or three numbers)` }
     const frames = framesOf(args.frames)
-    if (frames === null) return { ok: false, error: 'Error: move: frames must be a whole number (forever is not supported)' }
+    if (args.frames === 'forever') return unsupported('Error: move: frames forever is not supported (the console moves at once, not as an animation)')
+    if (frames === null) return { ok: false, error: 'Error: move: frames must be a whole number' }
     if (args.frames !== '') cc.warn('move: frames: moved at once, not animated')
     // With no distance ChimeraX moves by the axis as given: 1 A along x.
     const d = (args.distance === '' ? 1 : Number(args.distance)) * frames
@@ -313,27 +316,36 @@ export async function recallView(ctx: WorkerContext, cc: CmdContext, name: strin
 const NO_EDGE_TYPES = new Set(['simple', 'trace', 'spline', 'contour', 'gpu_mapmesh', '*selection', '*unitcell', '*namelabel'])
 
 /** Every renderer in the scene that can draw an outline, with its edge settings. */
-function outlinedRenderers(ctx: WorkerContext, sceneId: number): { id: number; egtype: string; eglinew: number; egcolor: string }[] {
-  const out: { id: number; egtype: string; eglinew: number; egcolor: string }[] = []
+function outlinedRenderers(ctx: WorkerContext, sceneId: number): { id: number; objUid: number; egtype: string; eglinew: number; egcolor: string }[] {
+  const out: { id: number; objUid: number; egtype: string; eglinew: number; egcolor: string }[] = []
   for (const obj of objectNodes(ctx, sceneId)) {
     for (const r of rendererNodesOf(obj).filter((n) => n.type === 'renderer')) {
       const props = getGenericProps(ctx, { sceneId, nodeId: r.id, nodeType: 'renderer' })
       if (!props.ok) continue
       const get = (k: string) => props.entries.find((e) => e.key === k)?.value
       if (get('egtype') === undefined || NO_EDGE_TYPES.has(String(get('type_name')))) continue
-      out.push({ id: r.id, egtype: String(get('egtype')), eglinew: Number(get('eglinew')), egcolor: String(get('egcolor')) })
+      out.push({ id: r.id, objUid: obj.id, egtype: String(get('egtype')), eglinew: Number(get('eglinew')), egcolor: String(get('egcolor')) })
     }
   }
   return out
 }
+
+/**
+ * The outline mode ChimeraX's silhouettes are: CueMol's `edges` inks every
+ * boundary where the depth jumps (an atom in front of another too), as
+ * ChimeraX does; its `silhouette` inks only the outer contour.
+ */
+const SILHOUETTE_EDGE_TYPE = 'edges'
 
 /** ChimeraX's default silhouette width in pixels (`graphics/opengl.py` `Silhouette.thickness`). */
 const SILHOUETTE_DEFAULT_PX = 1
 
 /**
  * ChimeraX's silhouettes, which are one setting for the whole view, as the
- * outline of every renderer that can draw one. The width is in pixels
- * there and in angstroms here, so it is converted at the current zoom.
+ * outline of every renderer that can draw one, in the `edges` mode
+ * (`SILHOUETTE_EDGE_TYPE`). The width is in pixels there and in angstroms
+ * here, so it is converted at the current zoom. An outline in either mode
+ * counts as on.
  */
 export async function silhouettes(
   ctx: WorkerContext,
@@ -347,8 +359,8 @@ export async function silhouettes(
   const cam = cameraOf(ctx, cc)
   if ('ok' in cam) return cam
   if (enable === '' && width === '' && color === '') {
-    const on = rends.some((r) => r.egtype === 'silhouette')
-    const first = rends.find((r) => r.egtype === 'silhouette') ?? rends[0]
+    const on = rends.some((r) => r.egtype !== 'none')
+    const first = rends.find((r) => r.egtype !== 'none') ?? rends[0]
     const px = first ? first.eglinew / pixelSize(cam) : 0
     cc.print(`Silhouettes: ${on}, width ${Number(px.toPrecision(3))}, color ${first?.egcolor ?? ''}`)
     return { ok: true }
@@ -356,13 +368,42 @@ export async function silhouettes(
   if (width !== '') cc.warn(`${cmd}: the width is converted at the current zoom (CueMol's outline width is in angstroms, so it grows as you zoom in)`)
   for (const r of rends) {
     const writes: [string, string][] = []
-    if (enable !== '') writes.push(['egtype', enable === 'true' ? 'silhouette' : 'none'])
+    if (enable !== '') writes.push(['egtype', enable === 'true' ? SILHOUETTE_EDGE_TYPE : 'none'])
     if (width !== '') writes.push(['eglinew', String(Number(width) * pixelSize(cam))])
     // An outline turned on gets ChimeraX's default width, 1 pixel at the
     // current zoom: CueMol's default (0.01 A) is a fraction of a pixel. An
     // outline already on keeps the width it has.
-    else if (enable === 'true' && r.egtype !== 'silhouette') writes.push(['eglinew', String(SILHOUETTE_DEFAULT_PX * pixelSize(cam))])
+    else if (enable === 'true' && r.egtype === 'none') writes.push(['eglinew', String(SILHOUETTE_DEFAULT_PX * pixelSize(cam))])
     if (color !== '') writes.push(['egcolor', splitColorArg(color).hex])
+    for (const [prop, value] of writes) {
+      const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: r.id, prop, value })
+      if (!res.ok) return res
+    }
+  }
+  return { ok: true }
+}
+
+/**
+ * Give renderers just made the outline the rest of the scene has: ChimeraX's
+ * silhouettes are one setting for the view, so a model opened after they
+ * were turned on is outlined too. Read from the scene's renderers (one in
+ * the `edges` mode), not kept aside, so a saved scene behaves the same.
+ *
+ * @param isNew - which renderers were just made (by renderer id, or by their object's uid)
+ */
+export async function inheritSilhouettes(
+  ctx: WorkerContext,
+  cc: CmdContext,
+  isNew: (r: { id: number; objUid: number }) => boolean,
+): Promise<CmdOutcome> {
+  const rends = outlinedRenderers(ctx, cc.sceneId)
+  const model = rends.find((r) => !isNew(r) && r.egtype === SILHOUETTE_EDGE_TYPE)
+  if (!model) return { ok: true }
+  for (const r of rends.filter(isNew)) {
+    const writes: [string, string][] = []
+    if (r.egtype !== model.egtype) writes.push(['egtype', model.egtype])
+    if (r.eglinew !== model.eglinew) writes.push(['eglinew', String(model.eglinew)])
+    if (r.egcolor !== model.egcolor) writes.push(['egcolor', model.egcolor])
     for (const [prop, value] of writes) {
       const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: r.id, prop, value })
       if (!res.ok) return res

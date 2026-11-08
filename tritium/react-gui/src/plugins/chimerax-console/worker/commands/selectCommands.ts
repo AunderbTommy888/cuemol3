@@ -32,7 +32,7 @@ import type { NumberedObject } from '../models'
 import { ALL, NONE } from '../spec/emit'
 import type { SpecNode } from '../spec/parse'
 import { namedSelections } from '../names'
-import { warnIgnored } from './warn'
+import { unsupported, warnIgnored } from './warn'
 
 // --- select ---
 
@@ -334,7 +334,7 @@ const nameFrozen = chxCommand({
   args: [{ name: 'rest', type: RestOfLine, role: 'optional' }],
   mutates: false,
   summary: 'Not supported: CueMol names an expression, not a fixed set of atoms.',
-  run: () => ({ ok: false, error: 'Error: name frozen is not supported (a CueMol named selection is an expression, re-evaluated where it is used)' }),
+  run: () => unsupported('Error: name frozen is not supported (a CueMol named selection is an expression, re-evaluated where it is used)'),
 })
 
 const nameDelete = chxCommand({
@@ -443,7 +443,7 @@ function infoLevel(level: 'models' | 'chains' | 'residues' | 'atoms'): ChxComman
     run(ctx, args, cc) {
       warnIgnored(cc, `info ${level}`, args, ['saveFile'])
       if (level === 'models') {
-        if (args.attribute !== '' && args.attribute !== 'name') return { ok: false, error: `Error: info models: attribute "${args.attribute}" is not supported (name only)` }
+        if (args.attribute !== '' && args.attribute !== 'name') return unsupported(`Error: info models: attribute "${args.attribute}" is not supported (name only)`)
         const targets = infoTargets(ctx, cc.sceneId, args.objects)
         if (!Array.isArray(targets)) return targets
         for (const t of targets) cc.print(`model id #${t.obj.model} type ${t.obj.className} name ${t.obj.name}`)
@@ -452,10 +452,10 @@ function infoLevel(level: 'models' | 'chains' | 'residues' | 'atoms'): ChxComman
       const targets = infoTargets(ctx, cc.sceneId, args.objects)
       if (!Array.isArray(targets)) return targets
       const attr = args.attribute
-      if (level === 'chains' && attr !== '' && attr !== 'chain_id') return { ok: false, error: `Error: info chains: attribute "${attr}" is not supported (chain_id only)` }
-      if (level === 'residues' && attr !== '' && attr !== 'name') return { ok: false, error: `Error: info residues: attribute "${attr}" is not supported (name only)` }
+      if (level === 'chains' && attr !== '' && attr !== 'chain_id') return unsupported(`Error: info chains: attribute "${attr}" is not supported (chain_id only)`)
+      if (level === 'residues' && attr !== '' && attr !== 'name') return unsupported(`Error: info residues: attribute "${attr}" is not supported (name only)`)
       if (level === 'atoms' && attr !== '' && !(attr in ATOM_ATTRS)) {
-        return { ok: false, error: `Error: info atoms: attribute "${attr}" is not supported (one of ${Object.keys(ATOM_ATTRS).join(', ')})` }
+        return unsupported(`Error: info atoms: attribute "${attr}" is not supported (one of ${Object.keys(ATOM_ATTRS).join(', ')})`)
       }
       for (const t of targets) {
         const seen = new Set<string>()

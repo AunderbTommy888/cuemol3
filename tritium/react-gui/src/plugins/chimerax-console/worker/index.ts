@@ -24,6 +24,7 @@ import { resolveChx } from './commands/aliasCommands'
 import { withSceneSelectors } from './spec/selectors'
 import { selectionNames } from './names'
 import { CHX_COMMANDS } from './commands/registry'
+import { chimeraxCommandWord, isChimeraxSubcommand } from './chimeraxCommands'
 
 /** ChimeraX's command language (cli.py), as a console syntax. */
 const CHX_SYNTAX: DialectSyntax = {
@@ -52,4 +53,23 @@ export const CHIMERAX_DIALECT: ConsoleDialect = {
   },
   // Sources are declared on the argument types (cli/argTypes.ts), not by id.
   candidates: () => null,
+  unsupportedCommand: unsupportedChxCommand,
+}
+
+/**
+ * Why a line whose command the console does not know is skipped: a ChimeraX
+ * command it does not have (`sym`, `fitmap`, `alphafold match`), so a
+ * ChimeraX script goes on. Null for a word ChimeraX does not have either (a
+ * misspelling), and for an unknown second word after a command the console
+ * has, unless ChimeraX has that pair: both stay errors.
+ */
+function unsupportedChxCommand(text: string): string | null {
+  const words = text.trim().split(/\s+/)
+  const name = chimeraxCommandWord(words[0] ?? '')
+  if (name === null) return null
+  const ours = CHX_COMMANDS.some((c) => isChxCommand(c) && c.words[0] === name)
+  if (!ours) return `Error: ${name} is not supported yet (a ChimeraX command the console does not have)`
+  const second = words[1] ?? ''
+  if (second === '' || !isChimeraxSubcommand(name, second)) return null
+  return `Error: ${name} ${second} is not supported yet (a ChimeraX command the console does not have)`
 }

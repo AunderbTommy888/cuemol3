@@ -27,6 +27,8 @@ export class SpecError extends Error {
     message: string,
     /** Offset in the text where the problem is. */
     readonly pos: number,
+    /** A way of writing ChimeraX has that the console does not support (skipped, not an error). */
+    readonly unsupported = false,
   ) {
     super(message)
   }
@@ -132,7 +134,7 @@ class Reader {
   }
 
   unsupported(what: string, at = this.pos): never {
-    this.fail(`${what} is not supported yet`, at)
+    throw new SpecError(`${what} is not supported yet`, at, true)
   }
 
   /** Whether a term starts here (without taking it). */
