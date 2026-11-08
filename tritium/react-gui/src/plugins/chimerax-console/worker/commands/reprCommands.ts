@@ -490,7 +490,11 @@ const size = chxCommand({
     warnIgnored(cc, 'size', args, ['pseudobondRadius', 'verbose'])
     if (args.ballScale !== '') return unsupported('Error: size: ballScale is not supported (a CueMol ball has one radius for every element, not a factor on the atom radius)')
     if (args.atomRadius !== '') return unsupported('Error: size: atomRadius is not supported (CueMol has no radius per atom to set)')
-    if (args.stickRadius === '') return { ok: false, error: 'Error: size: give stickRadius' }
+    if (args.stickRadius === '') {
+      // Only an ignored size (warned above) is nothing to do, not a mistake.
+      if (args.pseudobondRadius !== '') return { ok: true }
+      return { ok: false, error: 'Error: size: give stickRadius' }
+    }
     const r = Number(args.stickRadius)
     if (!(r > 0)) return { ok: false, error: 'Error: size: stickRadius must be positive' }
     const found = targetsOf(ctx, cc.sceneId, args.objects)
