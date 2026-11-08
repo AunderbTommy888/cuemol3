@@ -255,6 +255,9 @@ architecture, it belongs here.
   フォールバックとして併存)。umbreon 1:1 のビルド配線、density → mesh_size
   変換、例外時 BALL フォールバック、RSCache を持たない判断 (常駐メモリ対
   再生成の短縮)、MeshMS 側の多成分/孤立原子対応、atom_id → MSVert::info 見送りの判断。
+- [視点の fit (Focus と center view)](view-fit.md) (日本語) --
+  scene tree の Focus、開いたときの center view、ChX の最初の open が視点を合わせる規則: 分子は表示中の renderer の
+  原子、地図は表示中の等値面の範囲、各辺 20% の余白、zoom の下限 15 Å、center view は selection の設定後に Focus と同じ fit。
 - [Cryo-EM map mode](cryo-em-map-mode.md) (日本語) --
   density map の結晶学 / cryo-EM モード分離。`DensityMap.map_type` (読込時自動判定) と
   `MapRenderer.region_mode` (box / full) の 2 層モデル、PBC 適格条件の一本化、MRC2014 ORIGIN、

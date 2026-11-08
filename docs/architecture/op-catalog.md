@@ -194,7 +194,10 @@ selection を selector として読む) のため)、`complete` (Tab。書き戻
 引数。lone の qax なら action ごとに 1 txn で再生)。別の dialect の script (拡張子で `scriptOwner`) は、
 `<file> is a <label> script; switch the console to the <label> dialect to run it` と共通の文言で断る。
 
-**runtime**: 1 submit = 1 txn (label は dialect の接頭辞 `cmd:` / `pym:`)、失敗で以降を中止、
+**runtime**: 1 submit = 1 txn (label は dialect の接頭辞 `cmd:` / `pym:`)、失敗で以降を中止。ただし dialect が
+「想定内の未対応」と印を付けた結果 (`CmdOutcome` / bind の結果の `unsupported`) と、dialect の `unsupportedCommand` が
+理由を返した知らないコマンドは、`Warning: <理由>; skipped` と出して飛ばし、残りを実行する (txn はそのまま 1 つ。
+今これを使うのは ChX: [console-chimerax-dialect](console-chimerax-dialect.md) §1)。
 lone `undo` / `redo` と `outsideTxn` のコマンドは txn の外、script は最大 8 段のネスト、Stop で
 ダウンロードも中断。
 terminal からは thin client `tritium_cli` で同じ runtime を使える (作業ディレクトリは client 側。

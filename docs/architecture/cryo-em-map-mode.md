@@ -229,8 +229,24 @@ boundary で切り取った region を budget 由来の stride で** 表示し�
   `setupRenderer` が map kind の default style を apply する (EM なら `CryoEM*` = top 1%)。level の直書きは無い。
   **view をどうするかは別判断**で、`applyMapCenterPolicy` (`services/map/emDefaults.ts`) が
   ダイアログの 3 択 (`auto` / `setMapCenter` / `moveViewCenter`) を解決する (ADR-0057)。
-  `auto` は em → `moveViewCenter` (= `DensityMap.fitView`; map renderer の `center` 既定 (0,0,0) は
+  `auto` は em → `moveViewCenter` (= 地図への fit、下記; map renderer の `center` 既定 (0,0,0) は
   ORIGIN 配置の EM map の外にあるため)、それ以外 → `setMapCenter` (= `rend.center = view.getViewCenter()`)
+- **地図への fit** (`services/map/mapFit.ts` の `fitViewToMap`): 表示中の等値面の範囲に合わせる。表示中の map renderer
+  (`visible`) ごとに、その `level` (絶対値) 以上の格子点が占める箱を `DensityMap::getLevelFitBoxJSON` で求め、その和を
+  分子の fit と同じく各辺 20% 広げて `View::fitToBox` で合わせる (ChimeraX は表示中の面の範囲に合わせる)。表示中の
+  renderer が無いか箱が空なら、データの箱に合わせる (`DensityMap::fitView` / `getFitBoxJSON`)。EM map の箱は粒子の
+  数倍あるので、箱に合わせると粒子が小さく写る。File > Open (`fitViewsToMap`)、EMDB / URL の取得
+  (`streamLoad.ts`)、scene tree の Focus (`sceneTree/sceneOps.ts`) が使う。
+- **データの箱**: `DensityMap::fitView` / `getFitBoxJSON` は、単位胞 (分数座標 0-1) ではなくデータの 8 つの角
+  (格子 index (0,0,0) から (nCols, nRows, nSecs)) を `convToOrth` で変換した箱を使う。EMDB の map は開始 index が
+  -n/2 のことが多く、単位胞に合わせると粒子から半箱ずれた点を向いた。`getLevelFitBoxJSON` は 8 bit の格子を byte の
+  閾値で 1 回なめる (`m_map` の slice を直接読む)。
+- **名前で引く参照の型**: 地図の境界 (`bndry_molname`)、地図や表面の色付けに使う地図 (`color_mapname` など) は、
+  object を名前で引く。EDS の地図のように、分子と同じ名前の地図があると、型を見ない `Scene::getObjectByName` は
+  uid の若い方 (先に開いた方) を返し、境界が外れていた。名前を期待する型で引く `Scene::getObjectByNameAs<T>` (名前の
+  合う object を uid 順に返す `getObjectsByName` から、`T` に変換できる最初のもの) を使う。分子を期待する
+  `MapRenderer` / `MapSurfRenderer` / `MolSurfRenderer` / `MolSurfBuilder` / `AtomIntrRenderer` / 選択の `around`、
+  地図を期待する色付けの参照がこれで引く。型を問わない `Camera` / `RendPropAnim` / `MolAnim` は `getObjectByName` のまま。
 - **Density map pane の level 単位 (2026-09)**: `MapRendererState.levelUnit` (`sigma` / `percent`、map kind から) と
   `level` (絶対値) を追加。native 表示では `siglevel` を σ または % で書き、`use_abslevel` (メニュー
   "Use absolute contour level") では `level` を絶対値で書く (C++ が map kind で逆変換し `siglevel` を
