@@ -18,6 +18,7 @@
 #include "xtal/MapSurfRenderer.hpp"
 #include "molstr/MolCoord.hpp"
 #include <qsys/TTYView.hpp>
+#include <cstdio>
 
 using qlib::Vector4D;
 using xtal::DensityMap;
@@ -274,10 +275,19 @@ TEST_F(MapRegionTest, FitBoxesFollowTheDataBlockAndTheLevel)
     qsys::ObjectPtr pObj(pMap);
 
     qsys::ViewPtr pView(MB_NEW qsys::TTYView());
+    // The box JSON's six numbers ({"min":[x,y,z],"max":[x,y,z]}), compared with
+    // a tolerance: the cell matrix leaves rounding (-0.9999999999999999, 6e-17).
+    auto expectBox = [](const qlib::LString &json, const double (&want)[6]) {
+        double got[6] = {0, 0, 0, 0, 0, 0};
+        ASSERT_EQ(std::sscanf(json.c_str(), "{\"min\":[%lf,%lf,%lf],\"max\":[%lf,%lf,%lf]}",
+                              &got[0], &got[1], &got[2], &got[3], &got[4], &got[5]), 6) << json.c_str();
+        for (int i = 0; i < 6; ++i)
+            EXPECT_NEAR(got[i], want[i], 1.0e-9) << json.c_str();
+    };
     // The block: index 0..4 from start -2, not the cell (0..4 A).
-    EXPECT_EQ(std::string(pMap->getFitBoxJSON(pView).c_str()), "{\"min\":[-2,-2,-2],\"max\":[2,2,2]}");
+    expectBox(pMap->getFitBoxJSON(pView), {-2, -2, -2, 2, 2, 2});
     // Only the point at (1, 2, 3) + start reaches 5.
-    EXPECT_EQ(std::string(pMap->getLevelFitBoxJSON(pView, 5.0).c_str()), "{\"min\":[-1,0,1],\"max\":[-1,0,1]}");
+    expectBox(pMap->getLevelFitBoxJSON(pView, 5.0), {-1, 0, 1, -1, 0, 1});
     EXPECT_TRUE(pMap->getLevelFitBoxJSON(pView, 100.0).isEmpty());
 }
 
