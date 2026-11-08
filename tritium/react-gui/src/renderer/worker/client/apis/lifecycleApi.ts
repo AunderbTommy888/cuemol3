@@ -34,6 +34,21 @@ export async function initCueMol(transport: WorkerTransport, sysConfigPath?: str
  *   omitted to apply the built-in default.
  * @returns `true` on success, `false` on transport failure.
  */
+/**
+ * Load the dot directory's style files (`~/.cuemol/styles/*.xml`) as
+ * read-only global style sets, before the user style.
+ *
+ * @returns how many loaded; 0 on transport failure
+ */
+export async function loadDotStyles(transport: WorkerTransport, paths: string[]): Promise<number> {
+    try {
+        return await transport.invokeMethod('loadDotStyles', paths);
+    } catch (e) {
+        log.error('loadDotStyles failed:', e);
+        return 0;
+    }
+}
+
 export async function loadUserStyle(transport: WorkerTransport, userStylePath?: string): Promise<boolean> {
     try {
         return await transport.invokeMethod('loadUserStyle', userStylePath);

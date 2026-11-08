@@ -19,6 +19,7 @@ import { useShowErrorAlert } from '@renderer/dialogs/ErrorAlertDialogProvider'
 import type { AsyncCueMol } from '@renderer/worker/client/AsyncCueMol'
 import { useOpenFilePaths } from './useOpenFilePaths'
 import { useFileOpenPrefs } from '@renderer/contexts/FileOpenPrefsContext'
+import { startupSettled } from '@renderer/plugin-host/startupGate'
 
 interface UseShellOpenFilesOptions {
   cm: AsyncCueMol | null
@@ -44,6 +45,8 @@ export function useShellOpenFiles({
   // Latest-value ref: the push subscription is registered once.
   const drainRef = useRef(async (): Promise<void> => {})
   drainRef.current = async (): Promise<void> => {
+    // After the startup scripts (PyMOL's order): they set the scene up first.
+    await startupSettled()
     const req = await window.electronAPI?.invoke(IPC.SHELL_FILES_TAKE)
     if (!req) return
     // UXP convCmdLineFiles alerted on a missing file; report before opening

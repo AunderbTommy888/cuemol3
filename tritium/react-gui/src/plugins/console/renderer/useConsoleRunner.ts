@@ -25,8 +25,24 @@ function makeRunId(): string {
   return `run-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-/** Registers the runner the panel calls. Renders nothing. */
-export function useConsoleRunner(): void {
+/** The prefix of the startup scripts' echo lines in the transcript (as `[cli] ` for the command line's). */
+export const STARTUP_ECHO_PREFIX = '[startup] '
+
+/** The folder of a file path (either separator). */
+function dirOf(filePath: string): string {
+  const i = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+  return i <= 0 ? filePath.slice(0, i + 1) : filePath.slice(0, i)
+}
+
+/** Running a script file through the runner, to its end. */
+export type ScriptRunner = (scriptPath: string, dialect: DialectId) => Promise<{ stopped: boolean; failed: boolean }>
+
+/**
+ * Registers the runner the panel calls, and returns one for script files
+ * (the startup scripts) that goes the same way: the run shows as running,
+ * Stop cancels it, Undo / Redo are held off meanwhile. Renders nothing.
+ */
+export function useConsoleRunner(): { runScript: ScriptRunner } {
   const { cm } = useCueMol()
   const ensureActiveScene = useEnsureActiveScene()
   const tabs = useSceneTabs()
@@ -72,6 +88,45 @@ export function useConsoleRunner(): void {
     [cm, ensureActiveScene, tabs, openScene],
   )
 
+  const runScript = useCallback<ScriptRunner>(
+    async (scriptPath, dialect) => {
+      if (!cm) return { stopped: false, failed: true }
+      consoleSession.begin()
+      const runId = `startup-${makeRunId()}`
+      runIdRef.current = runId
+      stoppedRef.current = false
+      try {
+        const res = await runSubmission(
+          { cm, ensureActiveScene, tabs, openScene },
+          {
+            dialect,
+            text: '',
+            runId,
+            scriptPath,
+            // The script's own folder, for a qax script too (the worker would
+            // otherwise use the console's current directory).
+            cwd: dirOf(scriptPath),
+            quiet: true,
+            stopped: () => stoppedRef.current,
+          },
+        )
+        consoleSession.finish(
+          [{ kind: 'echo' as const, text: `${STARTUP_ECHO_PREFIX}@${scriptPath}` }, ...res.entries.map((e) => (e.kind === 'echo' ? { ...e, text: `${STARTUP_ECHO_PREFIX}${e.text}` } : e))],
+        )
+        const stopped = stoppedRef.current || res.interrupted
+        return { stopped, failed: res.aborted && !stopped }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error('console: startup script failed:', e)
+        consoleSession.failed(`Error: ${msg}`)
+        return { stopped: stoppedRef.current, failed: !stoppedRef.current }
+      } finally {
+        if (runIdRef.current === runId) runIdRef.current = null
+      }
+    },
+    [cm, ensureActiveScene, tabs, openScene],
+  )
+
   const stop = useCallback(() => {
     const runId = runIdRef.current
     if (!cm || !runId) return
@@ -85,10 +140,17 @@ export function useConsoleRunner(): void {
     consoleSession.setRunner(run, stop)
   }, [run, stop])
 
-  // Switching the plugin off unmounts the Root; drop the session with it.
+  // Switching the plugin off unmounts the Root; drop the session with it,
+  // and cancel the run in flight: nothing could stop it afterwards (a Root
+  // mounted again starts with no run id), and its transaction would stay open.
+  const stopRef = useRef(stop)
+  stopRef.current = stop
   useEffect(() => {
     return () => {
+      stopRef.current()
       consoleSession.reset()
     }
   }, [])
+
+  return { runScript }
 }

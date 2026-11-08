@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from 'vitest'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { ensureApp, NOT_INSTALLED } from './connection'
+import { ensureApp, infoFilePath, NOT_INSTALLED } from './connection'
 
 describe('tritium_cli starting the app', () => {
   it('launches its own executable with --tritium-cli and waits for the console endpoint', async () => {
@@ -64,5 +64,14 @@ describe('tritium_cli spawning the app', () => {
       ensureApp({ file, onStart: () => {}, env: {}, locate: () => '/nonexistent/CueMol3', timeoutMs: 60_000 }),
     ).rejects.toThrow(/Could not start/)
     expect(Date.now() - t0).toBeLessThan(5000)
+  })
+})
+
+describe('tritium_cli finding the info file', () => {
+  it('reads it from the dot directory the app was started with (CUEMOL_HOME), unless pointed at one', () => {
+    // The app writes it to $CUEMOL_HOME/local-api.json (main/dotDir.ts); a mismatch means "not running".
+    expect(infoFilePath({ CUEMOL_HOME: '/h/dot' })).toBe(path.join('/h/dot', 'local-api.json'))
+    expect(infoFilePath({})).toBe(path.join(os.homedir(), '.cuemol', 'local-api.json'))
+    expect(infoFilePath({ CUEMOL_HOME: '/h/dot', CUEMOL_LOCAL_API_INFO: '/x/info.json' })).toBe('/x/info.json')
   })
 })

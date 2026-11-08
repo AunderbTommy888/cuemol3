@@ -241,6 +241,7 @@ export class AsyncCueMol {
 
     /** Apply a user style sheet to the running scene manager. */
     loadUserStyle(userStylePath?: string): Promise<boolean> { return lifecycleApi.loadUserStyle(this._transport, userStylePath); }
+    loadDotStyles(paths: string[]): Promise<number> { return lifecycleApi.loadDotStyles(this._transport, paths); }
 
     /** Persist the "user" style set to disk (called on window close). */
     saveUserStyle(userStylePath: string): Promise<boolean> { return lifecycleApi.saveUserStyle(this._transport, userStylePath); }

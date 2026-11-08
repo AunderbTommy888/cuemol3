@@ -53,4 +53,10 @@ export interface AppPathInfo {
   bundledActionsFile: string
   /** The folder of the user's own actions (`<userData>/actions`). */
   actionsDir: string
+  /** The user's dot directory (`~/.cuemol`, or `$CUEMOL_HOME`; `main/dotDir.ts`). */
+  dotDir: string
+  /** The startup scripts there are, absolute, in running order (txt, qax, pml, cxc). */
+  startupScripts: string[]
+  /** The extra style files (`styles/*.xml`), absolute, by file name. */
+  dotStyleFiles: string[]
 }

@@ -189,3 +189,9 @@
   color: var(--text-muted);
   user-select: text;
 }
+
+/* Stop's icon in red, so the button reads as Stop at a glance (the label stays the usual colour). */
+.bp5-button .console-stop-icon,
+.console-stop-icon {
+  color: var(--text-error);
+}

@@ -44,6 +44,7 @@ export interface SerializedGestureEvent {
 export interface MethodMap {
   initCueMol:              { args: [loadPath?: string];                                                    result: boolean }
   loadUserStyle:           { args: [userStylePath?: string];                                               result: boolean }
+  loadDotStyles:           { args: [paths: string[]];                                                      result: number }
   saveUserStyle:           { args: [userStylePath: string];                                                result: boolean }
   setViewInputConfigStyle: { args: [styleName: string];                                                    result: boolean }
   terminateWorker:         { args: [];                                                                      result: void }

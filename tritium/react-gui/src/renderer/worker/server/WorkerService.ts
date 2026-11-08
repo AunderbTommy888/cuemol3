@@ -23,6 +23,7 @@ import {
 } from './inputEvents';
 import {
     loadUserStyle as loadUserStyleImpl,
+    loadDotStyles as loadDotStylesImpl,
     saveUserStyle as saveUserStyleImpl,
     setViewInputConfigStyle as setViewInputConfigStyleImpl,
     registerWorkerEventListener,
@@ -88,6 +89,7 @@ export class WorkerService {
         this._methods = {
             'initCueMol': this.initCueMol,
             'loadUserStyle': this.loadUserStyle,
+            'loadDotStyles': this.loadDotStyles,
             'saveUserStyle': this.saveUserStyle,
             'setViewInputConfigStyle': this.setViewInputConfigStyle,
             'terminateWorker': this.terminateWorker,
@@ -300,6 +302,11 @@ export class WorkerService {
         onActionsChanged((sceneId) => this.pushMessage(ACTIONS_CHANGED_CHANNEL, sceneId));
 
         return true;
+    }
+
+    /** Load the dot directory's style files (see `workerLifecycle.loadDotStyles`). */
+    loadDotStyles(paths: string[]): number {
+        return loadDotStylesImpl(this._cm, paths);
     }
 
     /** Load the user style set (see `workerLifecycle.loadUserStyle`). */

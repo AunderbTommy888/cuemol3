@@ -15,6 +15,7 @@ import fs from 'fs';
 import { IPC } from '@shared/ipcChannels';
 import type { AppPathInfo } from '@shared/types/appPath';
 import { handleInvoke } from '../ipc/handleInvoke';
+import { getDotDir, listDotStyleFiles, listStartupScripts } from '../dotDir';
 
 export function getSysConfigPath(): string {
   if (app.isPackaged) {
@@ -153,6 +154,9 @@ export function registerAppPathHandlers(): void {
       cliPath: getCliPath(),
       bundledActionsFile: getBundledActionsFile(),
       actionsDir: getUserActionsDir(),
+      dotDir: getDotDir(),
+      startupScripts: listStartupScripts(),
+      dotStyleFiles: listDotStyleFiles(),
     }
   })
 }

@@ -19,6 +19,7 @@ import {
 import { IPC } from '@shared/ipcChannels'
 import { useShellOpenFiles } from '@renderer/features/file-io/useShellOpenFiles'
 import { resetOpenFilePathsForTests } from '@renderer/features/file-io/useOpenFilePaths'
+import { holdStartup, markStartupReady, resetStartupGate } from '@renderer/plugin-host/startupGate'
 
 void React
 
@@ -91,6 +92,9 @@ describe('useShellOpenFiles', () => {
     openPaths.mockClear()
     showErrorAlert.mockClear()
     resetOpenFilePathsForTests()
+    // A launch with no startup work: the gate opens as soon as it is ready.
+    resetStartupGate()
+    markStartupReady()
   })
   afterEach(() => {
     teardownElectronAPI()
@@ -152,6 +156,25 @@ describe('useShellOpenFiles', () => {
     firePending()
     await flushPromises()
     expect(takeCalls(api)).toBe(2)
+
+    handle.unmount()
+  })
+
+  it('opens the files only after the startup scripts are done', async () => {
+    // The startup scripts run first, so the files land in the scene they set up.
+    resetStartupGate()
+    const hold = holdStartup()
+    markStartupReady()
+    expect(hold.claim()).toBe(true)
+    const { api } = setupApi({ paths: ['/a.pdb'], missing: [] })
+    const handle = mount({ cueMolReady: true, initialSceneSettled: true })
+    await flushPromises()
+    expect(takeCalls(api)).toBe(0)
+
+    hold.release()
+    await flushPromises()
+    expect(takeCalls(api)).toBe(1)
+    expect(openPaths).toHaveBeenCalledTimes(1)
 
     handle.unmount()
   })

@@ -149,7 +149,7 @@ describe('WorkerService.invoke dispatch contract', () => {
         const methods = (svc as unknown as { _methods: Record<string, AnyFn> })
             ._methods;
         const expected = [
-            'initCueMol', 'loadUserStyle', 'saveUserStyle', 'setViewInputConfigStyle',
+            'initCueMol', 'loadDotStyles', 'loadUserStyle', 'saveUserStyle', 'setViewInputConfigStyle',
             'terminateWorker',
             'hasClass', 'getAllClassNamesJSON',
             'addEventListener', 'removeEventListener',

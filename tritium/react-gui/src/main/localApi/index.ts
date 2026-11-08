@@ -11,7 +11,7 @@
 import { app } from 'electron'
 import type { BrowserWindow } from 'electron'
 import * as fs from 'fs'
-import * as os from 'os'
+import { getDotDir } from '../dotDir'
 import * as nodePath from 'path'
 import { randomBytes } from 'crypto'
 import { IPC } from '@shared/ipcChannels'
@@ -48,12 +48,13 @@ function tokenFile(): string {
 const LEGACY_TOKEN_REF = { namespace: 'localApi', key: 'token' } as const
 
 /**
- * Where a command-line client finds the port and token. In the home
- * directory rather than userData, so a client needs no knowledge of the
- * app's name or of how it was launched; overridable for a second instance.
+ * Where a command-line client finds the port and token. In the dot directory
+ * rather than userData, so a client needs no knowledge of the app's name or
+ * of how it was launched; overridable for a second instance. tritium_cli
+ * resolves it by the same rule (`cli/src/connection.ts` `infoFilePath`).
  */
 export function localApiInfoFile(): string {
-  return process.env.CUEMOL_LOCAL_API_INFO || nodePath.join(os.homedir(), '.cuemol', 'local-api.json')
+  return process.env.CUEMOL_LOCAL_API_INFO || nodePath.join(getDotDir(), 'local-api.json')
 }
 
 let token = ''

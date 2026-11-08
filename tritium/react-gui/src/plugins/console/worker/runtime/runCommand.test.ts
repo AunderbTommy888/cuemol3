@@ -226,6 +226,19 @@ describe('runCommand', () => {
     expect(errors.map((e) => e.text).join()).toContain('nested more than')
   })
 
+  it('runs a text script sent by its path as the lines it holds, in its own folder, as one transaction', async () => {
+    // A startup script (~/.cuemol/startup.pml): relative paths in it mean its folder.
+    const { scene, ctx } = setup()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pymc-'))
+    const file = path.join(dir, 'startup.pml')
+    fs.writeFileSync(file, 'chdir\nmutate\nmutate\n')
+
+    const res = await runCommand(ctx, { dialect: 'pymol', sceneId: 1, viewId: 7, runId: 'r4', text: '', scriptPath: file })
+    expect(res.ok && !res.aborted).toBe(true)
+    expect(res.ok && res.cwd).toBe(`${dir}/sub`)
+    expect(scene.undo.committed).toHaveLength(1)
+  })
+
   it('stops on Stop: cancels the download it is waiting on and runs nothing after it', async () => {
     const { scene, ctx } = setup()
     const pending = runCommand(ctx, { dialect: 'pymol', sceneId: 1, viewId: 7, runId: 'r4', text: 'mutate; download; mutate' })
