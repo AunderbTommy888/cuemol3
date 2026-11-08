@@ -452,9 +452,9 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
 - `volume unzone`: `bndry_molname` を空にする (`MapRenderer::setupMolBndry` は名前が空のときだけ境界を外す。CueMol の
   空の選択式は「全原子」なので、`bndry_sel` を空にしても分子全体の周りに広がるだけ)。ChimeraX と同じく表示範囲も全体に
   戻す (`region_mode = full`)。
-- 既知の問題: 表示範囲が全体 (full) のときに zone を掛けると、mesh が全部消える (box なら正しい)。C++ の地図の renderer の
-  不具合で、[261107-map-full-region-boundary-bug-plan](../plans/261107-map-full-region-boundary-bug-plan.md) に記録して
-  ある。ChX 側では避けない (避けると不具合が見えなくなり、直った後にも ChimeraX と違う動作が残る)。
+- 表示範囲が全体 (full) の地図は周期の折り返しをしないので、地図のデータの範囲の外にある原子の周りは、zone を掛けても
+  描かない (ChimeraX も同じ: 周期の隣まで描くのは `volume cover` だけ)。box の表示範囲は、結晶の地図なら PBC で
+  折り返すので描ける。1a0m の EDS の地図 (単位胞 1 つ分) では、分子の一部 (水 HOH 20 など) がデータの範囲の外にある。
 
 **`lighting`** (`commands/lookCommands.ts`、ChimeraX の `std_commands/lighting.py`): **ChX の方針 (意味が一致しないものは
 断る) の、明示した例外**。CueMol の scene が持つのは画面空間の ambient occlusion (`aoEnabled`) と renderer の輪郭線だけで、

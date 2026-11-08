@@ -112,10 +112,8 @@ ChX の `view` だけが渡していなかった)。op に引数が足される�
 | fit の余白 | 0 (2bbv)、27 (EMD-1080) | CueMol は箱の各辺 20% の余白で、対象が画面の約 7 割。ChimeraX は約 9 割 | ChX の最初の open だけ ChimeraX の計算 (視錐台に箱の角を収め、窓の 5%) に合わせるかは未決 |
 | open 時の lighting | 0 | ChimeraX は自動 style に応じて `lighting full` / `soft` (AO と影) に切り替える | AO は CueMol 本体で新規 scene の既定を on にする方向で別に検討。ChX では切り替えない |
 | `sym` (会合体) | 14、17 以降 | ChimeraX は会合体 3 (ウイルスの殻) を複製として描く。CueMol は非対称単位のまま | [261108-assembly-symmetry-plan](261108-assembly-symmetry-plan.md) |
-| `fitmap` | 35、36 | ChimeraX は 1grl を地図の中に動かす (不透明な面に隠れ、36 で半透明にすると透けて見える) | [261108-em-map-features-plan](261108-em-map-features-plan.md) の関連項目 |
+| `fitmap` | 35、36 | ChimeraX は 1grl を地図の中に動かす (不透明な面に隠れ、36 で半透明にすると透けて見える)。CueMol の地図も 36 で半透明になるが、中が空なので透けて見える物が無い | [261108-em-map-features-plan](261108-em-map-features-plan.md) の関連項目 |
 | `molmap`、`vol subtract` | 37〜42 | ChimeraX は模擬 map と差分 map を作り、差分 map (水色、のちピンク) を表示する。CueMol は元の地図のまま。38・40 行は存在しない map を指すので止まる (参照の誤り) | [261108-em-map-features-plan](261108-em-map-features-plan.md) |
 | `encloseVolume` | 30 | 色と step は効くが、閾値は ChimeraX と違う | [261108-em-map-features-plan](261108-em-map-features-plan.md) |
-| EM の地図の `transparency` | 36 | `volume #1 transparency 0.5` で CueMol の地図が半透明にならない (AO の有無によらない) | 未調査。ChX の `transparency` か EM の等値面の透明度の扱いを調べる |
-| `vol zone` と全体表示 | 51 | 境界は正しく設定されるが、EDS の地図は `region_mode = full` なので mesh が全部消える | [261107-map-full-region-boundary-bug-plan](261107-map-full-region-boundary-bug-plan.md) (C++ の不具合) |
 | 大きな断層像の地図 | 54、55 | ChimeraX は断面の画像で出す。CueMol は何も写らない | 画像 (image) 表示が無いための機能差 |
 | 2 つ目の地図の open | (quickstart には無い) | EMDB / URL の地図は op 側が毎回地図に合わせるので、ChimeraX と違って視点が動く | GUI と共通の op なので変えていない |
