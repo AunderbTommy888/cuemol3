@@ -136,9 +136,12 @@ async function showHide(
   return { ok: true }
 }
 
-/** `show` / `hide`: [spec] [what], target, and for show `only`. */
-function showHideCommand(show: boolean): ChxCommand {
-  const word = show ? 'show' : 'hide'
+/**
+ * `show` / `hide`: [spec] [what], target, and for show `only`. `word` names
+ * ChimeraX's other names of the same commands (`display`; `~show`,
+ * `~display`; std_commands `__init__.py`).
+ */
+function showHideCommand(show: boolean, word = show ? 'show' : 'hide'): ChxCommand {
   return chxCommand({
     words: [word],
     args: [
@@ -577,6 +580,9 @@ export const DISPLAY_COMMANDS: Record<string, ChxCommand> = {
   nucleotides,
   show: showHideCommand(true),
   hide: showHideCommand(false),
+  display: showHideCommand(true, 'display'),
+  unshow: showHideCommand(false, '~show'),
+  undisplay: showHideCommand(false, '~display'),
   cartoon: cartoonCommand(true),
   cartoonHide: cartoonCommand(false),
   cartoonStyle,

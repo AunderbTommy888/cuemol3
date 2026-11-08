@@ -96,6 +96,10 @@ export const CHX_COMMANDS: readonly ChxCommand[] = [
   ANALYSIS_COMMANDS.dssp,
   ANALYSIS_COMMANDS.distanceDelete,
   ANALYSIS_COMMANDS.undistance,
+  // show / hide's other names, after distance so that `di` stays `distance`.
+  DISPLAY_COMMANDS.display,
+  DISPLAY_COMMANDS.unshow,
+  DISPLAY_COMMANDS.undisplay,
   SELECT_COMMANDS.info,
   SELECT_COMMANDS.infoModels,
   SELECT_COMMANDS.infoChains,
