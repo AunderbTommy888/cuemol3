@@ -8,7 +8,13 @@
  * and writes the settings onto those (`map/volumecommand.py`):
  *
  * - `level`: the renderer's `level`, in the map's own values as ChimeraX's;
- *   one level per renderer, so several are refused.
+ *   one level per renderer, so several are refused. `sdLevel x` and
+ *   `rmsLevel x` are turned into that value from the map's mean and standard
+ *   deviation (mean + x*sd, and x*sqrt(mean^2 + sd^2)), as ChimeraX does;
+ *   CueMol's `siglevel` is not used, since on a cryo-EM map it is a top
+ *   fraction, not sigmas. The statistics are the whole map's, ChimeraX's
+ *   the region drawn at the current step (the same for a whole map).
+ * - `capFaces`: the surface renderer's `cap_mode` (on / off).
  * - `style mesh|surface`: `set_renderer_type` between `contour` and
  *   `isosurf` (it keeps the renderer's settings). `image` is refused.
  * - `step`: the renderer's `lod`. It thins an `isosurf`, and a `contour`
@@ -134,7 +140,7 @@ export async function applyXrayMapDefaults(ctx: WorkerContext, cc: CmdContext, o
 }
 
 /** The keywords `volume` reads but does not act on. */
-const VOLUME_IGNORED = ['subdivide', 'subdivisionLevels', 'smoothLines', 'squareMesh', 'capFaces', 'meshLighting', 'brightness', 'dimTransparency']
+const VOLUME_IGNORED = ['subdivide', 'subdivisionLevels', 'smoothLines', 'squareMesh', 'meshLighting', 'brightness', 'dimTransparency']
 
 /**
  * The keywords `volume` does not do, with the reason. Each is display
@@ -145,11 +151,40 @@ const VOLUME_REFUSED: Readonly<Record<string, string>> = {
   surfaceLevels: 'a CueMol map renderer draws one level; give level once',
   meshLevels: 'a CueMol map renderer draws one level; give level once',
   imageLevels: 'image style is not supported',
-  sdLevel: 'give the level in the map\'s values (level)',
-  rmsLevel: 'give the level in the map\'s values (level)',
   encloseVolume: 'a level from an enclosed volume is not supported',
   fastEncloseVolume: 'a level from an enclosed volume is not supported',
-  showOutlineBox: 'CueMol does not draw a map\'s outline box',
+  showOutlineBox: 'not supported yet',
+}
+
+/** A level given in the map's statistics: `sdLevel` or `rmsLevel`, and its factor. */
+interface StatLevel {
+  kind: 'sd' | 'rms'
+  factor: number
+}
+
+/**
+ * Read `sdLevel` / `rmsLevel` (a number, or ChimeraX's `level,brightness`,
+ * whose brightness is dropped). One level per renderer: with `level` too,
+ * `level` wins.
+ */
+function readStatLevel(args: Record<string, string>): { ok: true; level: StatLevel | null } | { ok: false; error: string } {
+  const given = (['sd', 'rms'] as const).filter((k) => args[`${k}Level`] !== '')
+  if (given.length === 0) return { ok: true, level: null }
+  if (given.length > 1 || args.level !== '') return { ok: false, error: 'Error: volume: give one of level, sdLevel and rmsLevel (a CueMol map renderer draws one level)' }
+  const kind = given[0]
+  const factor = Number(args[`${kind}Level`].split(',')[0])
+  if (!Number.isFinite(factor)) return { ok: false, error: `Error: volume: ${kind}Level is a number` }
+  return { ok: true, level: { kind, factor } }
+}
+
+/** The map's own value for a level given in its statistics (`volumecommand.py` `level_and_color_settings`). */
+function levelFromStats(ctx: WorkerContext, sceneId: number, objUid: number, l: StatLevel): string | null {
+  const props = getGenericProps(ctx, { sceneId, nodeId: objUid, nodeType: 'object' })
+  const num = (key: string): number => Number(props.ok ? props.entries.find((e) => e.key === key)?.value : NaN)
+  const mean = num('den_mean')
+  const sd = num('den_sigma')
+  const v = l.kind === 'sd' ? mean + l.factor * sd : l.factor * Math.sqrt(mean * mean + sd * sd)
+  return Number.isFinite(v) ? String(v) : null
 }
 
 /** `volume [spec] level / style / color / transparency / step / region / show / hide`. */
@@ -158,6 +193,9 @@ const volume = chxCommand({
   args: [
     { name: 'volumes', type: SpecArg, role: 'optional' },
     { name: 'level', type: FloatArg, role: 'keyword' },
+    { name: 'sdLevel', type: StringArg, role: 'keyword' },
+    { name: 'rmsLevel', type: StringArg, role: 'keyword' },
+    { name: 'capFaces', type: BoolArg, role: 'keyword' },
     { name: 'style', type: EnumOf(['mesh', 'surface', 'image']), role: 'keyword' },
     { name: 'color', type: ColorArg, role: 'keyword' },
     { name: 'transparency', type: FloatArg, role: 'keyword' },
@@ -169,7 +207,7 @@ const volume = chxCommand({
     ...VOLUME_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
   ],
   mutates: true,
-  summary: 'Set how density maps are drawn: level, style mesh/surface, color, transparency, step, region all, show / hide.',
+  summary: 'Set how density maps are drawn: level (or sdLevel / rmsLevel), style mesh/surface, color, transparency, step, region all, show / hide.',
   async run(ctx, args, cc): Promise<CmdOutcome> {
     warnIgnored(cc, 'volume', args, VOLUME_IGNORED)
     for (const k of Object.keys(VOLUME_REFUSED)) {
@@ -190,6 +228,8 @@ const volume = chxCommand({
     if (args.transparency !== '' && !(Number(args.transparency) >= 0 && Number(args.transparency) <= 1)) {
       return { ok: false, error: 'Error: volume: transparency is 0 to 1' }
     }
+    const statLevel = readStatLevel(args)
+    if (!statLevel.ok) return statLevel
     const color = args.color === '' ? null : splitColorArg(args.color)
     if (color && color.alpha !== null && color.alpha < 1) cc.warn('volume: transparency in a colour is not supported; give transparency')
     const found = mapsOf(ctx, cc.sceneId, args.volumes)
@@ -214,8 +254,14 @@ const volume = chxCommand({
           const res = await setProp(ctx, cc, id, 'region_mode', 'full')
           if (!res.ok) return res
         }
-        if (args.level !== '') {
-          const res = await setProp(ctx, cc, id, 'level', args.level)
+        const level = args.level !== '' ? args.level : statLevel.level ? levelFromStats(ctx, cc.sceneId, m.obj.uid, statLevel.level) : null
+        if (statLevel.level && level === null) return { ok: false, error: `Error: volume: the statistics of "${m.obj.name}" could not be read` }
+        if (level !== null) {
+          const res = await setProp(ctx, cc, id, 'level', level)
+          if (!res.ok) return res
+        }
+        if (args.capFaces !== '' && MAP_STYLES[style !== '' ? STYLE_TYPES[style] : r0.type] === 'surface') {
+          const res = await setProp(ctx, cc, id, 'cap_mode', args.capFaces === 'true' ? 'on' : 'off')
           if (!res.ok) return res
         }
         if (step !== null) {

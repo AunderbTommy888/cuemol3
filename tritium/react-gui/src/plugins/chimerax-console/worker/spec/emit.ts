@@ -40,6 +40,14 @@ export interface EmitContext {
   currentSelection(model: number): string
   /** The scene's named selections, which the emitter writes as references. */
   namedSelections: ReadonlySet<string>
+  /** The atoms of model `model` that are displayed (`@@display`; `none` for none). */
+  displayedAtoms?(model: number): string
+}
+
+/** Where a group of a specification is emitted: the model, and the scene when there is one. */
+interface Scope {
+  model: number
+  ec: EmitContext | undefined
 }
 
 /** A residue number, with an optional insertion code (`10`, `-5`, `10A`), as `_parse_as_res_id` reads it. */
@@ -205,8 +213,28 @@ const SS_TYPES: Readonly<Record<string, string>> = { 0: 'coil', 1: 'helix', 2: '
 /** True / false attributes: what they are true of. */
 const FLAGS: Readonly<Record<string, string>> = { is_helix: 'helix', is_strand: 'sheet' }
 
+/** The truth values a flag compares with (`display=false`, `display==1`). */
+const TRUTH: Readonly<Record<string, boolean>> = { true: true, false: false, 1: true, 0: false }
+
+/**
+ * `@@display`: the atoms displayed (the scene's own state, so it needs the
+ * scene); `^display`, `display=false` and `display!=true` the others.
+ */
+function displayExpr(t: AttrTest, scope: Scope): string {
+  if (!scope.ec?.displayedAtoms) throw new SpecError('the attribute "display" needs the scene', t.pos)
+  let want = !t.negated
+  if (t.op !== null) {
+    const v = t.value === null ? undefined : TRUTH[t.value.toLowerCase()]
+    if (v === undefined || !['=', '==', '!=', '!==', '<>'].includes(t.op)) throw new SpecError('display is compared with true or false', t.pos)
+    want = t.op === '=' || t.op === '==' ? v : !v
+  }
+  const shown = scope.ec.displayedAtoms(scope.model)
+  return want ? shown : not(shown)
+}
+
 /** One attribute test at the atom, residue or chain level. */
-function attrExpr(t: AttrTest, level: 'atom' | 'residue' | 'chain'): string {
+function attrExpr(t: AttrTest, level: 'atom' | 'residue' | 'chain', scope: Scope): string {
+  if (level === 'atom' && t.name === 'display') return displayExpr(t, scope)
   if (t.op === null) {
     const flag = level === 'residue' ? FLAGS[t.name] : undefined
     if (flag === undefined) throw new SpecError(`the attribute "${t.name}" is not supported yet`, t.pos, true)
@@ -230,8 +258,8 @@ function attrExpr(t: AttrTest, level: 'atom' | 'residue' | 'chain'): string {
 }
 
 /** Every test of a list holds (ChimeraX's `,` in an attribute list). */
-function testsExpr(tests: readonly AttrTest[] | null, level: 'atom' | 'residue' | 'chain'): string {
-  return tests === null ? ALL : and(tests.map((t) => attrExpr(t, level)))
+function testsExpr(tests: readonly AttrTest[] | null, level: 'atom' | 'residue' | 'chain', scope: Scope): string {
+  return tests === null ? ALL : and(tests.map((t) => attrExpr(t, level, scope)))
 }
 
 /** Whether a model passes its `##` tests; only `name` is read (the object's name). */
@@ -249,20 +277,20 @@ function modelPasses(tests: readonly AttrTest[], model: number, ec: EmitContext 
   })
 }
 
-function residueGroupExpr(g: ResidueGroup): string {
+function residueGroupExpr(g: ResidueGroup, scope: Scope): string {
   return and([
     g.residues === null ? ALL : or(g.residues.map(residueExpr)),
-    testsExpr(g.residueTests, 'residue'),
+    testsExpr(g.residueTests, 'residue', scope),
     g.atoms === null ? ALL : namesExpr('name', g.atoms, 'atom name'),
-    testsExpr(g.atomTests, 'atom'),
+    testsExpr(g.atomTests, 'atom', scope),
   ])
 }
 
-function chainGroupExpr(g: ChainGroup): string {
+function chainGroupExpr(g: ChainGroup, scope: Scope): string {
   return and([
     g.chains === null ? ALL : namesExpr('chain', g.chains, 'chain'),
-    testsExpr(g.chainTests, 'chain'),
-    g.residues.length === 0 ? ALL : or(g.residues.map(residueGroupExpr)),
+    testsExpr(g.chainTests, 'chain', scope),
+    g.residues.length === 0 ? ALL : or(g.residues.map((r) => residueGroupExpr(r, scope))),
   ])
 }
 
@@ -339,6 +367,6 @@ export function emitFor(node: SpecNode, model: number, ec?: EmitContext): string
     case 'hier':
       if (!inModels(node.models, model)) return NONE
       if (node.modelTests !== null && !modelPasses(node.modelTests, model, ec)) return NONE
-      return node.chains.length === 0 ? ALL : or(node.chains.map(chainGroupExpr))
+      return node.chains.length === 0 ? ALL : or(node.chains.map((c) => chainGroupExpr(c, { model, ec })))
   }
 }

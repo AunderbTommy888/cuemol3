@@ -6,16 +6,23 @@
  * the other models shown, and `cartoon style` writing ChimeraX's width
  * along CueMol's thickness axis (CueMol's section `width` is half the
  * thickness; the wide side is `2 width tuber`), or piping onto the coil,
- * which ChimeraX leaves round.
+ * which ChimeraX leaves round. And the nucleic acid bases (`chx:nuclbase`):
+ * `nucleotides` switching how they are drawn on that renderer only, refusing
+ * part of a model's nucleic acids (the setting is one per renderer), and the
+ * base slabs going with the cartoon when it is hidden.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { CmdContext } from '@plugins/console/worker/dialect-api'
 
-const { ops } = vi.hoisted(() => ({ ops: [] as { name: string; args: Record<string, unknown> }[] }))
+const { ops, spec } = vi.hoisted(() => ({
+  ops: [] as { name: string; args: Record<string, unknown> }[],
+  /** What the specification means in the molecule. */
+  spec: { sel: '*' },
+}))
 
-const OWNED = new Map([['chx:stick', 1], ['chx:ball', 2], ['chx:sphere', 3], ['chx:cartoon', 4], ['chx:nucl', 5]])
+const OWNED = new Map([['chx:stick', 1], ['chx:ball', 2], ['chx:sphere', 3], ['chx:cartoon', 4], ['chx:nucl', 5], ['chx:nuclbase', 6]])
 
 vi.mock('../display', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -24,7 +31,11 @@ vi.mock('../display', async (importOriginal) => ({
     return { ok: true }
   },
   ensureOwned: async () => ({ ok: true, ids: new Map(OWNED) }),
-  targetsOf: () => ({ ok: true, targets: [{ obj: { uid: 10, model: 1, name: 'a', className: 'MolCoord' }, sel: '*' }] }),
+  writeSel: async (_ctx: unknown, _cc: unknown, rendId: number, selection: string) => {
+    ops.push({ name: 'set_renderer_selection', args: { rendId, selection } })
+    return { ok: true }
+  },
+  targetsOf: () => ({ ok: true, targets: [{ obj: { uid: 10, model: 1, name: 'a', className: 'MolCoord' }, sel: spec.sel }] }),
   // The molecule has every kind of residue, so every section applies.
   emitContext: () => ({ anyHit: () => true }),
 }))
@@ -44,6 +55,8 @@ vi.mock('@renderer/worker/server/services/props/read', () => ({
   }),
 }))
 
+vi.mock('@renderer/worker/server/services/helpers/simplifySel', () => ({ simplifySel: (_ctx: unknown, s: string) => s }))
+
 import { DISPLAY_COMMANDS } from './displayCommands'
 
 const ctx = {} as WorkerContext
@@ -61,6 +74,7 @@ const written = () => ops.filter((o) => o.name === 'set_node_prop').map((o) => `
 
 beforeEach(() => {
   ops.length = 0
+  spec.sel = '*'
 })
 
 describe('show models only', () => {
@@ -84,5 +98,29 @@ describe('cartoon style', () => {
     expect(written()).not.toContain('4 coil.type=fancy1')
     expect(written()).toContain('4 helix.type=fancy1')
     expect(written()).toContain('4 helix.sharp=0.166667')
+  })
+})
+
+describe('nucleotides', () => {
+  it('draws the bases as a ladder or slabs on chx:nuclbase, hides it for atoms, and skips part of a model', async () => {
+    // chx:nuclbase (6) is shown, as slabs (getGenericProps gives no visible / base_type).
+    await run('nucleotides', { representation: 'ladder' })
+    expect(written()).toEqual(['6 base_type=basepair'])
+    expect(ops.filter((o) => o.name === 'set_visible')).toEqual([])
+
+    ops.length = 0
+    await run('nucleotides', { representation: 'atoms' })
+    expect(ops.map((o) => [o.name, o.args.nodeId, o.args.visible])).toEqual([['set_visible', 6, false]])
+
+    // Some of the nucleic acids only (anyHit: there are others).
+    ops.length = 0
+    spec.sel = 'chain A'
+    await run('nucleotides', { objects: '/A', representation: 'slab' })
+    expect(ops).toEqual([])
+  })
+
+  it('hides the base slabs with the nucleic cartoon', async () => {
+    await run('hide', { what: 'cartoons' })
+    expect(ops.filter((o) => o.name === 'set_renderer_selection').map((o) => [o.args.rendId, o.args.selection])).toEqual([[4, 'none'], [5, 'none'], [6, 'none']])
   })
 })

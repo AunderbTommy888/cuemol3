@@ -63,10 +63,10 @@ function framesOf(raw: string): number | null {
   return Number.isInteger(n) && n > 0 ? n : null
 }
 
-/** Refuse the keywords that move models or atoms, or set the centre: CueMol moves the camera only. */
+/** Refuse the keywords that move models or atoms, or set the centre: the console moves the camera only (so far). */
 function refuseGiven(cmd: string, args: Record<string, string>, names: readonly string[], why: string): CmdOutcome | null {
   const given = names.find((n) => args[n] !== undefined && args[n] !== '')
-  return given ? unsupported(`Error: ${cmd}: ${given} is not supported (${why})`) : null
+  return given ? unsupported(`Error: ${cmd}: ${given} is not supported yet (${why})`) : null
 }
 
 /** The camera, or the error for when there is no view. */
@@ -102,7 +102,7 @@ const turn = chxCommand({
   summary: 'Turn the scene about a screen axis (default y, 90 degrees).',
   async run(ctx, args, cc) {
     const refused = refuseGiven('turn', args, ['center', 'coordinateSystem', 'rock', 'wobble', 'wobbleAspect', 'models', 'atoms'],
-      'the camera turns about the view centre, and models are not moved')
+      'the console turns the camera about the view centre and does not move models')
     if (refused) return refused
     const axis = axisOf(args.axis || 'y')
     if (!axis) return { ok: false, error: `Error: turn: "${args.axis}" is not an axis (x, y, z or three numbers)` }
@@ -247,7 +247,7 @@ const viewName = chxCommand({
   words: ['view', 'name'],
   args: [{ name: 'name', type: StringArg, role: 'required' }],
   mutates: true,
-  summary: 'Save the camera under a name (the camera only: CueMol does not move models).',
+  summary: 'Save the camera under a name (the camera only: the console does not move models).',
   async run(ctx, args, cc) {
     const clash = RESERVED_VIEW_NAMES.find((r) => r.startsWith(args.name))
     if (clash) {
@@ -268,7 +268,7 @@ const viewMatrix = chxCommand({
   mutates: false,
   summary: 'Set the camera from 12 numbers (a 3x4 matrix by rows), or report it.',
   async run(ctx, args, cc) {
-    const refused = refuseGiven('view matrix', args, ['models', 'coordinateSystem'], 'CueMol objects have no positions of their own')
+    const refused = refuseGiven('view matrix', args, ['models', 'coordinateSystem'], 'the console does not move models')
     if (refused) return refused
     const cam = cameraOf(ctx, cc)
     if ('ok' in cam) return cam

@@ -11,7 +11,9 @@
  *   as a stick, the model colour with heteroatoms by element.
  * - small polymer: the cartoon, the ligands and metals with the residues
  *   within 3.6 A of them as sticks (metals and ions as spheres), hydrogens
- *   on carbon hidden, the model colour with heteroatoms by element.
+ *   on carbon hidden, the model colour with heteroatoms by element. Nucleic
+ *   acid bases are slabs (100 nucleotides or fewer) or a ladder (2000 or
+ *   fewer), coloured by base (`nucleotides`, `nucleotide_colors`).
  * - medium polymer: every atom as a sphere, ligands as sticks, solvent as
  *   balls; coloured by chain when all chains have one sequence, ligands and
  *   solvent by element.
@@ -27,10 +29,13 @@
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
 import { chainColor, modelColor } from './colorSchemes'
-import { ATOM_STYLES, CARTOONS, ensureOwned, forEachAtom, minus, writeSel } from './display'
+import { ATOM_STYLES, CARTOONS, ensureOwned, forEachAtom, minus, NUCL_BASE, writeSel } from './display'
+import type { BaseMode } from './display'
+import { nucleotideEntries } from './colorSchemes'
 import type { NumberedObject } from './models'
 import { NONE } from './spec/emit'
 import { elementEntries, paintTarget } from './commands/colorCommands'
+import { setBaseMode } from './commands/displayCommands'
 import type { PaintEntry } from './commands/colorCommands'
 
 /** ChimeraX's size thresholds (`atomic/structure.py`). */
@@ -38,6 +43,8 @@ const SMALL_THRESHOLD = 200_000
 const MEDIUM_THRESHOLD = 1_000_000
 const MIN_RIBBON_THRESHOLD = 10
 const MAX_RIBBON_THRESHOLD = 5000
+const SLAB_THRESHOLD = 100
+const LADDER_THRESHOLD = 2000
 
 const POLYMER = '(protein or nucleic)'
 
@@ -95,6 +102,24 @@ export function autoStyleOf(m: MoleculeSize): AutoStyle {
   return 'large polymer'
 }
 
+/** How many nucleic acid residues a molecule has. */
+function nucleicCount(ctx: WorkerContext, sceneId: number, objUid: number): number {
+  let n = 0
+  let lastKey = ''
+  forEachAtom(ctx, sceneId, objUid, 'nucleic', (a) => {
+    const key = `${a.chainName}:${a.residIndex}`
+    if (key !== lastKey) n++
+    lastKey = key
+  })
+  return n
+}
+
+/** The nucleotides a small polymer draws: slabs, a ladder, or (too many) neither. */
+export function baseModeOf(nucleotides: number): BaseMode | null {
+  if (nucleotides === 0 || nucleotides > LADDER_THRESHOLD) return null
+  return nucleotides <= SLAB_THRESHOLD ? 'slab' : 'ladder'
+}
+
 /** A molecule's size, read from its atoms. */
 function sizeOf(ctx: WorkerContext, sceneId: number, objUid: number): MoleculeSize & { chainIds: string[] } {
   let atoms = 0
@@ -142,6 +167,7 @@ export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: Nu
   const model = modelColor(obj.model)
   if (!model.exact) cc.warn(`open: #${obj.model} is past ChimeraX's model colours; its colour differs from ChimeraX's`)
   const none = NONE
+  let bases: BaseMode | null = null
   let shown: Shown
   // Paint entries per target letters, painted in order (a later entry wins).
   let paints: [string, PaintEntry[]][]
@@ -151,6 +177,7 @@ export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: Nu
     paints = [['ac', [['*', model.hex]]], ['a', elementEntries('*', false)]]
   } else if (style === 'small polymer') {
     const spheres = `(${SMALL_SHOWN}) and (${METAL} or ${HALIDE_ION})`
+    bases = baseModeOf(nucleicCount(ctx, cc.sceneId, obj.uid))
     shown = { stick: minus(SMALL_SHOWN, spheres), ball: none, sphere: spheres, cartoon: 'protein', nucl: 'nucleic' }
     paints = [['ac', [['*', model.hex]]], ['a', elementEntries('*', false)]]
   } else if (style === 'medium polymer') {
@@ -170,6 +197,7 @@ export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: Nu
     [ATOM_STYLES.sphere.name, shown.sphere],
     [CARTOONS[0].name, shown.cartoon],
     [CARTOONS[1].name, shown.nucl],
+    [NUCL_BASE.name, shown.nucl],
   ]
   for (const [name, sel] of writes) {
     const id = ids.get(name)
@@ -183,6 +211,13 @@ export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: Nu
   for (const [i, [target, entries]] of paints.entries()) {
     const res = await paintTarget(ctx, cc, { obj, sel: '*' }, target, entries, false, i === 0)
     if (!res.ok) return res
+  }
+  const drawn = await setBaseMode(ctx, cc, ids, bases ?? 'atoms')
+  if (!drawn.ok) return drawn
+  if (bases) {
+    // The base slabs by base (`nucleic.ring_colors = nucleotide_colors(...)`); the rest keeps the model colour.
+    const ringed = await paintTarget(ctx, cc, { obj, sel: '*' }, 'f', nucleotideEntries(), false, true)
+    if (!ringed.ok) return ringed
   }
   return { ok: true }
 }

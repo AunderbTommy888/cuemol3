@@ -259,3 +259,33 @@ export function paletteColors(p: Palette, n: number): string[] {
   return Array.from({ length: n }, (_, i) => paletteColor(p, n === 1 ? 0 : i / (n - 1)))
 }
 
+
+/**
+ * ChimeraX's nucleotide colours (`atomic/colors.py` `_ndb_colors`, the NDB
+ * colours desaturated), by the residue names that are each base
+ * (`Sequence.nucleic3to1` for the common names; PSU is pseudouridine).
+ */
+const NUCLEOTIDE_COLORS: readonly [string, string][] = [
+  ['A,DA', '#ff4040'],
+  ['T,DT', '#4040ff'],
+  ['G,DG', '#40ff40'],
+  ['C,DC', '#ffff40'],
+  ['I,DI', '#006400'],
+  ['PSU,P', '#d3d3d3'],
+  ['U,DU', '#40ffff'],
+]
+
+/** Any other nucleotide's colour (`nucleotide_colors`: 128 grey). */
+const OTHER_NUCLEOTIDE = '#808080'
+
+/**
+ * Paint entries colouring the nucleotides of `sel` by base, in painting
+ * order (a later entry wins): grey for every nucleotide, then each base.
+ */
+export function nucleotideEntries(sel = '*'): [string, string][] {
+  const within = (x: string) => (sel === '*' ? x : `(${sel}) and ${x}`)
+  return [
+    [within('nucleic'), OTHER_NUCLEOTIDE],
+    ...NUCLEOTIDE_COLORS.map(([names, hex]): [string, string] => [within(`nucleic and resn ${names}`), hex]),
+  ]
+}

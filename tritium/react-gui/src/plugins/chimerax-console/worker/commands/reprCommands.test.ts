@@ -11,6 +11,8 @@
  * was named, and a residue label on no atom or on every atom; and a new
  * surface that does not take the cartoon's colours (ChimeraX colours a new
  * surface from the ribbon), or fails on a molecule the console did not style.
+ * `label` with no atoms must make no label: it changes the labels there are
+ * (their own formats), as ChimeraX does.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -62,6 +64,14 @@ vi.mock('@renderer/worker/server/services/props/read', () => ({
   getGenericProps: (_ctx: unknown, a: { nodeId: number }) => ({ ok: true, entries: [{ key: 'showsel', value: state.showsel.get(a.nodeId) ?? '' }] }),
 }))
 vi.mock('@renderer/worker/server/services/helpers/simplifySel', () => ({ simplifySel: (_ctx: unknown, s: string) => s }))
+vi.mock('../models', () => ({
+  numberedObjects: () => [{ uid: 10, model: 1, name: 'm', className: 'MolCoord' }],
+  isMolecule: () => true,
+}))
+// The residue label renderer (uid 60) has labels on atoms 5 and 7.
+vi.mock('@renderer/worker/server/services/helpers/sceneResolver', () => ({
+  getSceneOrNull: () => ({ getRenderer: (id: number) => (id === 60 ? { getLabelAtomIDsJSON: () => '[5,7]' } : null) }),
+}))
 
 import { REPR_COMMANDS, residueAnchors } from './reprCommands'
 import { DISPLAY_COMMANDS } from './displayCommands'
@@ -150,5 +160,14 @@ describe('label', () => {
       atom(3, 'P', '2'), atom(4, "C4'", '2'),
       atom(5, 'ZN', '3'), atom(6, 'X', '3'),
     ])).toEqual([2, 4, 5])
+  })
+
+  it('with no atoms, relabels only the labels there are, and asks for atoms when there are none', async () => {
+    expect((await run(REPR_COMMANDS.label, { objects: '', text: 'site' })).ok).toBe(false)
+    expect(opsNamed('set_atom_labels')).toEqual([])
+
+    state.owned.set('chx:label:residues', 60)
+    expect((await run(REPR_COMMANDS.label, { objects: '', text: 'site' })).ok).toBe(true)
+    expect(opsNamed('set_atom_labels').map((a) => [a.selection, a.format])).toEqual([['aid 5,7', 'site']])
   })
 })

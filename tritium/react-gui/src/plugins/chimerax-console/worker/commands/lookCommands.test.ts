@@ -4,8 +4,7 @@
  *
  * What the scene does not show as an error: a lighting preset that is only
  * approximated passing without saying so, a preset name matched otherwise
- * than ChimeraX matches it (`preset pub` is ambiguous there), a refused
- * preset running part of its commands, and Original Look leaving the
+ * than ChimeraX matches it (`preset pub` is ambiguous there), and Original Look leaving the
  * surfaces a `surface` drew (ChimeraX hides them first).
  */
 
@@ -93,12 +92,8 @@ describe('preset', () => {
     expect(findPreset('publication', '1')).toEqual({ category: 'Overall Look', name: 'publication 1 (silhouettes)' })
   })
 
-  it('hides the surfaces before an Initial Style, and runs nothing of a refused preset', async () => {
+  it('hides the surfaces before an Initial Style', async () => {
     expect((await run('preset', { text1: 'original' })).ok).toBe(true)
     expect(log).toEqual(['hide surfaces', 'auto style by size'])
-
-    log.length = 0
-    expect((await run('preset', { text1: 'cylinders' })).ok).toBe(false)
-    expect(log).toEqual([])
   })
 })

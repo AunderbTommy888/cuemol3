@@ -88,8 +88,10 @@ const lighting = chxCommand({
       const res = await setAo(ctx, cc, on)
       if (!res.ok) return res
     }
-    if (args.shadows === 'true') cc.warn('lighting: shadows are not supported (CueMol draws no shadows); ignored')
-    if (args.depthCue === 'true') cc.warn('lighting: depthCue is not supported (CueMol has no depth cueing); ignored')
+    if (args.shadows === 'true') cc.warn('lighting: shadows are not supported yet (CueMol\'s view draws no shadows); ignored')
+    // CueMol's fog follows the slab and is always on (GUIView::computeSlabPlanes),
+    // so depthCue true is already the case; it cannot be turned off.
+    if (args.depthCue === 'false') cc.warn('lighting: depthCue false is not supported (CueMol\'s depth cueing, the fog, cannot be turned off); ignored')
     return { ok: true }
   },
 })
@@ -178,19 +180,75 @@ const unitcellOutline = chxCommand({
   },
 })
 
-/** `unitcell` and `unitcell delete` fill the cell with copies of a model: refused. */
-function unitcellCopies(words: string[]): ChxCommand {
-  return chxCommand({
-    words,
-    args: [{ name: 'rest', type: RestOfLine, role: 'optional' }],
-    mutates: false,
-    summary: 'Not supported: fills the unit cell with copies of a model (use unitcell outline for the box).',
-    run: () => ({
-      ok: false,
-      error: `Error: ${words.join(' ')} is not supported (it makes copies of the model to fill the unit cell, which CueMol does not; unitcell outline draws the box)`,
-    }),
-  })
+/** The `unitcell` keywords the drawn copies cannot follow. */
+const UNITCELL_IGNORED = ['cells', 'offset', 'origin', 'symFromFile', 'spacegroup', 'ncs', 'pack']
+
+/** The renderers of an object whose type is `type` (`*symm`, `*unitcell`). */
+function renderersOfType(ctx: WorkerContext, sceneId: number, objUid: number, type: string): number[] {
+  const node = objectNodes(ctx, sceneId).find((n) => n.id === objUid)
+  return (node ? rendererNodesOf(node) : []).filter((r) => {
+    const props = getGenericProps(ctx, { sceneId, nodeId: r.id, nodeType: 'renderer' })
+    return props.ok && props.entries.find((e) => e.key === 'type_name')?.value === type
+  }).map((r) => r.id)
 }
+
+/**
+ * `unitcell [structures] [outline]`: fill the unit cell with the symmetry
+ * copies of crystal structures. ChimeraX opens the copies as new models;
+ * CueMol draws them with its symmetry renderer (`show_symmetry`, the cell
+ * filled), so they are not models a later command can name. `cells`,
+ * `offset` and the other packing settings are not followed.
+ */
+const unitcell = chxCommand({
+  words: ['unitcell'],
+  args: [
+    { name: 'structures', type: SpecArg, role: 'optional' },
+    { name: 'outline', type: BoolArg, role: 'keyword' },
+    ...UNITCELL_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
+  ],
+  mutates: true,
+  summary: 'Fill the unit cell with symmetry copies of crystal structures (drawn, not opened as models).',
+  async run(ctx, args, cc): Promise<CmdOutcome> {
+    warnIgnored(cc, 'unitcell', args, UNITCELL_IGNORED)
+    const found = objectsOf(ctx, cc.sceneId, args.structures)
+    if (!found.ok) return found
+    let done = 0
+    for (const o of found.objs.filter(isMolecule)) {
+      // Only structures with crystal information have a cell; the others are skipped, as in ChimeraX.
+      const res = await runOp(ctx, cc, 'show_symmetry', { objId: o.uid, extent: null, unitCell: args.outline === 'true' })
+      if (res.ok) done++
+    }
+    if (done === 0) return { ok: false, error: 'Error: unitcell: no structure with crystal information (a unit cell)' }
+    cc.warn('unitcell: the copies are drawn by a symmetry renderer, not opened as models')
+    return { ok: true }
+  },
+})
+
+/** `unitcell delete [structures] [outline]`: the copies `unitcell` drew (and the box with outline true). */
+const unitcellDelete = chxCommand({
+  words: ['unitcell', 'delete'],
+  args: [
+    { name: 'structures', type: SpecArg, role: 'optional' },
+    { name: 'outline', type: BoolArg, role: 'keyword' },
+  ],
+  mutates: true,
+  summary: 'Remove the symmetry copies unitcell drew (outline true also the box).',
+  async run(ctx, args, cc): Promise<CmdOutcome> {
+    const found = objectsOf(ctx, cc.sceneId, args.structures)
+    if (!found.ok) return found
+    for (const o of found.objs) {
+      const ids = [
+        ...renderersOfType(ctx, cc.sceneId, o.uid, '*symm'),
+        ...(args.outline === 'true' ? renderersOfType(ctx, cc.sceneId, o.uid, '*unitcell') : []),
+      ]
+      for (const id of ids) {
+        const res = await runOp(ctx, cc, 'delete_node', { nodeId: id, nodeType: 'renderer' })
+        if (!res.ok) return res
+      }
+    }
+    return { ok: true }
+  },
+})
 
 // --- preset ---
 
@@ -235,7 +293,19 @@ type PresetAction =
   | { run: (ctx: WorkerContext, cc: CmdContext) => Promise<CmdOutcome>; then?: string }
   | { refuse: string }
 
-const NO_NUCLEOTIDES = 'it needs the nucleotides command and helix tubes, which the console does not have'
+/**
+ * The cartoon part of the Cartoons/Nucleotides presets (`preset_mgr/builtin.py`
+ * `cardef`, with its abbreviations written out; `~worm` is left out, as the
+ * console draws no worms). The settings `cartoon style` does not take
+ * (arrows, sides, divisions) are warned about as they run.
+ */
+const CARTOON_PRESET = [
+  'show nucleic', 'hide protein | solvent | H', 'surface hidePatches',
+  'cartoon',
+  'cartoon style modeHelix default arrows true arrowsHelix false arrowScale 2 width 2 thickness 0.4 sides 12 divisions 20',
+  'cartoon style ~(nucleic | strand) xsection round',
+  'cartoon style (nucleic | strand) xsection rectangle',
+].join('; ')
 
 /** ChimeraX's builtin presets (`atomic` and `preset_mgr` bundles), by category, in order. */
 const PRESETS: Readonly<Record<string, Readonly<Record<string, PresetAction>>>> = {
@@ -247,9 +317,17 @@ const PRESETS: Readonly<Record<string, Readonly<Record<string, PresetAction>>>> 
     'Space-Filling (single color)': { run: initialStyle('large polymer') },
   },
   'Cartoons/Nucleotides': {
-    'ribbons/slabs': { refuse: NO_NUCLEOTIDES },
-    'cylinders/stubs': { refuse: NO_NUCLEOTIDES },
-    'licorice/ovals': { refuse: NO_NUCLEOTIDES },
+    'ribbons/slabs': { run: noSpheres, then: `${CARTOON_PRESET}; nucleotides tube/slab shape box` },
+    'cylinders/stubs': {
+      run: noSpheres,
+      then: `${CARTOON_PRESET}; cartoon style protein modeHelix tube radius 2 sides 24 thickness 0.6; `
+        + 'cartoon style nucleic xsection round width 1.6 thickness 1.6; nucleotides stubs',
+    },
+    'licorice/ovals': {
+      run: noSpheres,
+      then: `${CARTOON_PRESET}; cartoon style protein modeHelix default arrows false xsection round width 1 thickness 1; `
+        + 'cartoon style nucleic xsection round width 1.6 thickness 1.6; nucleotides tube/slab shape ellipsoid',
+    },
   },
   'Molecular Surfaces': {
     'ghostly white': { run: noSpheres, then: 'surface; color white target s; transparency 80 target s' },
@@ -302,7 +380,7 @@ const preset = chxCommand({
     { name: 'text2', type: RestOfLine, role: 'optional' },
   ],
   mutates: true,
-  summary: 'Apply one of ChimeraX\'s builtin presets (Initial Styles, Molecular Surfaces, Overall Look).',
+  summary: 'Apply one of ChimeraX\'s builtin presets (Initial Styles, Cartoons/Nucleotides, Molecular Surfaces, Overall Look).',
   async run(ctx, args, cc): Promise<CmdOutcome> {
     const found = findPreset(args.text1, args.text2)
     if ('error' in found) return { ok: false, error: found.error }
@@ -321,7 +399,7 @@ export const LOOK_COMMANDS: Record<string, ChxCommand> = {
   ribbon: ribbonAlias(['ribbon'], 'cartoon'),
   unribbon: ribbonAlias(['~ribbon'], 'cartoon hide'),
   preset,
-  unitcell: unitcellCopies(['unitcell']),
+  unitcell,
   unitcellOutline,
-  unitcellDelete: unitcellCopies(['unitcell', 'delete']),
+  unitcellDelete,
 }

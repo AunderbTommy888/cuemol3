@@ -23,6 +23,7 @@ const scene: EmitContext = {
   anyHit: () => true,
   currentSelection: () => 'chain B',
   namedSelections: new Set(['site']),
+  displayedAtoms: (model) => `shown${model}`,
 }
 
 /** The expression in model `n`, or the error. */
@@ -85,5 +86,14 @@ describe('atom specification translation', () => {
     expect(inModel('#1.2')).toMatch(/sub-model is not supported/)
     expect(inModel('ions')).toMatch(/"ions" is not supported/)
     expect(inModel('@@idatm_type=C3')).toMatch(/attribute "idatm_type" is not supported/)
+  })
+})
+
+describe('@@display', () => {
+  it('is the displayed atoms of each model, and its negations the others', () => {
+    expect(inModel('@@display', 2)).toBe('shown2')
+    expect(inModel(':10@@display')).toBe('(resi 10) and (shown1)')
+    expect(inModel('@@^display')).toBe('not (shown1)')
+    expect(inModel('@@display=false')).toBe('not (shown1)')
   })
 })

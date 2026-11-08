@@ -35,6 +35,7 @@ vi.mock('./display', async (importOriginal) => ({
   },
 }))
 vi.mock('./commands/colorCommands', () => ({ paintTarget: async () => ({ ok: true }), elementEntries: () => [] }))
+vi.mock('./commands/displayCommands', () => ({ setBaseMode: async () => ({ ok: true }) }))
 
 import { applyAutoStyle, autoStyleOf, LIGAND, METAL, SMALL_SHOWN } from './autoStyle'
 

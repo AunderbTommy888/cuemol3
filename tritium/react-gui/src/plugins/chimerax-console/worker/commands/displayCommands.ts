@@ -15,19 +15,23 @@ import { BoolArg, EnumOf, FloatArg, ListOf, NoArg, SpecArg, StringArg } from '..
 import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
 import {
+  CARTOONS,
   atomRenderers,
+  baseMode,
   cartoonRenderers,
   emitContext,
   ensureOwned,
   intersect,
   minus,
+  NUCL_BASE,
+  ownedOn,
   readSel,
   runOp,
   targetsOf,
   union,
   writeSel,
 } from '../display'
-import type { AtomStyle, Target } from '../display'
+import type { AtomStyle, BaseMode, Target } from '../display'
 import { numberedObjects } from '../models'
 import { hideSurfaces, showSurfaces } from '../surface'
 import { warnIgnored } from './warn'
@@ -110,7 +114,9 @@ async function showHide(
       }
     }
     if (parts.has('cartoons')) {
-      for (const c of cartoonRenderers(owned.ids)) {
+      // The base slabs follow the nucleic cartoon (display.ts).
+      const base = { id: owned.ids.get(NUCL_BASE.name) as number, scope: NUCL_BASE.scope as string }
+      for (const c of [...cartoonRenderers(owned.ids), base]) {
         const cur = readSel(ctx, cc.sceneId, c.id)
         const next = show ? union(only ? intersect(cur, t.sel) : cur, intersect(t.sel, c.scope)) : minus(cur, t.sel)
         const w = await writeSel(ctx, cc, c.id, next)
@@ -206,7 +212,7 @@ const XSECTION_NAMES: Readonly<Record<string, string>> = { rectangle: 'rectangle
 
 /** The `cartoon style` options the console does not do yet (accepted, warned). */
 const CARTOON_STYLE_IGNORED = [
-  'arrows', 'arrowsHelix', 'arrowScale', 'sides', 'divisions', 'barScale', 'barSides', 'modeHelix', 'radius', 'worm',
+  'arrows', 'arrowsHelix', 'arrowScale', 'sides', 'divisions', 'barScale', 'barSides', 'worm',
 ]
 
 /**
@@ -249,6 +255,55 @@ function sectionProps(width: number, thickness: number): { width: number; tuber:
   return { width: thickness / 2, tuber: width / thickness }
 }
 
+/**
+ * `cartoon style modeHelix tube|default|wrap [radius r]`: helices as
+ * cylinders, or as ribbons again. The ribbon is a `ribbon` renderer, which
+ * has no cylinders; the `cartoon` renderer (Ribbon2Renderer) draws a helix
+ * as a cylinder (`helix_ribbon` false), so `chx:cartoon` is redrawn as that
+ * type (`set_renderer_type`, which keeps its selection and colours) and back.
+ * One mode per renderer, so it is set for a model's whole protein: part of
+ * it is skipped with a warning.
+ */
+async function setHelixMode(ctx: WorkerContext, cc: CmdContext, t: Target, mode: string, radius: string): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
+  const name = CARTOONS[0].name
+  const id = ownedOn(ctx, cc.sceneId, t.obj.uid).get(name) as number
+  if (t.sel !== '*' && emitContext(ctx, cc.sceneId).anyHit(t.obj.model, minus('protein', t.sel))) {
+    cc.warn(`cartoon style: modeHelix for part of the protein of #${t.obj.model} is not supported yet (one helix mode per model); ignored`)
+    return { ok: true, id }
+  }
+  const props = getGenericProps(ctx, { sceneId: cc.sceneId, nodeId: id, nodeType: 'renderer' })
+  const type = props.ok ? String(props.entries.find((e) => e.key === 'type_name')?.value ?? '') : ''
+  const want = mode === 'tube' ? 'cartoon' : 'ribbon'
+  let rendId = id
+  if (type !== want) {
+    const res = await runOp(ctx, cc, 'set_renderer_type', { rendId: id, rendererType: want })
+    if (!res.ok) return res
+    rendId = (res.data as { rendererId: number }).rendererId
+  }
+  if (mode === 'wrap') cc.warn('cartoon style: modeHelix wrap is drawn as default (CueMol does not wrap the helix around a tube)')
+  if (want === 'cartoon') {
+    // A round cylinder: its size is helix_width (the ribbon's flat helix section came along with the type change).
+    const writes: [string, string][] = [
+      ['helix_ribbon', 'false'], ['helix.type', 'elliptical'], ['helix.tuber', '1'],
+      ...(radius !== '' ? [['helix_width_mode', 'const'], ['helix_width', radius]] as [string, string][] : []),
+    ]
+    for (const [prop, value] of writes) {
+      const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: rendId, prop, value })
+      if (!res.ok) return res
+    }
+  } else {
+    if (radius !== '') cc.warn('cartoon style: radius is for modeHelix tube; ignored')
+    if (type !== want) {
+      // Back to the ribbon's own helix section (its style's), not the cylinder's.
+      for (const prop of ['helix.type', 'helix.tuber', 'helix.width']) {
+        const res = await runOp(ctx, cc, 'reset_prop', { path: `#${rendId}.${prop}` })
+        if (!res.ok) return res
+      }
+    }
+  }
+  return { ok: true, id: rendId }
+}
+
 const cartoonStyle = chxCommand({
   words: ['cartoon', 'style'],
   args: [
@@ -256,6 +311,8 @@ const cartoonStyle = chxCommand({
     { name: 'width', type: FloatArg, role: 'keyword' },
     { name: 'thickness', type: FloatArg, role: 'keyword' },
     { name: 'xsection', type: EnumOf(Object.keys(XSECTIONS)), role: 'keyword' },
+    { name: 'modeHelix', type: EnumOf(['default', 'tube', 'wrap']), role: 'keyword' },
+    { name: 'radius', type: FloatArg, role: 'keyword' },
     ...CARTOON_STYLE_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
   ],
   mutates: true,
@@ -268,17 +325,24 @@ const cartoonStyle = chxCommand({
       return { ok: false, error: 'Error: cartoon style: width and thickness must be positive' }
     }
     const shape = args.xsection === '' ? undefined : XSECTIONS[args.xsection]
-    const report = width === null && thickness === null && shape === undefined
+    const report = width === null && thickness === null && shape === undefined && args.modeHelix === ''
     const found = targetsOf(ctx, cc.sceneId, args.atoms)
     if (!found.ok) return found
     const ec = emitContext(ctx, cc.sceneId)
     for (const t of found.targets) {
       const owned = await ensureOwned(ctx, cc, t.obj)
       if (!owned.ok) return owned
+      if (args.modeHelix !== '' && ec.anyHit(t.obj.model, intersect(t.sel, 'protein'))) {
+        const helix = await setHelixMode(ctx, cc, t, args.modeHelix, args.radius)
+        if (!helix.ok) return helix
+        owned.ids.set(CARTOONS[0].name, helix.id)
+      }
       for (const kind of SECTION_KINDS) {
         if (!ec.anyHit(t.obj.model, intersect(t.sel, kind.residues))) continue
         const rendId = owned.ids.get(kind.renderer) as number
         const props = getGenericProps(ctx, { sceneId: cc.sceneId, nodeId: rendId, nodeType: 'renderer' })
+        // Cylinder helices take their size from radius, not width / thickness (ChimeraX too).
+        if (kind.label === 'helix' && props.ok && props.entries.find((e) => e.key === 'helix_ribbon')?.value === false) continue
         const read = (k: string) => (props.ok ? props.entries.find((e) => e.key === `${kind.prop}.${k}`)?.value : undefined)
         const size = sectionSize(Number(read('width')), Number(read('tuber')))
         if (report) {
@@ -310,23 +374,66 @@ const cartoonStyle = chxCommand({
 
 const STYLES: readonly AtomStyle[] = ['stick', 'ball', 'sphere']
 
+/** The ring plate thickness of `ringFill thin` (Angstrom); `thick` takes the stick's radius. */
+const THIN_RING = 0.05
+
+/**
+ * `ringFill on|off|thin|thick`: the ball-and-stick renderers' ring plates
+ * (`ring`, `thickness`), coloured as the atoms (`ringcolor` $molcol).
+ * ChimeraX's `thick` follows the stick width, so it takes the renderer's
+ * bond radius. A ring setting is one per renderer, so it is set for whole
+ * models only (thickness 0 would stop drawing the rings, so it is not used
+ * for thin).
+ */
+async function setRingFill(ctx: WorkerContext, cc: CmdContext, t: Target, fill: string): Promise<CmdOutcome> {
+  if (t.sel !== '*') {
+    cc.warn(`style: ringFill for part of a model is not supported yet (one ring setting per renderer); #${t.obj.model} is left as it is`)
+    return { ok: true }
+  }
+  const owned = await ensureOwned(ctx, cc, t.obj)
+  if (!owned.ok) return owned
+  const r = atomRenderers(owned.ids)
+  for (const id of [r.stick, r.ball]) {
+    const props = getGenericProps(ctx, { sceneId: cc.sceneId, nodeId: id, nodeType: 'renderer' })
+    const bondw = Number(props.ok ? props.entries.find((e) => e.key === 'bondw')?.value : NaN)
+    const writes: [string, string][] = fill === 'off'
+      ? [['ring', 'false']]
+      : [
+          ['ring', 'true'],
+          ['ringcolor', '$molcol'],
+          ...(fill === 'thin' ? [['thickness', String(THIN_RING)] as [string, string]] : []),
+          ...(fill === 'thick' && Number.isFinite(bondw) && bondw > 0 ? [['thickness', String(bondw)] as [string, string]] : []),
+        ]
+    for (const [prop, value] of writes) {
+      const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: id, prop, value })
+      if (!res.ok) return res
+    }
+  }
+  return { ok: true }
+}
+
 const style = chxCommand({
   words: ['style'],
   args: [
     { name: 'objects', type: SpecArg, role: 'optional' },
     { name: 'atomStyle', type: EnumOf(STYLES), role: 'optional' },
     { name: 'dashes', type: StringArg, role: 'keyword', ignored: true },
-    { name: 'ringFill', type: StringArg, role: 'keyword', ignored: true },
+    { name: 'ringFill', type: EnumOf(['on', 'off', 'thick', 'thin']), role: 'keyword' },
   ],
   mutates: true,
-  summary: 'Draw atoms as stick, ball or sphere.',
+  summary: 'Draw atoms as stick, ball or sphere; ringFill fills rings with plates.',
   async run(ctx, args, cc) {
-    warnIgnored(cc, 'style', args, ['dashes', 'ringFill'])
+    warnIgnored(cc, 'style', args, ['dashes'])
     const to = args.atomStyle as AtomStyle | ''
-    if (to === '') return { ok: false, error: 'Error: style: give stick, ball or sphere' }
+    if (to === '' && args.ringFill === '') return { ok: false, error: 'Error: style: give stick, ball or sphere' }
     const found = targetsOf(ctx, cc.sceneId, args.objects)
     if (!found.ok) return found
     for (const t of found.targets) {
+      if (args.ringFill !== '') {
+        const ring = await setRingFill(ctx, cc, t, args.ringFill)
+        if (!ring.ok) return ring
+      }
+      if (to === '') continue
       const owned = await ensureOwned(ctx, cc, t.obj)
       if (!owned.ok) return owned
       const r = atomRenderers(owned.ids)
@@ -347,7 +454,79 @@ const style = chxCommand({
   },
 })
 
+// --- nucleotides ---
+
+/** ChimeraX's nucleotide representations, and how the console draws each. */
+const BASE_REPRESENTATIONS: Readonly<Record<string, BaseMode>> = {
+  atoms: 'atoms', fill: 'slab', slab: 'slab', 'tube/slab': 'slab', ladder: 'ladder', stubs: 'ladder',
+}
+
+/** The `nucleotides` keywords that shape ChimeraX's slabs and rungs, which `nucl` does not take. */
+const NUCLEOTIDES_IGNORED = ['showOrientation', 'shape', 'dimensions', 'thickness', 'hideAtoms', 'glycosidic', 'baseOnly', 'showStubs', 'radius']
+
+/**
+ * Draw a molecule's bases as slabs or a ladder (`chx:nuclbase` shown, its
+ * `base_type`), or as nothing but their atoms (`chx:nuclbase` hidden) --
+ * ChimeraX `nucleotides`. Which residues have slabs is the cartoon's
+ * business (`chx:nuclbase` follows it); atoms are not touched.
+ */
+export async function setBaseMode(ctx: WorkerContext, cc: CmdContext, ids: Map<string, number>, mode: BaseMode): Promise<CmdOutcome> {
+  const base = ids.get(NUCL_BASE.name) as number
+  const from = baseMode(ctx, cc.sceneId, ids)
+  if (mode !== 'atoms') {
+    const type = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: base, prop: 'base_type', value: mode === 'ladder' ? 'basepair' : 'detail1' })
+    if (!type.ok) return type
+  }
+  if ((mode === 'atoms') !== (from === 'atoms')) {
+    const vis = await runOp(ctx, cc, 'set_visible', { nodeId: base, nodeType: 'renderer', visible: mode !== 'atoms' })
+    if (!vis.ok) return vis
+  }
+  return { ok: true }
+}
+
+/**
+ * `nucleotides [spec] atoms|fill|slab|tube/slab|ladder|stubs`. The slabs are
+ * `nucl`'s filled base rings (`base_type` detail1: fill, slab and tube/slab
+ * alike), the ladder its base-pair rungs (basepair: ladder and stubs);
+ * `atoms` hides them (the atoms are shown with `show`, as in ChimeraX). The
+ * representation is one per renderer, so it is set for all the nucleic
+ * acids of a model at once: a specification reaching only some of them is
+ * skipped with a warning.
+ */
+const nucleotides = chxCommand({
+  words: ['nucleotides'],
+  args: [
+    { name: 'objects', type: SpecArg, role: 'optional' },
+    { name: 'representation', type: EnumOf(Object.keys(BASE_REPRESENTATIONS)), role: 'optional' },
+    ...NUCLEOTIDES_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
+  ],
+  mutates: true,
+  summary: 'Draw nucleic acid bases as atoms, slabs (fill, slab, tube/slab) or a ladder (ladder, stubs).',
+  async run(ctx, args, cc) {
+    warnIgnored(cc, 'nucleotides', args, NUCLEOTIDES_IGNORED)
+    if (args.representation === '') return { ok: false, error: 'Error: nucleotides: give atoms, fill, slab, tube/slab, ladder or stubs' }
+    const mode = BASE_REPRESENTATIONS[args.representation]
+    const found = targetsOf(ctx, cc.sceneId, args.objects)
+    if (!found.ok) return found
+    const ec = emitContext(ctx, cc.sceneId)
+    // No nucleotide reached is no error, as in ChimeraX (a preset runs it on any structure).
+    for (const t of found.targets) {
+      if (!ec.anyHit(t.obj.model, intersect(t.sel, 'nucleic'))) continue
+      if (t.sel !== '*' && ec.anyHit(t.obj.model, minus('nucleic', t.sel))) {
+        cc.warn(`nucleotides: part of the nucleic acids of #${t.obj.model} is not supported yet (one representation per model); #${t.obj.model} is left as it is`)
+        continue
+      }
+      const owned = await ensureOwned(ctx, cc, t.obj)
+      if (!owned.ok) return owned
+      const res = await setBaseMode(ctx, cc, owned.ids, mode)
+      if (!res.ok) return res
+    }
+    return { ok: true }
+  },
+})
+
 export const DISPLAY_COMMANDS: Record<string, ChxCommand> = {
+  nucleotides,
   show: showHideCommand(true),
   hide: showHideCommand(false),
   cartoon: cartoonCommand(true),

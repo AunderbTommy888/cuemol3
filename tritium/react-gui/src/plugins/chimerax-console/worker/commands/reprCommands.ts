@@ -18,13 +18,16 @@
 
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
-import { BoolArg, ColorArg, EnumOf, FloatArg, ListOf, SpecArg, StringArg } from '../cli/argTypes'
+import { BoolArg, ColorArg, EnumOf, FloatArg, IntArg, ListOf, SpecArg, StringArg } from '../cli/argTypes'
 import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
 import { splitColorArg } from '../colors'
+import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneResolver'
+import { pixelSize, readCamera } from '../camera'
 import { atomRenderers, cartoonRenderers, ensureOwned, ensurePaint, forEachAtom, ownedOn, runOp, targetsOf } from '../display'
+import { isMolecule, numberedObjects } from '../models'
 import type { Target } from '../display'
-import { closeSurfaces, encloseSurface, hideSurfaces, showSurfaces, surfacesOn } from '../surface'
+import { closeSurfaces, encloseSurface, hideSurfaces, showSurfaces, surfacesOn, unzoneSurfaces, zoneSurfaces } from '../surface'
 import { unsupported, warnIgnored } from './warn'
 
 // --- surface ---
@@ -122,6 +125,62 @@ const surfaceClose = chxCommand({
     if (!found.ok) return found
     for (const t of found.targets) {
       const r = await closeSurfaces(ctx, cc, t)
+      if (!r.ok) return r
+    }
+    return { ok: true }
+  },
+})
+
+/**
+ * `surface zone <surfaces> nearAtoms <atoms> [distance d] [maxComponents n]`:
+ * show only the surface patches near the atoms. `maxComponents` (keep the
+ * largest connected patches) needs the surface's connected pieces, which
+ * CueMol does not give yet: it is warned about and the zone by distance is
+ * still applied.
+ */
+const surfaceZone = chxCommand({
+  words: ['surface', 'zone'],
+  args: [
+    { name: 'surfaces', type: SpecArg, role: 'required' },
+    { name: 'nearAtoms', type: SpecArg, role: 'keyword' },
+    { name: 'distance', type: FloatArg, role: 'keyword', default: '2' },
+    { name: 'maxComponents', type: IntArg, role: 'keyword' },
+    { name: 'bondPointSpacing', type: StringArg, role: 'keyword', ignored: true },
+    { name: 'update', type: StringArg, role: 'keyword', ignored: true },
+  ],
+  mutates: true,
+  summary: 'Show only the surface patches near some atoms.',
+  async run(ctx, args, cc) {
+    warnIgnored(cc, 'surface zone', args, ['bondPointSpacing', 'update'])
+    if (args.nearAtoms === '') return { ok: false, error: 'Error: surface zone: give nearAtoms' }
+    if (args.maxComponents !== '') cc.warn('surface zone: maxComponents is not supported yet (small separate patches stay); ignored')
+    const near = targetsOf(ctx, cc.sceneId, args.nearAtoms)
+    if (!near.ok) return near
+    if (near.targets.length === 0) return { ok: false, error: 'Error: surface zone: no atoms specified' }
+    const found = targetsOf(ctx, cc.sceneId, args.surfaces)
+    if (!found.ok) return found
+    let surfaces = 0
+    for (const t of found.targets) {
+      surfaces += surfacesOn(ctx, cc.sceneId, t.obj.uid).length
+      const r = await zoneSurfaces(ctx, cc, t, near.targets, Number(args.distance))
+      if (!r.ok) return r
+    }
+    if (surfaces === 0) return { ok: false, error: 'Error: surface zone: no surfaces specified' }
+    return { ok: true }
+  },
+})
+
+/** `surface unzone <surfaces>`: the whole surface again. */
+const surfaceUnzone = chxCommand({
+  words: ['surface', 'unzone'],
+  args: [{ name: 'surfaces', type: SpecArg, role: 'required' }],
+  mutates: true,
+  summary: 'Show the whole of surfaces again after surface zone.',
+  async run(ctx, args, cc) {
+    const found = targetsOf(ctx, cc.sceneId, args.surfaces)
+    if (!found.ok) return found
+    for (const t of found.targets) {
+      const r = await unzoneSurfaces(ctx, cc, t)
       if (!r.ok) return r
     }
     return { ok: true }
@@ -233,7 +292,85 @@ function formatOf(kind: LabelKind, text: string, attribute: string): { ok: true;
   return { ok: true, format: field }
 }
 
-const LABEL_IGNORED = ['height', 'bgColor', 'offset', 'font']
+const LABEL_IGNORED = ['bgColor', 'offset']
+
+/**
+ * The label font size (CueMol's pixels) for a ChimeraX label height
+ * (Angstrom), at the view's current zoom: the height in pixels at the view
+ * centre, times the ratio of a font size to the text height it draws.
+ * CueMol draws labels in pixels, so the height is not kept when zooming.
+ */
+// Measured against ChimeraX (1crn, `label height 1.0`): a font size of the
+// height in pixels draws the text about 0.8 of ChimeraX's.
+const FONT_PER_HEIGHT = 1.25
+
+function fontSizeFor(ctx: WorkerContext, cc: CmdContext, height: number): string | null {
+  const cam = readCamera(ctx, cc.viewId)
+  if (!cam) return null
+  const px = pixelSize(cam)
+  return px > 0 ? String(Math.max(1, Math.round((height / px) * FONT_PER_HEIGHT))) : null
+}
+
+/** The atom ids a label renderer has labels on (`getLabelAtomIDsJSON`). */
+function labelledAtoms(ctx: WorkerContext, sceneId: number, rendId: number): number[] {
+  const rend = getSceneOrNull(ctx, sceneId)?.getRenderer(rendId) as unknown as { getLabelAtomIDsJSON?: () => string } | null
+  try {
+    const ids = JSON.parse(rend?.getLabelAtomIDsJSON?.() ?? '[]') as unknown
+    return Array.isArray(ids) ? ids.filter((x): x is number => typeof x === 'number') : []
+  } catch {
+    return []
+  }
+}
+
+/** The look `label` sets on a label renderer: colour, size (or height), font, on top. */
+function labelProps(ctx: WorkerContext, cc: CmdContext, args: Record<string, string>): [string, string][] {
+  const props: [string, string][] = []
+  if (args.color !== '') props.push(['color', splitColorArg(args.color).hex])
+  if (args.size !== '') props.push(['font_size', args.size])
+  if (args.height !== '' && args.size === '') {
+    const size = fontSizeFor(ctx, cc, Number(args.height))
+    if (size !== null) {
+      props.push(['font_size', size])
+      cc.warn('label: height is approximated by a font size at the current zoom (CueMol draws labels in pixels, so it does not follow zooming)')
+    }
+  }
+  if (args.font !== '') props.push(['font_name', args.font])
+  if (args.onTop !== '') props.push(['label_on_top', args.onTop])
+  return props
+}
+
+/**
+ * `label` with no atoms: no label is made (ChimeraX `label3d.py` changes
+ * only the labels there are, and asks for atoms when there are none). The
+ * look is set on the label renderers there are; a text or an attribute is
+ * written into each existing label's own format (each label keeps one,
+ * which wins over the renderer's), so the labels show it.
+ */
+async function relabelExisting(ctx: WorkerContext, cc: CmdContext, args: Record<string, string>, kinds: readonly LabelKind[]): Promise<CmdOutcome> {
+  let found = 0
+  for (const obj of numberedObjects(ctx, cc.sceneId).filter(isMolecule)) {
+    const owned = ownedOn(ctx, cc.sceneId, obj.uid)
+    for (const kind of kinds) {
+      const id = owned.get(LABEL_RENDERERS[kind])
+      if (id === undefined) continue
+      const ids = labelledAtoms(ctx, cc.sceneId, id)
+      if (ids.length === 0) continue
+      found++
+      if (args.text !== '' || args.attribute !== '') {
+        const fmt = formatOf(kind, args.text, args.attribute)
+        if (!fmt.ok) return fmt
+        const res = await runOp(ctx, cc, 'set_atom_labels', { objId: obj.uid, selection: `aid ${ids.join(',')}`, format: fmt.format, rendererName: LABEL_RENDERERS[kind] })
+        if (!res.ok) return res
+      }
+      for (const [prop, value] of labelProps(ctx, cc, args)) {
+        const r = await setEach(ctx, cc, [id], prop, value)
+        if (!r.ok) return r
+      }
+    }
+  }
+  if (found === 0) return { ok: false, error: 'Error: label: label command requires an atom specifier to create labels' }
+  return { ok: true }
+}
 const LABEL_KINDS = ['atoms', 'residues', 'pseudobonds', 'bonds', 'models']
 
 /** The label kind an argument names; residues when none. */
@@ -253,6 +390,8 @@ const label = chxCommand({
     { name: 'color', type: ColorArg, role: 'keyword' },
     { name: 'size', type: FloatArg, role: 'keyword' },
     { name: 'onTop', type: BoolArg, role: 'keyword' },
+    { name: 'height', type: FloatArg, role: 'keyword' },
+    { name: 'font', type: StringArg, role: 'keyword' },
     ...LABEL_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
   ],
   mutates: true,
@@ -261,6 +400,7 @@ const label = chxCommand({
     warnIgnored(cc, 'label', args, LABEL_IGNORED)
     const kinds = kindOf(args.otype)
     if (!kinds.ok) return kinds
+    if (args.objects.trim() === '') return relabelExisting(ctx, cc, args, args.otype === '' ? ['residues', 'atoms'] : kinds.kinds)
     const kind = kinds.kinds[0]
     const fmt = formatOf(kind, args.text, args.attribute)
     if (!fmt.ok) return fmt
@@ -273,12 +413,7 @@ const label = chxCommand({
       if (!res.ok) return res
       const id = ownedOn(ctx, cc.sceneId, t.obj.uid).get(LABEL_RENDERERS[kind])
       if (id === undefined) continue
-      const props: [string, string][] = [
-        ...(args.color !== '' ? [['color', splitColorArg(args.color).hex] as [string, string]] : []),
-        ...(args.size !== '' ? [['font_size', args.size] as [string, string]] : []),
-        ...(args.onTop !== '' ? [['label_on_top', args.onTop] as [string, string]] : []),
-      ]
-      for (const [prop, value] of props) {
+      for (const [prop, value] of labelProps(ctx, cc, args)) {
         const r = await setEach(ctx, cc, [id], prop, value)
         if (!r.ok) return r
       }
@@ -372,6 +507,8 @@ export const REPR_COMMANDS: Record<string, ChxCommand> = {
   surface,
   surfaceHidePatches: hidePatchesCommand(['surface', 'hidePatches']),
   surfaceClose,
+  surfaceZone,
+  surfaceUnzone,
   unsurface: hidePatchesCommand(['~surface']),
   transparency,
   label,

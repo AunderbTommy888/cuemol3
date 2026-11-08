@@ -6,7 +6,11 @@
  * `distance` measures between exactly two atoms (`measure_geometry`) and
  * draws the measurement into the first atom's molecule, on its
  * `chx:distance` renderer. ChimeraX's report for more atoms (the minimum,
- * average and maximum over the pairs) is not made.
+ * average and maximum over the pairs) is not made. `color`, `radius` (the
+ * cylinder's radius, CueMol's `width`) and `dashes 0` (a solid line) are
+ * set on that renderer, so they apply to every console distance of the
+ * molecule; a positive `dashes` count is not kept: CueMol's dashes have a
+ * fixed length, so their number depends on the line's length.
  *
  * `align` fits atoms onto others pair by pair in order: `superpose` with
  * LSQ, the RMSD worked out from the atoms after the move. `matchmaker`
@@ -18,7 +22,8 @@
 
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { CmdOutcome } from '@plugins/console/worker/dialect-api'
-import { IntArg, SpecArg, StringArg } from '../cli/argTypes'
+import { ColorArg, FloatArg, IntArg, SpecArg, StringArg } from '../cli/argTypes'
+import { splitColorArg } from '../colors'
 import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
 import { forEachAtom, ownedOn, runOp, targetsOf } from '../display'
@@ -59,13 +64,33 @@ function intrAtomName(a: AtomView): string {
   return `${a.chainName} ${a.residName} ${a.residIndex} ${a.name}`
 }
 
-const DISTANCE_IGNORED = ['color', 'dashes', 'radius', 'symmetry', 'signed', 'monitor']
+const DISTANCE_IGNORED = ['symmetry', 'signed', 'monitor']
+
+/** The look of the distance renderer `color` / `radius` / `dashes` set, as renderer properties. */
+function distanceLook(args: Record<string, string>, warn: (msg: string) => void): [string, string][] {
+  const out: [string, string][] = []
+  if (args.color) out.push(['color', splitColorArg(args.color).hex])
+  if (args.radius) out.push(['width', args.radius])
+  if (args.dashes) {
+    // No positive stipple length draws a solid line (AtomIntrRenderer::checkStipple).
+    if (Number(args.dashes) <= 0) out.push(['stipple0', '-1'], ['stipple1', '-1'])
+    else {
+      warn('distance: a dashes count is not supported yet (CueMol\'s dashes have a fixed length); drawn dashed')
+      out.push(['stipple0', '1'], ['stipple1', '1'])
+    }
+  }
+  if (out.length > 0) warn('distance: color, radius and dashes apply to every console distance of the model (one renderer draws them)')
+  return out
+}
 
 const distance = chxCommand({
   words: ['distance'],
   args: [
     { name: 'objects', type: SpecArg, role: 'required' },
     { name: 'decimalPlaces', type: IntArg, role: 'keyword', default: '3' },
+    { name: 'color', type: ColorArg, role: 'keyword' },
+    { name: 'radius', type: FloatArg, role: 'keyword' },
+    { name: 'dashes', type: IntArg, role: 'keyword' },
     ...DISTANCE_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
   ],
   mutates: true,
@@ -88,6 +113,13 @@ const distance = chxCommand({
       atomObjects: a.target.obj.uid === b.target.obj.uid ? null : `#${b.target.obj.uid}`,
     })
     if (!res.ok) return res
+    const rend = ownedOn(ctx, cc.sceneId, a.target.obj.uid).get(DISTANCE)
+    if (rend !== undefined) {
+      for (const [prop, v] of distanceLook(args, (m) => cc.warn(m))) {
+        const set = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: rend, prop, value: v })
+        if (!set.ok) return set
+      }
+    }
     const value = (res.data as { exactValue: number }).exactValue
     const many = numberedObjects(ctx, cc.sceneId).filter(isMolecule).length > 1
     cc.print(`Distance between ${atomLabel(a, many)} and ${atomLabel(b, many)}: ${value.toFixed(Number(args.decimalPlaces))}Å`)

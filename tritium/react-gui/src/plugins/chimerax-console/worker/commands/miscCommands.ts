@@ -18,14 +18,19 @@ import { recallView } from './viewCommands'
 const NamedViewArg: ArgType = { ...StringArg, name: 'a view name' }
 
 /**
- * `view [objects | name] [frames] [cofr]`. ChimeraX reads the first word as
- * a specification, else as a view name (`Or(ObjectsArg, NamedViewArg)`).
+ * `view [objects | name] [frames] [clip] [cofr]`. ChimeraX reads the first
+ * word as a specification, else as a view name (`Or(ObjectsArg,
+ * NamedViewArg)`). `clip` (true by default) puts the near and far planes
+ * around what is fitted, which the slab does here; `clip false` removes
+ * them in ChimeraX, but CueMol always has a slab, so the slab is left as it
+ * is. A named view keeps its own slab either way, as in ChimeraX.
  */
 const view = chxCommand({
   words: ['view'],
   args: [
     { name: 'objects', type: Or(SpecArg, NamedViewArg), role: 'optional' },
     { name: 'frames', type: IntArg, role: 'optional' },
+    { name: 'clip', type: BoolArg, role: 'keyword' },
     { name: 'cofr', type: BoolArg, role: 'keyword' },
     { name: 'pad', type: StringArg, role: 'keyword', ignored: true },
   ],
@@ -52,7 +57,7 @@ const view = chxCommand({
     if (!framing) return { ok: false, error: 'Error: view: nothing to show' }
     // Every argument of set_view is given: one left out reaches the op as undefined, not null.
     const res = await runOp(ctx, cc, 'set_view', {
-      zoom: framing.zoom, slab: framing.slab, distance: null, center: framing.center, rotation: null, fitSlab: null, objId: null,
+      zoom: framing.zoom, slab: args.clip === 'false' ? null : framing.slab, distance: null, center: framing.center, rotation: null, fitSlab: null, objId: null,
     })
     return res.ok ? { ok: true } : res
   },
@@ -63,9 +68,9 @@ const viewInitial = chxCommand({
   words: ['view', 'initial'],
   args: [{ name: 'models', type: SpecArg, role: 'optional' }],
   mutates: false,
-  summary: 'Put models back where they were opened (nothing to do: CueMol objects do not move).',
+  summary: 'Put models back where they were opened (nothing to do: the console does not move models).',
   run(_ctx, _args, cc) {
-    cc.print('view initial: CueMol objects have no positions of their own, so they are in their initial positions')
+    cc.print('view initial: the console does not move models, so they are in their initial positions')
     return { ok: true }
   },
 })
