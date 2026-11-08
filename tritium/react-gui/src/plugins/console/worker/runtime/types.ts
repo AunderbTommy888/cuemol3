@@ -74,8 +74,15 @@ export interface CmdContext {
   requestScene(req: SceneRequest): boolean
 }
 
-/** A command either did its job or has a reason it could not. */
-export type CmdOutcome = { ok: true } | { ok: false; error: string }
+/**
+ * A command either did its job or has a reason it could not.
+ *
+ * `unsupported`: what was asked is something the dialect knows it does not
+ * do (a refused keyword, a command of the original program it lacks). The
+ * runtime says it as a warning, skips it and goes on with the rest of the
+ * submission, so a script carries on; any other failure stops it.
+ */
+export type CmdOutcome = { ok: true } | { ok: false; error: string; unsupported?: true }
 
 /**
  * Where Tab finds the values of one parameter.
@@ -225,7 +232,8 @@ export type BindResult =
   | { kind: 'args'; args: Record<string, string> }
   /** The user asked for the usage (PyMOL's `cmd ?`): print it, run nothing. */
   | { kind: 'usage'; usage: string }
-  | { kind: 'error'; error: string }
+  /** `unsupported`: the arguments ask for what the dialect knows it does not do; skipped, as `CmdOutcome`. */
+  | { kind: 'error'; error: string; unsupported?: true }
 
 /**
  * How a dialect's lines are read. Every dialect has one: the runtime and the
@@ -283,4 +291,10 @@ export interface ConsoleDialect {
    * no pattern, or the source has none.
    */
   expand?(id: string, ctx: WorkerContext, sc: SourceContext): string[] | null
+  /**
+   * For a line whose command the dialect does not know: why it is skipped
+   * (a command of the original program the dialect does not have), or null
+   * when it is an error that stops the submission (a misspelling).
+   */
+  unsupportedCommand?(text: string): string | null
 }
