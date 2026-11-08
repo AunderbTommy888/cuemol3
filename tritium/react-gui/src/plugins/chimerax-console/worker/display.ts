@@ -203,12 +203,12 @@ export function emitContext(ctx: WorkerContext, sceneId: number): EmitContext {
 }
 
 /** A specification read into its tree, with the scene's named selections as selectors. */
-export function readSpec(ctx: WorkerContext, sceneId: number, spec: string): { ok: true; node: SpecNode } | { ok: false; error: string; unsupported?: true } {
+export function readSpec(ctx: WorkerContext, sceneId: number, spec: string): { ok: true; node: SpecNode; consumed: number } | { ok: false; error: string; unsupported?: true } {
   try {
     const names = selectionNames(ctx, sceneId)
     const read = withSceneSelectors(names, () => parseSpec(spec, isSelector))
     if (!read) return { ok: false, error: `Error: "${spec}" is not an atom specification` }
-    return { ok: true, node: read.node }
+    return { ok: true, node: read.node, consumed: read.consumed }
   } catch (e) {
     if (e instanceof SpecError) return { ok: false, error: specError(spec, e), ...(e.unsupported ? { unsupported: true as const } : {}) }
     throw e

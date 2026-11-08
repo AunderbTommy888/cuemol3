@@ -43,7 +43,8 @@ vi.mock('../display', async (importOriginal) => ({
     ok: true,
     targets: [...state.targets].map(([uid, sel]) => ({ obj: { uid, model: uid, name: `m${uid}`, className: 'MolCoord' }, sel })),
   }),
-  readSpec: (_ctx: unknown, _s: number, text: string) => ({ ok: true, node: { kind: 'selector', name: text, pos: 0 } }),
+  // The specification is read up to a space (a stand-in for where a real one ends).
+  readSpec: (_ctx: unknown, _s: number, text: string) => ({ ok: true, node: { kind: 'selector', name: text, pos: 0 }, consumed: text.includes(' ') ? text.indexOf(' ') : text.length }),
   targetsOfNode: (_ctx: unknown, _s: number, node: unknown) => {
     state.node = node
     return { ok: true, targets: [{ obj: { uid: 10, model: 10, name: 'm10', className: 'MolCoord' }, sel: 'S' }] }
@@ -114,6 +115,11 @@ describe('name', () => {
     state.targets.set(20, 'chain A')
     expect((await SELECT_COMMANDS.name.run(ctx, { name: 'site', text: '/A' }, cc)).ok).toBe(true)
     expect(state.ops.filter((o) => o.name === 'define_selection').map((o) => o.args.selection)).toEqual(['chain A'])
+  })
+
+  it('refuses a text only partly a specification, rather than naming less than written', async () => {
+    const out = await SELECT_COMMANDS.name.run(ctx, { name: 'part', text: '#1/k junk' }, cc)
+    expect(out.ok).toBe(false)
   })
 })
 

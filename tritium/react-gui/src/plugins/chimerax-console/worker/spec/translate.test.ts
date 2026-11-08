@@ -85,6 +85,8 @@ describe('atom specification translation', () => {
       'chain B',
       'none',
     ])
+    // Model parts written one after another are a union too (ChimeraX's `hier+`).
+    expect([inModel('#1/A#2/B', 1), inModel('#1/A#2/B', 2)]).toEqual(['chain A', 'chain B'])
   })
 
   it('reads a hex colour as no specification, and refuses what it cannot translate', () => {

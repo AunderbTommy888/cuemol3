@@ -331,6 +331,11 @@ const name = chxCommand({
       return { ok: false, error: `Error: name: "${args.name}" cannot be a name (letters, digits and _ only; not all, sel or a builtin selector)` }
     }
     const spec = args.text.trim()
+    // The whole text must be the specification: one read only in part would name less than written.
+    const read = readSpec(ctx, cc.sceneId, spec)
+    if (read.ok && spec.slice(read.consumed).trim() !== '') {
+      return { ok: false, error: `${spec}\n${' '.repeat(read.consumed)}^ name: the specification ends here; the rest is not part of it` }
+    }
     // Kept first, then translated: a name used inside itself shows up only with the new definition.
     const before = setChxName(cc.sceneId, args.name, spec)
     const found = targetsOf(ctx, cc.sceneId, spec)

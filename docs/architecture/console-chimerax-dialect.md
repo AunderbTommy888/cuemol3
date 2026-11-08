@@ -101,7 +101,7 @@ ChimeraX のソース (`~/ext/ChimeraX/src/bundles/`) のうち、写したも�
 
 - `parse.ts` は `_atomspec.peg` の再帰下降。spec は 1 つの引数なので、spec として読めるところまで読み、どこで
   止まったかを返す。`#ff0000` (16 進の数字が続く `#`) は model ではなく色、selector でない語 (`red`) で spec は終わる。
-- 演算子 `&` `|` `~` と括弧は ChimeraX と同じく優先順位が無く右結合。空白で区切った項は和 (`#1 #2`)。
+- 演算子 `&` `|` `~` と括弧は ChimeraX と同じく優先順位が無く右結合。空白で区切った項は和 (`#1 #2`)。model の部分を間を空けずに続けた項も和 (`#1/k#2/o`。`_atomspec.peg` の `hier+`)。
 - `emit.ts` は木を**object ごと**に、その object の model 番号で CueMol の式にする。別の model を指す部分はその
   object では `none` になり、式が `none` の object には何もしない。`#1/A | #2/B` は #1 では `chain A`、#2 では
   `chain B` (両方で `chain A or chain B` にはしない)。全項を括弧で包む。
@@ -376,7 +376,7 @@ renderer で表し、**その selection と paint が表示の状態そのもの
 | `select zone` | `near range [find]`、`extend`、`residues` | `set_mol_selection`、`count_selection` | 下記 |
 | `select up` / `select down` | | `set_mol_selection`、`count_selection` | 下記 |
 | `select add` / `subtract` / `intersect` / `clear`、`~select` | `[spec]` (`intersect` は必須) | `set_mol_selection` | 今の選択と和・差・積を取って書く。spec が無ければ `add` は全部、`subtract` は全部を引く |
-| `name` | `name spec` / `name name` (定義を出す) | `define_selection`、`remove_selection` | spec を ChX の名前の表に入れ (§3「名前」)、一度翻訳して誤りが無いことを確かめる (誤りなら表を元に戻す)。全部の分子で同じ式になるときは、今までどおり CueMol の名前付き selection も作る (GUI に出て、scene に保存される)。分子ごとに違う式 (model を指す、model をまたぐ zone) は ChX の表だけに持ち、「scene には保存されない (この session だけ)」と 1 行で言う (同じ名前の CueMol の名前付き selection があれば消す)。`all`・`sel`・組み込みの selector (`protein`、元素記号など) は名前にできない |
+| `name` | `name spec` / `name name` (定義を出す) | `define_selection`、`remove_selection` | spec を ChX の名前の表に入れ (§3「名前」)、一度翻訳して誤りが無いことを確かめる (誤りなら表を元に戻す)。行の残り全体が 1 つの spec でなければ断る (途中までしか読めない spec を黙って短く名付けない)。全部の分子で同じ式になるときは、今までどおり CueMol の名前付き selection も作る (GUI に出て、scene に保存される)。分子ごとに違う式 (model を指す、model をまたぐ zone) は ChX の表だけに持ち、「scene には保存されない (この session だけ)」と 1 行で言う (同じ名前の CueMol の名前付き selection があれば消す)。`all`・`sel`・組み込みの selector (`protein`、元素記号など) は名前にできない |
 | `name delete` / `name list`、`name frozen` | `name\|all` | `remove_selection` | ChX の表と CueMol の名前付き selection の両方が対象。`name list` は ChX の名前を spec の文字列で、ChX の表に無い CueMol の名前付き selection を式で出す。`name frozen` は断る (今の原子の集合を固定する手段が無い) |
 | `info`、`info models` / `chains` / `residues` / `atoms` | `[spec]`、`attribute`、`saveFile` (無視) | (読み取り) | ChimeraX の書式 (`#1, 1crn, shown`、`chain id #1/A chain_id A`、`residue id #1/A:12 name ALA`、`atom id #1/A:12@CA`)。結合の数と IDATM 型 (`info atoms` の既定の attribute) は CueMol に無いので出さない。atom の attribute は name・element・bfactor・occupancy |
 | `alias` / `alias list` / `alias delete` / `~alias` | `name text`、`$1`-`$9`・`$*` | (中のコマンドの op) | 下記 |
