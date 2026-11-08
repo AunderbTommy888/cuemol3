@@ -428,6 +428,48 @@ const graphicsSilhouettes = chxCommand({
   },
 })
 
+/** The scene's background colour, as `set` / `graphics` report it. */
+function reportBackground(ctx: WorkerContext, cc: CmdContext): CmdOutcome {
+  const props = getGenericProps(ctx, { sceneId: cc.sceneId, nodeId: cc.sceneId, nodeType: 'scene' })
+  const bg = props.ok ? props.entries.find((e) => e.key === 'bgcolor')?.value : undefined
+  cc.print(`Background color: ${String(bg ?? '')}`)
+  return { ok: true }
+}
+
+/** Set the scene's background colour. */
+function setBackground(ctx: WorkerContext, cc: CmdContext, color: string) {
+  return runOp(ctx, cc, 'set_node_prop', { nodeType: 'scene', nodeId: null, prop: 'bgcolor', value: splitColorArg(color).hex })
+}
+
+/**
+ * `graphics [bgColor c]` (`std_commands/graphics.py`; `backgroundColor` is
+ * its older name): the background colour, as `set bgColor`; alone, report it.
+ */
+const graphics = chxCommand({
+  words: ['graphics'],
+  args: [
+    { name: 'bgColor', type: ColorArg, role: 'keyword' },
+    { name: 'backgroundColor', type: ColorArg, role: 'keyword' },
+  ],
+  mutates: true,
+  summary: 'Set the background colour; alone, report it.',
+  async run(ctx, args, cc) {
+    const color = args.bgColor !== '' ? args.bgColor : args.backgroundColor
+    if (color === '') return reportBackground(ctx, cc)
+    const res = await setBackground(ctx, cc, color)
+    return res.ok ? { ok: true } : res
+  },
+})
+
+/** `wait [frames]`: the console applies each command at once, so there is nothing to wait for. */
+const wait = chxCommand({
+  words: ['wait'],
+  args: [{ name: 'frames', type: StringArg, role: 'optional' }],
+  mutates: false,
+  summary: 'Wait for motions to finish (nothing to do: the console applies each command at once).',
+  run: () => ({ ok: true }),
+})
+
 const set = chxCommand({
   words: ['set'],
   args: [
@@ -448,14 +490,9 @@ const set = chxCommand({
       if (args[k] !== '') cc.warn(`set: ${k} is not supported yet; ignored`)
     }
     const any = Object.values(args).some((v) => v !== '')
-    if (!any) {
-      const props = getGenericProps(ctx, { sceneId: cc.sceneId, nodeId: cc.sceneId, nodeType: 'scene' })
-      const bg = props.ok ? props.entries.find((e) => e.key === 'bgcolor')?.value : undefined
-      cc.print(`Background color: ${String(bg ?? '')}`)
-      return { ok: true }
-    }
+    if (!any) return reportBackground(ctx, cc)
     if (args.bgColor !== '') {
-      const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'scene', nodeId: null, prop: 'bgcolor', value: splitColorArg(args.bgColor).hex })
+      const res = await setBackground(ctx, cc, args.bgColor)
       if (!res.ok) return res
     }
     if (args.silhouettes !== '' || args.silhouetteWidth !== '' || args.silhouetteColor !== '') {
@@ -474,6 +511,8 @@ export const VIEW_COMMANDS: Record<string, ChxCommand> = {
   viewDelete,
   viewName,
   viewMatrix,
+  graphics,
   graphicsSilhouettes,
   set,
+  wait,
 }

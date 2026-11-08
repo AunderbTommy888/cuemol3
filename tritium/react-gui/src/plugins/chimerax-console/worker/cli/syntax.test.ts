@@ -79,3 +79,11 @@ describe('ChX syntax', () => {
     expect(bind('open "C:\\Users\\x.pdb"')).toMatchObject({ kind: 'args', args: { names: 'C:\\Users\\x.pdb' } })
   })
 })
+
+describe('ChimeraX forms from the figure scripts', () => {
+  it('reads a snake_case keyword as camelCase, graphics bgColor, and color modify\'s operator', () => {
+    expect(bind('set bg_color gray')).toMatchObject({ kind: 'args', args: { bgColor: expect.stringMatching(/^#/) } })
+    expect(resolve('graphics bgColor white')).toBe('graphics')
+    expect(bind('color modify /b whiteness - 50')).toMatchObject({ kind: 'args', args: { objects: '/b', adjuster: 'whiteness', op: '-', number: '50' } })
+  })
+})

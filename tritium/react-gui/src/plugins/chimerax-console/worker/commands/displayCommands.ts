@@ -11,7 +11,7 @@
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
 import { getGenericProps } from '@renderer/worker/server/services/props/read'
-import { BoolArg, EnumOf, FloatArg, ListOf, NoArg, SpecArg, StringArg } from '../cli/argTypes'
+import { BoolArg, EnumOf, FloatArg, IntArg, ListOf, NoArg, SpecArg, StringArg } from '../cli/argTypes'
 import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
 import {
@@ -168,14 +168,16 @@ function cartoonCommand(show: boolean): ChxCommand {
       ...(show
         ? [
             { name: 'smooth', type: StringArg, role: 'keyword' as const, ignored: true },
-            { name: 'suppressBackboneDisplay', type: BoolArg, role: 'keyword' as const, ignored: true },
+            { name: 'suppressBackboneDisplay', type: BoolArg, role: 'keyword' as const },
           ]
         : []),
     ],
     mutates: true,
     summary: show ? 'Show residues as cartoon.' : 'Hide the cartoon of residues.',
     async run(ctx, args, cc) {
-      warnIgnored(cc, 'cartoon', args, ['smooth', 'suppressBackboneDisplay'])
+      warnIgnored(cc, 'cartoon', args, ['smooth'])
+      // The console never hides backbone atoms for the cartoon, which is what false asks for.
+      if (args.suppressBackboneDisplay === 'true') cc.warn('cartoon: suppressBackboneDisplay true is not supported yet (backbone atoms stay shown); ignored')
       const found = targetsOf(ctx, cc.sceneId, args.atoms)
       if (!found.ok) return found
       return showHide(ctx, cc, found.targets, new Set(['cartoons']), show)
@@ -212,7 +214,7 @@ const XSECTION_NAMES: Readonly<Record<string, string>> = { rectangle: 'rectangle
 
 /** The `cartoon style` options the console does not do yet (accepted, warned). */
 const CARTOON_STYLE_IGNORED = [
-  'arrows', 'arrowsHelix', 'arrowScale', 'sides', 'divisions', 'barScale', 'barSides', 'worm',
+  'barScale', 'barSides', 'worm',
 ]
 
 /**
@@ -313,6 +315,11 @@ const cartoonStyle = chxCommand({
     { name: 'xsection', type: EnumOf(Object.keys(XSECTIONS)), role: 'keyword' },
     { name: 'modeHelix', type: EnumOf(['default', 'tube', 'wrap']), role: 'keyword' },
     { name: 'radius', type: FloatArg, role: 'keyword' },
+    { name: 'arrows', type: BoolArg, role: 'keyword' },
+    { name: 'arrowsHelix', type: BoolArg, role: 'keyword' },
+    { name: 'arrowScale', type: FloatArg, role: 'keyword' },
+    { name: 'sides', type: IntArg, role: 'keyword' },
+    { name: 'divisions', type: IntArg, role: 'keyword' },
     ...CARTOON_STYLE_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
   ],
   mutates: true,
@@ -325,7 +332,8 @@ const cartoonStyle = chxCommand({
       return { ok: false, error: 'Error: cartoon style: width and thickness must be positive' }
     }
     const shape = args.xsection === '' ? undefined : XSECTIONS[args.xsection]
-    const report = width === null && thickness === null && shape === undefined && args.modeHelix === ''
+    const details = ['arrows', 'arrowsHelix', 'arrowScale', 'sides', 'divisions'].some((k) => args[k] !== '')
+    const report = width === null && thickness === null && shape === undefined && args.modeHelix === '' && !details
     const found = targetsOf(ctx, cc.sceneId, args.atoms)
     if (!found.ok) return found
     const ec = emitContext(ctx, cc.sceneId)
@@ -367,10 +375,50 @@ const cartoonStyle = chxCommand({
           if (!res.ok) return res
         }
       }
+      if (details) {
+        const res = await writeCartoonDetails(ctx, cc, owned.ids, args, ec.anyHit(t.obj.model, intersect(t.sel, 'protein')), ec.anyHit(t.obj.model, intersect(t.sel, 'nucleic')))
+        if (!res.ok) return res
+      }
     }
     return { ok: true }
   },
 })
+
+/**
+ * `cartoon style` `arrows` / `arrowsHelix` / `arrowScale` / `sides` /
+ * `divisions` as renderer properties (one value per renderer, as ChimeraX's
+ * are per secondary structure type): the strand head (`sheethead.type`,
+ * `sheethead.arrow`, the arrow's width over the strand's as ChimeraX's
+ * `arrowScale`), the helix head (`helixhead` on the ribbon, `ribhelix_head`
+ * on the cartoon renderer), the sections' points around (`detail`) and the
+ * points per residue along the chain (`axialdetail`).
+ */
+async function writeCartoonDetails(
+  ctx: WorkerContext, cc: CmdContext, ids: Map<string, number>, args: Record<string, string>, protein: boolean, nucleic: boolean,
+): Promise<CmdOutcome> {
+  const writes: [number, string, string][] = []
+  const prot = ids.get(CARTOONS[0].name) as number
+  const nucl = ids.get(CARTOONS[1].name) as number
+  if (protein) {
+    const props = getGenericProps(ctx, { sceneId: cc.sceneId, nodeId: prot, nodeType: 'renderer' })
+    const type = props.ok ? String(props.entries.find((e) => e.key === 'type_name')?.value ?? '') : ''
+    const head = (on: string) => (on === 'true' ? 'arrow' : 'smooth')
+    if (args.arrows !== '') writes.push([prot, 'sheethead.type', head(args.arrows)])
+    if (args.arrowScale !== '') writes.push([prot, 'sheethead.arrow', args.arrowScale])
+    if (args.arrowsHelix !== '') writes.push([prot, type === 'cartoon' ? 'ribhelix_head.type' : 'helixhead.type', head(args.arrowsHelix)])
+    if (args.sides !== '') for (const sec of ['helix', 'sheet', 'coil']) writes.push([prot, `${sec}.detail`, args.sides])
+    if (args.divisions !== '') writes.push([prot, 'axialdetail', args.divisions])
+  }
+  if (nucleic) {
+    if (args.sides !== '') writes.push([nucl, 'section.detail', args.sides])
+    if (args.divisions !== '') writes.push([nucl, 'axialdetail', args.divisions])
+  }
+  for (const [nodeId, prop, value] of writes) {
+    const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId, prop, value })
+    if (!res.ok) return res
+  }
+  return { ok: true }
+}
 
 const STYLES: readonly AtomStyle[] = ['stick', 'ball', 'sphere']
 

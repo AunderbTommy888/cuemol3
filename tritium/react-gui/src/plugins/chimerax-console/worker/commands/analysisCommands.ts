@@ -227,7 +227,7 @@ const align = chxCommand({
   },
 })
 
-const MATCHMAKER_IGNORED = ['pairing', 'alg', 'matrix', 'cutoffDistance', 'showAlignment', 'bring', 'gapOpen', 'gapExtend', 'ssFraction', 'verbose']
+const MATCHMAKER_IGNORED = ['pairing', 'alg', 'matrix', 'cutoffDistance', 'showAlignment', 'bring', 'gapOpen', 'gapExtend', 'ssFraction', 'computeSS', 'keepComputedSS', 'verbose']
 
 /** `matchmaker` / `mmaker`: superpose each model of `atoms` onto `to` by US-align. */
 function matchmakerCommand(word: string): ChxCommand {
@@ -265,7 +265,36 @@ function matchmakerCommand(word: string): ChxCommand {
   })
 }
 
+const DSSP_IGNORED = ['energyCutoff', 'minHelixLen', 'minStrandLen', 'report']
+
+/**
+ * `dssp [atoms]`: compute the secondary structure of the proteins reached
+ * again from their coordinates (`set_secondary_structure`, CueMol's own
+ * DSSP-like assignment, for each whole molecule as ChimeraX does for each
+ * structure). ChimeraX's cut-offs are not CueMol's settings: warned.
+ */
+const dssp = chxCommand({
+  words: ['dssp'],
+  args: [
+    { name: 'atoms', type: SpecArg, role: 'optional' },
+    ...DSSP_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
+  ],
+  mutates: true,
+  summary: 'Compute the secondary structure of proteins from their coordinates.',
+  async run(ctx, args, cc) {
+    warnIgnored(cc, 'dssp', args, DSSP_IGNORED)
+    const found = targetsOf(ctx, cc.sceneId, args.atoms)
+    if (!found.ok) return found
+    for (const t of found.targets) {
+      const res = await runOp(ctx, cc, 'set_secondary_structure', { objId: t.obj.uid, selection: null, type: null, ignoreBulge: null, helixGapAngle: null })
+      if (!res.ok) return res
+    }
+    return { ok: true }
+  },
+})
+
 export const ANALYSIS_COMMANDS: Record<string, ChxCommand> = {
+  dssp,
   distance,
   distanceDelete: distanceDeleteCommand(['distance', 'delete']),
   undistance: distanceDeleteCommand(['~distance']),

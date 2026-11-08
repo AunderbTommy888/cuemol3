@@ -39,13 +39,17 @@ import { ColorArg, EnumOf, FloatArg, ListOf, Or, SpecArg, StringArg } from '../c
 import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
 import { BUILTIN_COLORS, ELEMENT_COLORS } from '../colorTables'
-import { splitColorArg } from '../colors'
-import { chainColor, modelColor, nucleotideEntries, paletteColors, plddtEntries, RAINBOW, rainbowRanges, readPalette, VALUE_STEPS, valueEntries, valueRange } from '../colorSchemes'
+import { readColor, splitColorArg } from '../colors'
+import { chainColor, modelColor, nucleotideEntries, paletteColors, plddtEntries, RAINBOW, rainbowRanges, readPaletteOrFetch, VALUE_STEPS, valueEntries, valueRange } from '../colorSchemes'
 import { ATOM_STYLES, CARTOONS, NUCL_BASE, atomRenderers, cartoonRenderers, emitContext, ensureOwned, ensurePaint, forEachAtom, intersect, isPaintColoring, ownedOn, paintCount, prependPaint, readPaint, replacePaint, runOp, targetsOf } from '../display'
 import type { PaintRow, Target } from '../display'
 import type { NumberedObject } from '../models'
 import { surfacesOn } from '../surface'
 import { unsupported, warnIgnored } from './warn'
+import { mapObjectsOf, mapSurfaceRenderers } from './mapCommands'
+import { modifyColor } from '../colorModify'
+import type { Adjuster, ModifyOp } from '../colorModify'
+import { NONE } from '../spec/emit'
 
 /** The colourings by name the console does. */
 const SPECIAL = ['byhetero', 'byelement', 'bychain', 'bymodel', 'bynucleotide']
@@ -292,7 +296,7 @@ function colorByAttr(words: string[], attr: string | null): ChxCommand {
       const attrName = attr ?? args.attrName
       const kw = VALUE_ATTRS[attrName]
       if (!kw) return unsupported(`Error: ${name}: attribute "${attrName}" is not supported (bfactor or occupancy)`)
-      const pal = readPalette(args.palette === '' ? 'blue-white-red' : args.palette)
+      const pal = await readPaletteOrFetch(args.palette === '' ? 'blue-white-red' : args.palette)
       if (!pal.ok) return { ok: false, error: `Error: ${name}: ${pal.error}` }
       const range = readRange(args.range)
       if (!range.ok) return { ok: false, error: `Error: ${name}: ${range.error}` }
@@ -341,7 +345,7 @@ const rainbow: ChxCommand = chxCommand({
   async run(ctx, args, cc): Promise<CmdOutcome> {
     warnIgnored(cc, 'rainbow', args, ['transparency'])
     if (args.level === 'polymers') return unsupported('Error: rainbow: polymers is not supported yet (the console does not compare sequences)')
-    const pal = args.palette === '' ? { ok: true as const, palette: RAINBOW } : readPalette(args.palette)
+    const pal = args.palette === '' ? { ok: true as const, palette: RAINBOW } : await readPaletteOrFetch(args.palette)
     if (!pal.ok) return { ok: false, error: `Error: rainbow: ${pal.error}` }
     const target = args.target === '' ? DEFAULT_TARGET : args.target
     const found = targetsOf(ctx, cc.sceneId, args.objects)
@@ -374,6 +378,143 @@ const rainbow: ChxCommand = chxCommand({
 })
 
 /**
+ * `color zone <surfaces> near <atoms> [distance d]` on maps: an isosurface
+ * renderer can colour its surface by the nearest atom of one molecule
+ * (`colormode molecule`, its `target` and `sel`; `MapSurfRenderer::
+ * getColorMol`), the colours taken from the molecule's atom renderers'
+ * paint table, copied once. CueMol has no distance limit there: the whole
+ * surface takes the nearest atom's colour (ChimeraX leaves farther parts as
+ * they were), said by a warning. A mesh has no such colouring; molecular
+ * surfaces are not done yet.
+ */
+const COLOR_ZONE_IGNORED = ['sharpEdges', 'bondPointSpacing', 'farColor', 'update']
+
+const colorZone: ChxCommand = chxCommand({
+  words: ['color', 'zone'],
+  args: [
+    { name: 'surfaces', type: SpecArg, role: 'required' },
+    { name: 'near', type: SpecArg, role: 'keyword' },
+    { name: 'distance', type: FloatArg, role: 'keyword' },
+    ...COLOR_ZONE_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
+  ],
+  mutates: true,
+  summary: 'Colour map surfaces by the nearest atoms of a molecule.',
+  async run(ctx, args, cc): Promise<CmdOutcome> {
+    warnIgnored(cc, 'color zone', args, COLOR_ZONE_IGNORED)
+    if (args.near === '') return { ok: false, error: 'Error: color zone: give near' }
+    const near = targetsOf(ctx, cc.sceneId, args.near)
+    if (!near.ok) return near
+    if (near.targets.length !== 1) {
+      return { ok: false, error: `Error: color zone: the atoms must be in one model (a map surface is coloured from one molecule; they are in ${near.targets.length})` }
+    }
+    const t = near.targets[0]
+    const maps = mapObjectsOf(ctx, cc.sceneId, args.surfaces)
+    if (maps.length === 0) {
+      const mols = targetsOf(ctx, cc.sceneId, args.surfaces)
+      if (mols.ok && mols.targets.length > 0) return unsupported('Error: color zone on molecular surfaces is not supported yet (maps only)')
+      return { ok: false, error: 'Error: color zone: no surfaces specified' }
+    }
+    const surfaces = maps.flatMap((m) => mapSurfaceRenderers(ctx, cc.sceneId, m.uid))
+    if (surfaces.length === 0) cc.warn('color zone: a map drawn as a mesh cannot be coloured by atoms; draw it as a surface (volume style surface)')
+    let rows: PaintRow[] | null = null
+    const owned = ownedOn(ctx, cc.sceneId, t.obj.uid)
+    for (const name of [ATOM_STYLES.sphere.name, ATOM_STYLES.stick.name, ATOM_STYLES.ball.name]) {
+      const id = owned.get(name)
+      rows = id === undefined ? null : await readPaint(ctx, cc, id)
+      if (rows) break
+    }
+    if (surfaces.length > 0 && !rows) cc.warn(`color zone: the atoms of #${t.obj.model} have no console colours to copy; the surface takes the default atom colours`)
+    for (const id of surfaces) {
+      if (rows) {
+        // Switching to paint also puts the renderer in molecule colour mode.
+        const painted = await replacePaint(ctx, cc, id, rows)
+        if (!painted.ok) return painted
+      }
+      for (const [prop, value] of [['colormode', 'molecule'], ['target', t.obj.name], ['sel', t.sel]] as const) {
+        const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: id, prop, value })
+        if (!res.ok) return res
+      }
+    }
+    if (surfaces.length > 0 && args.distance !== '') {
+      cc.warn('color zone: distance is not supported yet (the whole map surface takes the colour of the nearest atom)')
+    }
+    return { ok: true }
+  },
+})
+
+/** The adjusters `color modify` takes (ChimeraX `ADJUST_TYPES`). */
+const ADJUSTERS = ['hue', 'saturation', 'lightness', 'whiteness', 'blackness', 'contrast', 'red', 'green', 'blue']
+
+/**
+ * `color modify [spec] <adjuster> [+|-|*] [number] [what] [target t]`
+ * (`std_commands/color.py` `color_modify`): change the colours the atoms
+ * named have, by HLS / HWB / RGB (`colorModify.ts`). ChimeraX changes each
+ * atom's colour; here each paint entry of the renderers the target reaches
+ * that the atoms take a colour from is copied with the colour changed,
+ * limited to the atoms named, and put first in the table in the same order
+ * (the first entry that matches an atom colours it), so the named atoms
+ * show the changed colour of the entry they had. Renderers not coloured by
+ * paint are left as they are, with a warning. `contrast` is not supported
+ * yet.
+ */
+const colorModify: ChxCommand = chxCommand({
+  words: ['color', 'modify'],
+  args: [
+    { name: 'objects', type: SpecArg, role: 'optional' },
+    { name: 'adjuster', type: EnumOf(ADJUSTERS), role: 'optional' },
+    { name: 'op', type: EnumOf(['+', '-', '*']), role: 'optional' },
+    { name: 'number', type: FloatArg, role: 'optional' },
+    { name: 'what', type: ListOf(EnumOf(Object.keys(WHAT_LETTERS))), role: 'optional' },
+    { name: 'target', type: StringArg, role: 'keyword' },
+  ],
+  mutates: true,
+  summary: 'Change the colours of atoms, cartoons and surfaces: hue, saturation, lightness, whiteness, blackness, red, green or blue.',
+  async run(ctx, args, cc): Promise<CmdOutcome> {
+    const adjuster = args.adjuster
+    if (adjuster === '') return { ok: false, error: `Error: color modify: give one of ${ADJUSTERS.join(', ')}` }
+    if (adjuster === 'contrast') return unsupported('Error: color modify: contrast is not supported yet')
+    if (args.number === '') return { ok: false, error: 'Error: color modify: give a number' }
+    if (adjuster === 'hue' && args.op === '*') return { ok: false, error: 'Error: color modify: unable to scale hue' }
+    const n = Number(args.number)
+    const amount = (adjuster === 'hue' ? n / 360 : n / 100) * (args.op === '-' ? -1 : 1)
+    const op: ModifyOp = args.op === '' ? 'set' : args.op === '*' ? 'mul' : 'add'
+    const letters = args.what === '' ? '' : args.what.split(',').map((w) => WHAT_LETTERS[w]).join('')
+    const target = args.target !== '' ? args.target : letters !== '' ? letters : DEFAULT_TARGET
+    const found = targetsOf(ctx, cc.sceneId, args.objects)
+    if (!found.ok) return found
+    let unpainted = 0
+    for (const t of found.targets) {
+      const owned = ownedOn(ctx, cc.sceneId, t.obj.uid)
+      const r = atomRenderers(owned)
+      const rends = [
+        ...(/[ab]/.test(target) ? [r.stick, r.ball, r.sphere] : []),
+        ...(/[cr]/.test(target) ? cartoonRenderers(owned).map((c) => c.id) : []),
+        ...(/f/.test(target) ? [owned.get(NUCL_BASE.name) as number] : []),
+        ...(/s/.test(target) ? surfacesOn(ctx, cc.sceneId, t.obj.uid).map((x) => x.id) : []),
+      ].filter((id) => id !== undefined)
+      for (const id of rends) {
+        const rows = await readPaint(ctx, cc, id)
+        if (!rows) {
+          unpainted++
+          continue
+        }
+        const changed: PaintRow[] = []
+        for (const row of rows) {
+          const sel = intersect(row.selStr, t.sel)
+          const c = readColor(row.colorValue)
+          if (sel === NONE || !c) continue
+          changed.push({ selStr: sel, colorValue: modifyColor(c.hex, adjuster as Adjuster, op, amount) })
+        }
+        const res = await prependPaint(ctx, cc, id, changed)
+        if (!res.ok) return res
+      }
+    }
+    if (unpainted > 0) cc.warn('color modify: some renderers are not coloured by the console (no paint table) and are left as they are')
+    return { ok: true }
+  },
+})
+
+/**
  * `color list [all|custom|builtin]`: the colour names, in ChimeraX's form
  * (`colorname.py` `_list_colors`). The console keeps no custom colours.
  */
@@ -401,6 +542,8 @@ export const COLOR_COMMANDS: Record<string, ChxCommand> = {
   colorByattribute: colorByAttr(['color', 'byattribute'], null),
   colorBfactor: colorByAttr(['color', 'bfactor'], 'bfactor'),
   colorList,
+  colorModify,
+  colorZone,
   colour,
   rainbow,
 }

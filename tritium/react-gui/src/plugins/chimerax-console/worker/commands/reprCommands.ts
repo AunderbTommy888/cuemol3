@@ -29,6 +29,7 @@ import { isMolecule, numberedObjects } from '../models'
 import type { Target } from '../display'
 import { closeSurfaces, encloseSurface, hideSurfaces, showSurfaces, surfacesOn, unzoneSurfaces, zoneSurfaces } from '../surface'
 import { unsupported, warnIgnored } from './warn'
+import { mapObjectsOf, unzoneMaps, zoneMaps } from './mapCommands'
 
 // --- surface ---
 
@@ -154,14 +155,22 @@ const surfaceZone = chxCommand({
     warnIgnored(cc, 'surface zone', args, ['bondPointSpacing', 'update'])
     if (args.nearAtoms === '') return { ok: false, error: 'Error: surface zone: give nearAtoms' }
     if (args.maxComponents !== '') cc.warn('surface zone: maxComponents is not supported yet (small separate patches stay); ignored')
+    // A map's surface: the map renderer's boundary, as `volume zone`.
+    const maps = mapObjectsOf(ctx, cc.sceneId, args.surfaces)
+    if (maps.length > 0) {
+      const zoned = await zoneMaps(ctx, cc, 'surface zone', maps, args.nearAtoms, args.distance)
+      if (!zoned.ok) return zoned
+    }
     const near = targetsOf(ctx, cc.sceneId, args.nearAtoms)
     if (!near.ok) return near
     if (near.targets.length === 0) return { ok: false, error: 'Error: surface zone: no atoms specified' }
     const found = targetsOf(ctx, cc.sceneId, args.surfaces)
     if (!found.ok) return found
-    let surfaces = 0
+    let surfaces = maps.length
     for (const t of found.targets) {
-      surfaces += surfacesOn(ctx, cc.sceneId, t.obj.uid).length
+      const own = surfacesOn(ctx, cc.sceneId, t.obj.uid).length
+      if (own === 0) continue
+      surfaces += own
       const r = await zoneSurfaces(ctx, cc, t, near.targets, Number(args.distance))
       if (!r.ok) return r
     }
@@ -183,7 +192,7 @@ const surfaceUnzone = chxCommand({
       const r = await unzoneSurfaces(ctx, cc, t)
       if (!r.ok) return r
     }
-    return { ok: true }
+    return unzoneMaps(ctx, cc, mapObjectsOf(ctx, cc.sceneId, args.surfaces))
   },
 })
 

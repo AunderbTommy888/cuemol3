@@ -91,7 +91,7 @@ describe('atom specification translation', () => {
     expect(inModel('#ff0000')).toBe('(no spec)')
     expect(inModel('red')).toBe('(no spec)')
     expect(inModel('#1.2')).toMatch(/sub-model is not supported/)
-    expect(inModel('ions')).toMatch(/"ions" is not supported/)
+    expect(inModel('ribose')).toMatch(/"ribose" is not supported/)
     expect(inModel('@@idatm_type=C3')).toMatch(/attribute "idatm_type" is not supported/)
   })
 })

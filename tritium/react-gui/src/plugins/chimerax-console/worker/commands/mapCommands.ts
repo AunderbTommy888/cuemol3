@@ -304,26 +304,62 @@ const volumeZone = chxCommand({
     if (args.nearAtoms === '') return { ok: false, error: 'Error: volume zone: give nearAtoms' }
     if (args.newMap === 'true') return unsupported('Error: volume zone: newMap true is not supported (CueMol does not cut out a new map)')
     if (args.invert === 'true') return unsupported('Error: volume zone: invert is not supported')
-    const near = targetsOf(ctx, cc.sceneId, args.nearAtoms)
-    if (!near.ok) return near
-    if (near.targets.length === 0) return { ok: false, error: 'Error: volume zone: no atoms specified' }
-    if (near.targets.length > 1) {
-      return { ok: false, error: 'Error: volume zone: the atoms must be in one model (a CueMol map boundary is one molecule\'s atoms)' }
-    }
     const found = mapsOf(ctx, cc.sceneId, args.volumes)
     if (!found.ok) return found
-    // The boundary names its molecule; C++ takes the molecule of that name,
-    // passing over a map of the same name (`Scene::getObjectByNameAs`).
-    const t = near.targets[0]
-    for (const r of found.maps.flatMap((m) => m.rends)) {
-      for (const [prop, value] of [['bndry_molname', t.obj.name], ['bndry_sel', t.sel], ['bndry_rng', args.range]] as const) {
+    return zoneMaps(ctx, cc, 'volume zone', found.maps.map((m) => m.obj), args.nearAtoms, args.range)
+  },
+})
+
+/**
+ * Draw only the part of maps near some atoms: each map renderer's molecule
+ * boundary (`bndry_molname`, `bndry_sel`, `bndry_rng`), which is one
+ * molecule's atoms. `volume zone` and `surface zone` on a map.
+ */
+export async function zoneMaps(ctx: WorkerContext, cc: CmdContext, cmd: string, maps: readonly NumberedObject[], nearSpec: string, range: string): Promise<CmdOutcome> {
+  const near = targetsOf(ctx, cc.sceneId, nearSpec)
+  if (!near.ok) return near
+  if (near.targets.length === 0) return { ok: false, error: `Error: ${cmd}: no atoms specified` }
+  if (near.targets.length > 1) {
+    return { ok: false, error: `Error: ${cmd}: the atoms must be in one model (a CueMol map boundary is one molecule's atoms)` }
+  }
+  // The boundary names its molecule; C++ takes the molecule of that name,
+  // passing over a map of the same name (`Scene::getObjectByNameAs`).
+  const t = near.targets[0]
+  for (const m of maps) {
+    for (const r of mapRenderers(ctx, cc.sceneId, m.uid)) {
+      for (const [prop, value] of [['bndry_molname', t.obj.name], ['bndry_sel', t.sel], ['bndry_rng', range]] as const) {
         const res = await setProp(ctx, cc, r.id, prop, value)
         if (!res.ok) return res
       }
     }
-    return { ok: true }
-  },
-})
+  }
+  return { ok: true }
+}
+
+/** Draw the whole of maps again after a zone (`volume unzone`, `surface unzone` on a map). */
+export async function unzoneMaps(ctx: WorkerContext, cc: CmdContext, maps: readonly NumberedObject[]): Promise<CmdOutcome> {
+  for (const m of maps) {
+    for (const r of mapRenderers(ctx, cc.sceneId, m.uid)) {
+      // The boundary is off only with no molecule name (an empty selection is every atom).
+      for (const [prop, value] of [['bndry_molname', ''], ['region_mode', 'full']] as const) {
+        const res = await setProp(ctx, cc, r.id, prop, value)
+        if (!res.ok) return res
+      }
+    }
+  }
+  return { ok: true }
+}
+
+/** The isosurface renderers (`isosurf`) of a map object, the ones that can be coloured by nearby atoms. */
+export function mapSurfaceRenderers(ctx: WorkerContext, sceneId: number, objUid: number): number[] {
+  return mapRenderers(ctx, sceneId, objUid).filter((r) => r.type === 'isosurf').map((r) => r.id)
+}
+
+/** The map objects among an object specification's objects (those with map renderers). */
+export function mapObjectsOf(ctx: WorkerContext, sceneId: number, spec: string): NumberedObject[] {
+  const found = objectsOf(ctx, sceneId, spec)
+  return found.ok ? found.objs.filter((o) => mapRenderers(ctx, sceneId, o.uid).length > 0) : []
+}
 
 /** `volume unzone [maps]`: the whole map again. */
 const volumeUnzone = chxCommand({
@@ -334,14 +370,7 @@ const volumeUnzone = chxCommand({
   async run(ctx, args, cc): Promise<CmdOutcome> {
     const found = mapsOf(ctx, cc.sceneId, args.volumes)
     if (!found.ok) return found
-    for (const r of found.maps.flatMap((m) => m.rends)) {
-      // The boundary is off only with no molecule name (an empty selection is every atom).
-      for (const [prop, value] of [['bndry_molname', ''], ['region_mode', 'full']] as const) {
-        const res = await setProp(ctx, cc, r.id, prop, value)
-        if (!res.ok) return res
-      }
-    }
-    return { ok: true }
+    return unzoneMaps(ctx, cc, found.maps.map((m) => m.obj))
   },
 })
 

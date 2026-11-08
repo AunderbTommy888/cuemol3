@@ -222,6 +222,36 @@ function enumCompare(t: AttrTest, table: Readonly<Record<string, string>>): stri
 const POLYMER_TYPES: Readonly<Record<string, string>> = { 0: 'not (protein or nucleic)', 1: 'protein', 2: 'nucleic' }
 /** `Residue.ss_type`: SS_COIL, SS_HELIX, SS_STRAND. */
 const SS_TYPES: Readonly<Record<string, string>> = { 0: 'coil', 1: 'helix', 2: 'sheet' }
+/**
+ * The Kyte-Doolittle hydropathy of the standard amino acids (Kyte and
+ * Doolittle 1982), ChimeraX's residue attribute `kdHydrophobicity`. Other
+ * residues have no value, so a comparison is false for them.
+ */
+const KD_HYDROPHOBICITY: Readonly<Record<string, number>> = {
+  ILE: 4.5, VAL: 4.2, LEU: 3.8, PHE: 2.8, CYS: 2.5, MET: 1.9, ALA: 1.8, GLY: -0.4, THR: -0.7, SER: -0.8,
+  TRP: -0.9, TYR: -1.3, PRO: -1.6, HIS: -3.2, GLU: -3.5, GLN: -3.5, ASP: -3.5, ASN: -3.5, LYS: -3.9, ARG: -4.5,
+}
+
+/** `::kdHydrophobicity` compared, as the residue names whose value passes (a table, so a name list). */
+function kdExpr(t: AttrTest): string {
+  const v = Number(t.value)
+  if (t.op !== null && (t.value === null || !Number.isFinite(v))) throw new SpecError('kdHydrophobicity is compared with a number', t.pos)
+  const pass = (x: number): boolean => {
+    switch (t.op) {
+      case null: return true
+      case '>': return x > v
+      case '>=': return x >= v
+      case '<': return x < v
+      case '<=': return x <= v
+      case '=': case '==': return x === v
+      default: return x !== v
+    }
+  }
+  const names = Object.entries(KD_HYDROPHOBICITY).filter(([, x]) => pass(x)).map(([n]) => n)
+  const expr = names.length === 0 ? NONE : `resn ${names.join(',')}`
+  return t.negated ? not(expr) : expr
+}
+
 /** True / false attributes: what they are true of. */
 const FLAGS: Readonly<Record<string, string>> = { is_helix: 'helix', is_strand: 'sheet' }
 
@@ -247,6 +277,7 @@ function displayExpr(t: AttrTest, scope: Scope): string {
 /** One attribute test at the atom, residue or chain level. */
 function attrExpr(t: AttrTest, level: 'atom' | 'residue' | 'chain', scope: Scope): string {
   if (level === 'atom' && t.name === 'display') return displayExpr(t, scope)
+  if (level === 'residue' && t.name === 'kdHydrophobicity') return kdExpr(t)
   if (t.op === null) {
     const flag = level === 'residue' ? FLAGS[t.name] : undefined
     if (flag === undefined) throw new SpecError(`the attribute "${t.name}" is not supported yet`, t.pos, true)

@@ -124,3 +124,13 @@ describe('nucleotides', () => {
     expect(ops.filter((o) => o.name === 'set_renderer_selection').map((o) => [o.args.rendId, o.args.selection])).toEqual([[4, 'none'], [5, 'none'], [6, 'none']])
   })
 })
+
+describe('cartoon style details', () => {
+  it('writes arrows, sides and divisions as the renderers\' head, section detail and axial detail', async () => {
+    await run('cartoonStyle', { arrows: 'false', sides: '12', divisions: '20' })
+    expect(written()).toEqual([
+      '4 sheethead.type=smooth', '4 helix.detail=12', '4 sheet.detail=12', '4 coil.detail=12', '4 axialdetail=20',
+      '5 section.detail=12', '5 axialdetail=20',
+    ])
+  })
+})

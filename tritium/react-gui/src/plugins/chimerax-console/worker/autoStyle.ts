@@ -34,6 +34,9 @@ import type { BaseMode } from './display'
 import { nucleotideEntries } from './colorSchemes'
 import type { NumberedObject } from './models'
 import { NONE } from './spec/emit'
+import { HALIDE_ION, LIGAND, METAL, NONPOLAR_H } from './atomClasses'
+
+export { LIGAND, METAL, NONPOLAR_H }
 import { elementEntries, paintTarget } from './commands/colorCommands'
 import { setBaseMode } from './commands/displayCommands'
 import type { PaintEntry } from './commands/colorCommands'
@@ -47,39 +50,6 @@ const SLAB_THRESHOLD = 100
 const LADDER_THRESHOLD = 2000
 
 const POLYMER = '(protein or nucleic)'
-
-/** Metal elements found in structures. */
-const METALS = [
-  'Li', 'Na', 'K', 'Rb', 'Cs', 'Be', 'Mg', 'Ca', 'Sr', 'Ba', 'Al', 'Ga', 'In', 'Tl', 'Sn', 'Pb', 'Bi',
-  'Sc', 'Ti', 'V', 'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Y', 'Zr', 'Mo', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd',
-  'W', 'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'La', 'Ce', 'Eu', 'Gd', 'Tb', 'Yb', 'Lu', 'U',
-]
-
-/** Metal atoms. */
-export const METAL = `elem ${METALS.join(',')}`
-
-/** Ions that are not metals (halides), as ligands. */
-const HALIDE_ION = 'ligand and elem F,Cl,Br,I'
-
-/** Ligands, metals included, ions that are not metals left out (`ligand_like_atoms` with the metals). */
-export const LIGAND = `ligand and not (${HALIDE_ION})`
-
-/** Hydrogens on N, O or S in the standard residues, by name. */
-const POLAR_H = [
-  'name H,H1,H2,H3,HN',
-  'resn ARG and name HE,HH11,HH12,HH21,HH22',
-  'resn ASN and name HD21,HD22',
-  'resn GLN and name HE21,HE22',
-  'resn HIS and name HD1,HE2',
-  'resn TRP and name HE1',
-  'resn LYS and name HZ1,HZ2,HZ3',
-  'resn SER,CYS and name HG',
-  'resn THR and name HG1',
-  'resn TYR and name HH',
-].map((s) => `(${s})`).join(' or ')
-
-/** Hydrogens on carbon in proteins (ChimeraX's IDATM type HC), told by name. */
-export const NONPOLAR_H = `protein and hydrogen and not (${POLAR_H})`
 
 /** The atoms the small-polymer style shows: the residues within 3.6 A of a ligand or metal. */
 export const SMALL_SHOWN = minus(`byres ((${LIGAND}) expand 3.6)`, NONPOLAR_H)

@@ -17,7 +17,8 @@ import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import { objectNodes, rendererNodesOf } from '@renderer/worker/server/catalog/refs'
 import { getGenericProps } from '@renderer/worker/server/services/props/read'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
-import { BoolArg, EnumOf, IntArg, RestOfLine, SpecArg, StringArg } from '../cli/argTypes'
+import { BoolArg, EnumOf, FloatArg, IntArg, RestOfLine, SpecArg, StringArg } from '../cli/argTypes'
+import { readCamera } from '../camera'
 import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
 import { applyAutoStyle } from '../autoStyle'
@@ -96,25 +97,60 @@ const lighting = chxCommand({
   },
 })
 
+/** `lighting model <models> ...`: lighting per model, which CueMol's scene-wide lighting cannot hold. */
+const lightingModel = chxCommand({
+  words: ['lighting', 'model'],
+  args: [{ name: 'rest', type: RestOfLine, role: 'optional' }],
+  mutates: false,
+  summary: 'Not supported yet: lighting per model (CueMol\'s lighting is one setting for the scene).',
+  run: () => unsupported('Error: lighting model is not supported yet (CueMol\'s lighting is one setting for the whole scene, not per model)'),
+})
+
 // --- camera ---
 
 const CAMERA_MODES = ['mono', 'ortho', '360', '360tb', '360sbs', 'dome', 'sbs', 'tb', 'stereo', 'crosseye', 'walleye']
+
+/**
+ * `camera fieldOfView <degrees>`: ChimeraX's horizontal field of view. A
+ * CueMol perspective view shows `zoom` (a height) at the view's `distance`
+ * from the eye, so the angle is set by the distance, the zoom kept:
+ * `distance = zoom x aspect / (2 tan(fov / 2))` (the converse of `view
+ * matrix`'s). An orthographic view has no field of view, so it waits for
+ * `camera mono`, as ChimeraX's.
+ */
+async function setFieldOfView(ctx: WorkerContext, cc: CmdContext, deg: number): Promise<CmdOutcome> {
+  if (!(deg > 0 && deg < 180)) return { ok: false, error: 'Error: camera: fieldOfView is an angle between 0 and 180 degrees' }
+  const cam = readCamera(ctx, cc.viewId)
+  if (!cam) return { ok: false, error: 'Error: camera: no view' }
+  const aspect = cam.width / Math.max(1, cam.height)
+  const distance = (cam.zoom * aspect) / (2 * Math.tan((deg * Math.PI) / 360))
+  const res = await runOp(ctx, cc, 'set_view', { zoom: null, slab: null, distance, center: null, rotation: null, fitSlab: null, objId: null })
+  if (!res.ok) return res
+  const proj = await runOp(ctx, cc, 'set_projection', { perspective: null })
+  if (proj.ok && (proj.data as { perspective?: boolean } | undefined)?.perspective === false) {
+    cc.warn('camera: the field of view is used in perspective (camera mono); the view is orthographic now')
+  }
+  return { ok: true }
+}
 
 const camera = chxCommand({
   words: ['camera'],
   args: [
     { name: 'type', type: EnumOf(CAMERA_MODES), role: 'optional' },
-    { name: 'fieldOfView', type: StringArg, role: 'keyword' },
+    { name: 'fieldOfView', type: FloatArg, role: 'keyword' },
     { name: 'eyeSeparation', type: StringArg, role: 'keyword', ignored: true },
     { name: 'pixelEyeSeparation', type: StringArg, role: 'keyword', ignored: true },
     { name: 'convergence', type: StringArg, role: 'keyword', ignored: true },
     { name: 'cubeMapSize', type: StringArg, role: 'keyword', ignored: true },
   ],
   mutates: false,
-  summary: 'Set the projection: mono (perspective) or ortho (orthographic).',
+  summary: 'Set the projection: mono (perspective) or ortho (orthographic), and the field of view.',
   async run(ctx, args, cc): Promise<CmdOutcome> {
     warnIgnored(cc, 'camera', args, ['eyeSeparation', 'pixelEyeSeparation', 'convergence', 'cubeMapSize'])
-    if (args.fieldOfView !== '') return unsupported('Error: camera: fieldOfView is not supported (CueMol sets the view by its zoom)')
+    if (args.fieldOfView !== '') {
+      const fov = await setFieldOfView(ctx, cc, Number(args.fieldOfView))
+      if (!fov.ok || args.type === '') return fov
+    }
     if (args.type === '') {
       const res = await runOp(ctx, cc, 'set_projection', { perspective: null })
       if (!res.ok) return res
@@ -396,6 +432,7 @@ const preset = chxCommand({
 export const LOOK_COMMANDS: Record<string, ChxCommand> = {
   camera,
   lighting,
+  lightingModel,
   ribbon: ribbonAlias(['ribbon'], 'cartoon'),
   unribbon: ribbonAlias(['~ribbon'], 'cartoon hide'),
   preset,

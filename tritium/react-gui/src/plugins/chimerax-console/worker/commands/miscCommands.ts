@@ -4,7 +4,7 @@
  */
 
 import type { ConsoleCommand } from '@plugins/console/worker/dialect-api'
-import { BoolArg, IntArg, Or, RestOfLine, SpecArg, StringArg } from '../cli/argTypes'
+import { BoolArg, IntArg, NoArg, Or, RestOfLine, SpecArg, StringArg } from '../cli/argTypes'
 import type { ArgType } from '../cli/argTypes'
 import { chxCommand, isChxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
@@ -26,6 +26,8 @@ const NamedViewArg: ArgType = { ...StringArg, name: 'a view name' }
  * around what is fitted, which the slab does here; `clip false` removes
  * them in ChimeraX, but CueMol always has a slab, so the slab is left as it
  * is. A named view keeps its own slab either way, as in ChimeraX.
+ * `orient` first puts the view back to its initial direction (ChimeraX
+ * `initial_camera_view`), then fits as usual.
  */
 const view = chxCommand({
   words: ['view'],
@@ -34,6 +36,7 @@ const view = chxCommand({
     { name: 'frames', type: IntArg, role: 'optional' },
     { name: 'clip', type: BoolArg, role: 'keyword' },
     { name: 'cofr', type: BoolArg, role: 'keyword' },
+    { name: 'orient', type: NoArg, role: 'keyword' },
     { name: 'pad', type: StringArg, role: 'keyword', ignored: true },
   ],
   mutates: false,
@@ -53,6 +56,12 @@ const view = chxCommand({
     }
     if (args.frames !== '') cc.warn('view: frames is not supported (the view changes at once); ignored')
     warnIgnored(cc, 'view', args, ['pad'])
+    if (args.orient === 'true') {
+      const res = await runOp(ctx, cc, 'set_view', {
+        zoom: null, slab: null, distance: null, center: null, rotation: [1, 0, 0, 0], fitSlab: null, objId: null,
+      })
+      if (!res.ok) return res
+    }
     const found = targetsOf(ctx, cc.sceneId, args.objects)
     if (!found.ok) return found
     // Maps count too, by what they draw (a molecule's atoms are the specification's).

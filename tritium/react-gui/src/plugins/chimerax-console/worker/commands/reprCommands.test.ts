@@ -56,6 +56,16 @@ vi.mock('../display', async (importOriginal) => ({
     return { ok: true }
   },
 }))
+// `#2` is a map; its zone is the map renderers' boundary (mapCommands.ts).
+const { zoned } = vi.hoisted(() => ({ zoned: [] as unknown[][] }))
+vi.mock('./mapCommands', () => ({
+  mapObjectsOf: (_ctx: unknown, _s: number, spec: string) => (spec === '#2' ? [{ uid: 20, model: 2, name: 'map', className: 'DensityMap' }] : []),
+  zoneMaps: async (_ctx: unknown, _cc: unknown, cmd: string, maps: { uid: number }[], near: string, range: string) => {
+    zoned.push([cmd, maps.map((m) => m.uid), near, range])
+    return { ok: true }
+  },
+  unzoneMaps: async () => ({ ok: true }),
+}))
 vi.mock('./viewCommands', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   inheritSilhouettes: async () => ({ ok: true }),
@@ -169,5 +179,13 @@ describe('label', () => {
     state.owned.set('chx:label:residues', 60)
     expect((await run(REPR_COMMANDS.label, { objects: '', text: 'site' })).ok).toBe(true)
     expect(opsNamed('set_atom_labels').map((a) => [a.selection, a.format])).toEqual([['aid 5,7', 'site']])
+  })
+})
+
+describe('surface zone', () => {
+  it('zones a map by its renderers\' boundary, as volume zone', async () => {
+    const out = await run(REPR_COMMANDS.surfaceZone, { surfaces: '#2', nearAtoms: ':fpp', distance: '1.6' })
+    expect(out.ok).toBe(true)
+    expect(zoned).toEqual([['surface zone', [20], ':fpp', '1.6']])
   })
 })

@@ -142,6 +142,22 @@ ChX が「CueMol に無い」として断っていた箇所を、renderer の pr
 `camera` の stereo の各方式と `eyeSeparation`、配列ごとのランダムな色 (`bypolymer` / `byidentity`、medium / large
 polymer の open 時の色) は対応しない (ユーザー判断)。
 
+図の script の段階 B (r2) で残ったもののうち、plugin の外の変更が要るもの (ChX は「not supported yet」のまま):
+
+| 項目 | 要るもの |
+|---|---|
+| `clip` | 中心に対称でない near / far の面 (§3 と同じ) |
+| `2dlabels` / `key` | 画面に固定した文字・凡例の renderer (§8) |
+| `size ... atomRadius` | 原子ごとの半径 (§8) |
+| `surface dust`、`surface zone ... maxComponents` | `261108-map-surface-dust-plan.md` |
+| `label ... bgColor`、`lighting depthCueStart/End`、`set silhouetteDepthJump` | ラベルの背景、slab と別の fog の範囲、輪郭線の深さの閾値 |
+| `::area` | 残基の溶媒露出面積の属性 |
+| `color zone` の `distance` | 最も近い原子の探索の距離の上限 (`MapSurfRenderer::getColorMol`) |
+| `transparency` / `cartoon style modeHelix` を分子の一部に | renderer を分ける `display.ts` の設計の拡張 (原則 4) |
+
+`windowsize` は対応しない (ユーザー判断。画像は `save` の `width` / `height` で決まる)。`preset pub` は ChimeraX 1.12
+でも 2 つに当たって error になる (script 側の問題)。
+
 ## 8. 既存の API に無いもの (同じ点検で探して無かったもの)
 
 作れないという判断ではなく、今の .qif・op に相当するものが無いという意味。

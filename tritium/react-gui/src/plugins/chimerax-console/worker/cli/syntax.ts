@@ -95,7 +95,11 @@ function wordCount(kw: string): number {
  *
  * @returns the keyword, null when `typed` is no keyword's prefix, or an error
  */
-export function matchKeyword(typed: string, names: readonly string[]): string | null | { error: string } {
+export function matchKeyword(typed0: string, names: readonly string[]): string | null | { error: string } {
+  // A snake_case word is read as camelCase first (`bg_color` -> `bgColor`), as ChimeraX's
+  // `user_kw` does (cli.py `_user_kw_cnt`: each word after the first capitalized).
+  const words = typed0.split('_')
+  const typed = words.length < 2 ? typed0 : words[0] + words.slice(1).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('')
   // What was typed keeps its case, as ChimeraX's `user_kw` keeps it: a
   // keyword matches when it, or its lower case, starts with the word. So
   // `C` (carbon) or `O` is never taken for `color` / `objects` (cli.py

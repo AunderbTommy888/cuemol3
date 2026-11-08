@@ -316,7 +316,7 @@ const deleteAtoms = chxCommand({
   },
 })
 
-const SAVE_IGNORED = ['supersample', 'pixelSize', 'quality']
+const SAVE_IGNORED = ['pixelSize', 'quality']
 const SAVE_REFUSED = ['relModel', 'allCoordsets']
 
 const save = chxCommand({
@@ -328,6 +328,7 @@ const save = chxCommand({
     { name: 'width', type: IntArg, role: 'keyword' },
     { name: 'height', type: IntArg, role: 'keyword' },
     { name: 'transparentBackground', type: BoolArg, role: 'keyword' },
+    { name: 'supersample', type: IntArg, role: 'keyword' },
     { name: 'selectedOnly', type: BoolArg, role: 'keyword' },
     { name: 'displayedOnly', type: BoolArg, role: 'keyword' },
     ...SAVE_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
@@ -340,6 +341,9 @@ const save = chxCommand({
   outsideTxn: (args) => /\.qsc$/i.test(args.filename ?? '') || /^(qsc|session)$/i.test(args.format ?? ''),
   async run(ctx, args, cc) {
     warnIgnored(cc, 'save', args, SAVE_IGNORED)
+    // CueMol's image export always antialiases by jitter supersampling (OffScreenView: 32 samples),
+    // more than ChimeraX's usual supersample 3; only asking for none differs.
+    if (args.supersample !== '' && Number(args.supersample) <= 1) cc.warn('save: supersample 1 is not supported (CueMol always antialiases the exported image); ignored')
     const refused = SAVE_REFUSED.find((k) => args[k] !== '')
     if (refused) return unsupported(`Error: save: ${refused} is not supported`)
     const path = resolvePath(cc.cwd, args.filename)
