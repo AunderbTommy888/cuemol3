@@ -23,6 +23,17 @@ import { appEndpoint } from './appEndpoint'
 import type { LocalApiRelay } from './relay'
 import { post, quitApp } from '@cuemol/tritium-cli/src/connection'
 
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
+
 function freePort(): Promise<number> {
   return new Promise((resolve) => {
     const s = net.createServer().listen(0, '127.0.0.1', () => {
@@ -41,7 +52,7 @@ afterEach(async () => {
 
 describe('tritium_cli and the console endpoint', () => {
   it('runs through the info file, and says how to turn access on when it is off', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuemol-cli-'))
+    const dir = makeTmpDir('cuemol-cli-')
     const infoFile = path.join(dir, 'local-api.json')
     process.env.CUEMOL_LOCAL_API_INFO = infoFile
 
@@ -75,7 +86,7 @@ describe('tritium_cli and the console endpoint', () => {
   })
 
   it('quit passes force to main and returns its outcome', async () => {
-    const infoFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cuemol-cli-')), 'local-api.json')
+    const infoFile = path.join(makeTmpDir('cuemol-cli-'), 'local-api.json')
     process.env.CUEMOL_LOCAL_API_INFO = infoFile
     const forced: boolean[] = []
     server = createLocalApiServer({

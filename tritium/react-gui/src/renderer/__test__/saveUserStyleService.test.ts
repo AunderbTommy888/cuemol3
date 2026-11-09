@@ -14,6 +14,17 @@ import * as path from 'path'
 import { loadDotStyles, loadUserStyle, saveUserStyle } from '@renderer/worker/server/workerLifecycle'
 import type { CueMol } from '@cuemol/core/src/cuemol'
 
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+    tmpDirs.push(dir)
+    return dir
+}
+afterEach(() => {
+    for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
+
 function makeCm(opts: { uid?: number; saveResult?: boolean; noStyleMgr?: boolean } = {}) {
     const hasStyleSet = vi.fn(() => opts.uid ?? 3)
     const saveStyleSetToFile = vi.fn(() => opts.saveResult ?? true)
@@ -85,7 +96,7 @@ describe('loadDotStyles / loadUserStyle (worker lifecycle)', () => {
     }
 
     it('loads each file read-only, skips the reserved id "user" and an id-less root, and leaves nothing of a file that fails', () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dotstyles-'))
+        const dir = makeTmpDir('dotstyles-')
         const file = (name: string, root: string) => {
             const p = path.join(dir, name)
             fs.writeFileSync(p, `<?xml version="1.0"?>\n${root}\n<style id="X"/>\n</styles>\n`)

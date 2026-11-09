@@ -13,7 +13,7 @@
  * whether the scene really holds an object of that name.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -55,6 +55,17 @@ vi.mock('@renderer/worker/server/catalog/fileLoad', () => ({ openableExtensions:
 
 import { completeLine as completeComma } from './commaComplete'
 import type { CompletionContext } from '../completion/engine'
+
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
 
 /** Tab in the comma grammar, with the choices the stub dialect carries (`argRule`, `fileFallback`). */
 function completeLine(c: WorkerContext, line: string, cc: CompletionContext) {
@@ -271,7 +282,7 @@ describe('native argument completion', () => {
 
 describe('file completion', () => {
   it('hides dot files, retries ignoring case, puts what a load opens first, and lists only directories for cd', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuemol-complete-'))
+    const dir = makeTmpDir('cuemol-complete-')
     for (const f of ['1crn.pdb', 'notes.txt', '.hidden', 'a,b.pdb']) fs.writeFileSync(path.join(dir, f), '')
     fs.mkdirSync(path.join(dir, 'Data'))
     const cmd = (name: string, files: 'openable' | 'dirs') => ({
@@ -303,7 +314,7 @@ describe('file completion', () => {
   })
 
   it('in a path list, completes the last word and expands a pattern in place, as zsh does', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuemol-complete-'))
+    const dir = makeTmpDir('cuemol-complete-')
     fs.mkdirSync(path.join(dir, 'My Data'))
     for (const f of ['1crn.pdb', '1cbs.pdb', 'My Data/2abc.pdb']) fs.writeFileSync(path.join(dir, f), '')
     const files = {

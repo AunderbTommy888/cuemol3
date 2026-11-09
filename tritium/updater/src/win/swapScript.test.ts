@@ -4,12 +4,23 @@
  * show only when an update runs. The run itself needs UAC and is checked on
  * a real machine.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildSwapPs1, type WinScriptParams } from './swapScript'
+
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
 // A user name with a space, both kinds of single quote and Japanese.
 const work = 'C:\\Users\\O\'Brien \u2019\u77f3\u8c37\u2019\\AppData\\Roaming\\CueMol3\\updater'
@@ -44,7 +55,7 @@ $out | ConvertTo-Json -Compress
 
 describe.skipIf(process.platform !== 'win32')('Windows swap helper', () => {
   it('parses, and keeps paths with spaces, quotes and non-ASCII characters intact', () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'upd-win-'))
+    const dir = makeTmpDir('upd-win-')
     const parser = path.join(dir, 'parse.ps1')
     writeFileSync(parser, PARSE)
     const file = path.join(dir, 'swap.ps1')

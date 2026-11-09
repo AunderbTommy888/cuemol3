@@ -8,7 +8,7 @@
  * filled in, and a CueMol selection arrives exactly as typed.
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -36,6 +36,17 @@ import { formatCommand } from '@renderer/worker/server/catalog/cmlFormat'
 import { catalogCommands } from './fromCatalog'
 import { CONSOLE_COMMAND_OPS } from '@renderer/worker/server/catalog'
 import { NATIVE_BUILTINS } from './builtins'
+
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
 
 const run = vi.fn((_ctx: unknown, _args: unknown) => ({ ok: true as const }))
 const op = defineOp({
@@ -209,7 +220,7 @@ describe('a result shown as a table', () => {
 
 describe('the file list of a load', () => {
   it('loads each file a pattern or list names, warns about what it cannot, and opens a scene only alone', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuemol-load-'))
+    const dir = makeTmpDir('cuemol-load-')
     fs.mkdirSync(path.join(dir, 'My Data'))
     for (const f of ['a.pdb', 'b.pdb', 's.qsc', 'My Data/c.pdb']) fs.writeFileSync(path.join(dir, f), '')
     const take = vi.fn((_ctx: unknown, args: { path: string }) => (args.path.endsWith('b.pdb') ? { ok: false as const, error: 'bad' } : { ok: true as const }))

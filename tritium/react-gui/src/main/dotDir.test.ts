@@ -5,15 +5,26 @@
  * and the style files go by file name (a later one wins over an earlier one).
  */
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { listDotStyleFiles, listStartupScripts } from './dotDir'
 
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
+
 describe('dotDir', () => {
   it('lists the startup scripts there are in running order, and the style files by name', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuemol-home-'))
+    const dir = makeTmpDir('cuemol-home-')
     for (const n of ['startup.cxc', 'startup.txt', 'startup.pml', 'other.txt']) fs.writeFileSync(path.join(dir, n), '')
     expect(listStartupScripts(dir).map((p) => path.basename(p))).toEqual(['startup.txt', 'startup.pml', 'startup.cxc'])
 

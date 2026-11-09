@@ -12,7 +12,7 @@
  * not what any particular command calls.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
 import { fakeScene, makeWorkerCtx } from '@renderer/worker/testing'
 import type { ConsoleCommand as PymCommand } from './types'
 
@@ -158,6 +158,17 @@ import { cancelStream } from '@renderer/worker/server/services/helpers/streamFet
 import { currentDir, runCommand } from './runCommand'
 import { cancelRun } from './runControl'
 
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
+
 function setup() {
   const scene = fakeScene({ uid: 1 })
   const { ctx } = makeWorkerCtx({ scenes: [scene] })
@@ -233,7 +244,7 @@ describe('runCommand', () => {
 
   it('runs a script, nested scripts included, as one transaction, and stops a script that runs itself', async () => {
     const { scene, ctx } = setup()
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pymc-'))
+    const dir = makeTmpDir('pymc-')
     const inner = path.join(dir, 'inner.pml')
     const outer = path.join(dir, 'outer.pml')
     const self = path.join(dir, 'self.pml')
@@ -255,7 +266,7 @@ describe('runCommand', () => {
   it('runs a text script sent by its path as the lines it holds, in its own folder, as one transaction', async () => {
     // A startup script (~/.cuemol/startup.pml): relative paths in it mean its folder.
     const { scene, ctx } = setup()
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pymc-'))
+    const dir = makeTmpDir('pymc-')
     const file = path.join(dir, 'startup.pml')
     fs.writeFileSync(file, 'chdir\nmutate\nmutate\n')
 
@@ -294,7 +305,7 @@ describe('runCommand', () => {
     expect(res.ok && res.rest).toBe('_ mutate\n@x.pml')
     expect(scene.undo.committed).toHaveLength(1)
 
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pymc-'))
+    const dir = makeTmpDir('pymc-')
     const script = path.join(dir, 's.pml')
     fs.writeFileSync(script, 'newscene\n')
     const inScript = await runCommand(ctx, { dialect: 'pymol', sceneId: 1, viewId: 7, runId: 'r8', text: `@${script}` })
@@ -318,7 +329,7 @@ describe('runCommand', () => {
 
   it('replays a qax file alone on the line one undo step per action, under its recorded label', async () => {
     const { scene, ctx } = setup()
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qax-'))
+    const dir = makeTmpDir('qax-')
     const file = path.join(dir, 'a.qax')
     fs.writeFileSync(file, [
       '<cuemol-actions version="1">',

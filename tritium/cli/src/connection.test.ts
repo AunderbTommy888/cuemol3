@@ -3,15 +3,26 @@
  * @description Starting the app when none answers: which command, with what.
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { ensureApp, infoFilePath, NOT_INSTALLED } from './connection'
 
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
+
 describe('tritium_cli starting the app', () => {
   it('launches its own executable with --tritium-cli and waits for the console endpoint', async () => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tcli-')), 'local-api.json')
+    const file = path.join(makeTmpDir('tcli-'), 'local-api.json')
     const quiet = { file, onStart: () => {}, pollMs: 5, timeoutMs: 2000 }
     // Run by node (installed from npm) with no app installed: says where to get it.
     const unused = vi.fn()
@@ -58,7 +69,7 @@ describe('tritium_cli starting the app', () => {
 
 describe('tritium_cli spawning the app', () => {
   it('fails at once when the executable cannot be started, not after the start timeout', async () => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tcli-')), 'local-api.json')
+    const file = path.join(makeTmpDir('tcli-'), 'local-api.json')
     const t0 = Date.now()
     await expect(
       ensureApp({ file, onStart: () => {}, env: {}, locate: () => '/nonexistent/CueMol3', timeoutMs: 60_000 }),
