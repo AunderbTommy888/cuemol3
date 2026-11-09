@@ -78,6 +78,10 @@ runtime_class MolCoord extends Object
   boolean copyAtoms(object<MolCoord$> pmol2, object<MolSelection$> psel2);
   boolean deleteAtoms(object<MolSelection$> psel);
 
+  /// The atoms psel matches now, written without atom IDs (chain, residue,
+  /// atom name, alt conf); "none" when none, "" on failure
+  string toAtomNameSel(object<MolSelection$> psel);
+
   void xformByMat(object<Matrix> mat, object<MolSelection$> psel);
 
   integer appendAtom1(object<MolAtom$> pAtom, string chain, integer resid, string resn) => appendAtomScr1;

@@ -29,7 +29,8 @@
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
 import { chainColor, modelColor } from './colorSchemes'
-import { ATOM_STYLES, CARTOONS, ensureOwned, forEachAtom, minus, NUCL_BASE, writeSel } from './display'
+import { CARTOONS, ensureOwned, forEachAtom, minus, NUCL_BASE, writeSel } from './display'
+import { commitDisplayState, loadDisplayState, styledState } from './displayState'
 import type { AtomStyle, BaseMode } from './display'
 import { nucleotideEntries } from './colorSchemes'
 import type { NumberedObject } from './models'
@@ -115,19 +116,17 @@ function sizeOf(ctx: WorkerContext, sceneId: number, objUid: number): MoleculeSi
 }
 
 /**
- * The style an atom comes back in when it is shown again: the one the
- * automatic styling gave it. ChimeraX keeps an atom's draw mode apart from
- * its display, and the styling sets it for every atom, shown or not (small
+ * The draw mode the automatic styling gives every atom, shown or not
+ * (ChimeraX keeps an atom's draw mode apart from its display): small
  * polymer: sticks, metals and ions spheres; medium: spheres, ligands sticks,
- * solvent balls; large: spheres, the atom's default). CueMol draws an atom
- * only in the renderer of its style, so a hidden atom has none; this is
- * what it would have had, from the molecule's size. A `style` given while
- * the atom was hidden is not kept.
+ * solvent balls; large: spheres, the atom's default.
+ *
+ * @param given - the style asked for (a preset); by the molecule's size
+ *   when absent, when a short peptide is sticks throughout
  */
-export function initialStylesOf(ctx: WorkerContext, sceneId: number, objUid: number): Record<AtomStyle, string> {
-  const size = sizeOf(ctx, sceneId, objUid)
-  const style = autoStyleOf(size)
-  if (style === 'non-polymer' || (style === 'small polymer' && size.residues <= MIN_RIBBON_THRESHOLD)) {
+function drawModesOf(size: MoleculeSize, given?: AutoStyle): Record<AtomStyle, string> {
+  const style = given ?? autoStyleOf(size)
+  if (style === 'non-polymer' || (style === 'small polymer' && given === undefined && size.residues <= MIN_RIBBON_THRESHOLD)) {
     return { stick: '*', ball: NONE, sphere: NONE }
   }
   if (style === 'small polymer') {
@@ -138,6 +137,15 @@ export function initialStylesOf(ctx: WorkerContext, sceneId: number, objUid: num
     return { stick: LIGAND, ball: 'water', sphere: minus('*', `(${LIGAND}) or water`) }
   }
   return { stick: NONE, ball: NONE, sphere: '*' }
+}
+
+/**
+ * The style an atom the console has no state for is in while hidden (a
+ * molecule styled elsewhere, a scene opened from a file): the one the
+ * automatic styling gives it, by the molecule's size.
+ */
+export function initialStylesOf(ctx: WorkerContext, sceneId: number, objUid: number): Record<AtomStyle, string> {
+  return drawModesOf(sizeOf(ctx, sceneId, objUid))
 }
 
 /** The selections of the console's renderers a style draws. */
@@ -187,10 +195,12 @@ export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: Nu
     paints = [['ac', [['*', model.hex]]]]
   }
   const ids = owned.ids
+  // Atoms: a new state, shown and draw mode for every atom (nothing kept from before).
+  const before = loadDisplayState(ctx, cc.sceneId, obj, ids)
+  const next = styledState(ctx, cc.sceneId, obj.uid, shown, drawModesOf(size, given))
+  const atoms = await commitDisplayState(ctx, cc, obj, ids, before, next)
+  if (!atoms.ok) return atoms
   const writes: [string, string][] = [
-    [ATOM_STYLES.stick.name, shown.stick],
-    [ATOM_STYLES.ball.name, shown.ball],
-    [ATOM_STYLES.sphere.name, shown.sphere],
     [CARTOONS[0].name, shown.cartoon],
     [CARTOONS[1].name, shown.nucl],
     [NUCL_BASE.name, shown.nucl],

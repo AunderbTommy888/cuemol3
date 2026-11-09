@@ -2,9 +2,11 @@
  * @file plugins/chimerax-console/worker/commands/displayCommands.ts
  * @description `show`, `hide`, `cartoon`, `cartoon hide` and `style`.
  *
- * Each reads the selections of the molecule's `chx:` renderers, combines
- * the specification in (show adds, hide takes away, as PyMOL's flags and
- * ChimeraX's display flags do), and writes them back with
+ * Atoms: each command changes the molecule's atom display state (ChimeraX's
+ * display flag and draw mode per atom; `atomDisplayState.ts`) and writes the
+ * atom renderers from it (`displayState.ts`). Cartoons: each reads the
+ * selections of the molecule's `chx:` ribbon renderers, combines the
+ * specification in (show adds, hide takes away), and writes them back with
  * `set_renderer_selection` (`display.ts`).
  */
 
@@ -36,8 +38,8 @@ import type { AtomStyle, BaseMode, Target } from '../display'
 import { numberedObjects } from '../models'
 import type { NumberedObject } from '../models'
 import { hideSurfaces, showSurfaces } from '../surface'
-import { NONE } from '../spec/emit'
-import { initialStylesOf } from '../autoStyle'
+import * as ads from '../atomDisplayState'
+import { atomIds, commitDisplayState, loadDisplayState } from '../displayState'
 import { warnIgnored } from './warn'
 
 /** What `show` / `hide` can act on (cli.py `WhatArg`). */
@@ -109,28 +111,20 @@ async function showHide(
       const res = show ? await showSurfaces(ctx, cc, t) : await hideSurfaces(ctx, cc, t)
       if (!res.ok) return res
     }
-    if (!parts.has('atoms') && !parts.has('cartoons')) continue
+    // A molecule the specification reaches no atom of is left alone (its
+    // targets come from the expression, not from matching atoms): `show ...
+    // only` would hide every atom of it, and its renderers need not be made.
+    const target = parts.has('atoms') ? atomIds(ctx, cc.sceneId, t.obj.uid, t.sel) : null
+    const atoms = target !== null && target.length > 0
+    if (!atoms && !parts.has('cartoons')) continue
     const owned = await ensureOwned(ctx, cc, t.obj)
     if (!owned.ok) return owned
-    if (parts.has('atoms')) {
-      const r = atomRenderers(owned.ids)
-      const sel = (id: number) => readSel(ctx, cc.sceneId, id)
-      // With `only`, what each style shows outside the specification goes.
-      const kept = (id: number) => (only ? intersect(sel(id), t.sel) : sel(id))
-      let writes: [number, string][]
-      if (show) {
-        // Atoms already shown keep their style; the others come in with the
-        // one the automatic styling gave them (autoStyle.ts).
-        const fresh = minus(t.sel, union(union(sel(r.stick), sel(r.ball)), sel(r.sphere)))
-        const initial = fresh === NONE ? null : initialStylesOf(ctx, cc.sceneId, t.obj.uid)
-        writes = (['stick', 'ball', 'sphere'] as const).map((s) => [r[s], union(kept(r[s]), initial ? intersect(fresh, initial[s]) : NONE)])
-      } else {
-        writes = [r.stick, r.ball, r.sphere].map((id) => [id, minus(sel(id), t.sel)])
-      }
-      for (const [id, next] of writes) {
-        const w = await writeSel(ctx, cc, id, next)
-        if (!w.ok) return w
-      }
+    if (atoms) {
+      // Each atom keeps its style, shown or hidden (displayState.ts).
+      const before = loadDisplayState(ctx, cc.sceneId, t.obj, owned.ids)
+      const next = show ? (only ? ads.showOnly(before.state, target) : ads.show(before.state, target)) : ads.hide(before.state, target)
+      const w = await commitDisplayState(ctx, cc, t.obj, owned.ids, before, next)
+      if (!w.ok) return w
     }
     if (parts.has('cartoons')) {
       // The base slabs follow the nucleic cartoon (display.ts).
@@ -505,21 +499,15 @@ const style = chxCommand({
         if (!ring.ok) return ring
       }
       if (to === '') continue
+      // As for show: a molecule with no atom in the specification is left alone.
+      const target = atomIds(ctx, cc.sceneId, t.obj.uid, t.sel)
+      if (target.length === 0) continue
       const owned = await ensureOwned(ctx, cc, t.obj)
       if (!owned.ok) return owned
-      const r = atomRenderers(owned.ids)
-      const others = STYLES.filter((s) => s !== to)
-      const sel = (s: AtomStyle) => readSel(ctx, cc.sceneId, r[s])
-      // Only atoms shown move: a hidden atom has no style to keep (display.ts).
-      const moved = intersect(t.sel, union(sel(others[0]), sel(others[1])))
-      const writes: [number, string][] = [
-        [r[to], union(sel(to), moved)],
-        ...others.map((s): [number, string] => [r[s], minus(sel(s), t.sel)]),
-      ]
-      for (const [id, next] of writes) {
-        const w = await writeSel(ctx, cc, id, next)
-        if (!w.ok) return w
-      }
+      // Hidden atoms take the style too, and keep it until shown (displayState.ts).
+      const before = loadDisplayState(ctx, cc.sceneId, t.obj, owned.ids)
+      const w = await commitDisplayState(ctx, cc, t.obj, owned.ids, before, ads.restyle(before.state, target, to))
+      if (!w.ok) return w
     }
     return { ok: true }
   },
