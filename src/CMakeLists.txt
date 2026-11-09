@@ -81,6 +81,10 @@ message(STATUS "GLEW_FOUND: ${GLEW_FOUND} ${GLEW_LIBRARIES}")
 # stopping in sysdep. Configure with -DENABLE_X11_SYSDEP=ON to build it
 # anyway (for that porting work).
 option(ENABLE_X11_SYSDEP "Build the unported X11 OpenGL sysdep backend" OFF)
+# The tritium Electron renderer reads the preprocessed GLSL shaders at run
+# time whether or not sysdep is built, so the CLI configuration installs
+# them too.
+option(INSTALL_GLSL_SHADERS "Install the preprocessed GLSL shaders (used by tritium)" ON)
 
 if (OPENGL_FOUND AND GLEW_FOUND)
   if (WIN32 OR APPLE OR ENABLE_X11_SYSDEP)
@@ -221,6 +225,13 @@ if (NOT BUILD_MINIMUM_MODULES)
 
   if (BUILD_OPENGL_SYSDEP)
     add_subdirectory(sysdep)
+  elseif (INSTALL_GLSL_SHADERS)
+    # sysdep is not built, but tritium still needs its ogl_core shaders.
+    include(${CMAKE_CURRENT_SOURCE_DIR}/sysdep/ogl_core_shaders.cmake)
+    add_custom_target(ogl_core_glsl)
+    set_target_properties(ogl_core_glsl PROPERTIES
+      SHADER_SOURCES "${OGL_CORE_SHADER_SOURCES}")
+    GLSL_PREPROC(ogl_core_glsl "${OGL_CORE_SHADER_DEPS}")
   endif ()
   
   add_subdirectory(modules/molstr)
