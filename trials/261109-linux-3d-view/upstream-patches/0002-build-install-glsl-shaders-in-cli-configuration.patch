@@ -1,0 +1,213 @@
+Subject: build(linux): install the GLSL shaders in the CLI configuration
+
+On Linux, src/CMakeLists.txt builds the CLI configuration
+(BUILD_OPENGL_SYSDEP=FALSE) because the X11 sysdep backend is not ported.
+All three GLSL_PREPROC calls (sysdep, molvis, xtal) sit behind that switch,
+so share/data/shaders is missing from every Linux package. The tritium
+Electron renderer (ElecDisplayContext -> WebGL) does not use sysdep, but it
+reads those shaders at run time, and fails with
+"OcDisplayContext> FATAL ERROR: loadShader(gpu_line) failed!!".
+
+- Move the ogl_core shader lists out of sysdep/CMakeLists.txt into
+  sysdep/ogl_core_shaders.cmake (absolute paths), used by sysdep as before.
+- Add option INSTALL_GLSL_SHADERS (default ON). When sysdep is not built,
+  preprocess the ogl_core shaders through a custom target instead.
+- molvis / xtal: preprocess their shaders when BUILD_OPENGL_SYSDEP OR
+  INSTALL_GLSL_SHADERS (molvis' GLEW include dirs stay sysdep-only).
+- glsl.cmake: on Linux pass -undef -ffreestanding to cpp, so glibc's
+  stdc-predef.h licence comment is not copied into every shader.
+
+Verified: the new ogl_core_glsl path builds and installs 30 shaders through
+the unmodified GLSL_PREPROC in a standalone CMake harness, byte-identical to
+the files the local workaround generates from v3.0.0.554. The full libcuemol2
+configure and the sysdep / molvis / xtal paths were not built.
+
+Apply with: git apply <this file>
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 85fcb829..348d5be5 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -81,6 +81,10 @@ message(STATUS "GLEW_FOUND: ${GLEW_FOUND} ${GLEW_LIBRARIES}")
+ # stopping in sysdep. Configure with -DENABLE_X11_SYSDEP=ON to build it
+ # anyway (for that porting work).
+ option(ENABLE_X11_SYSDEP "Build the unported X11 OpenGL sysdep backend" OFF)
++# The tritium Electron renderer reads the preprocessed GLSL shaders at run
++# time whether or not sysdep is built, so the CLI configuration installs
++# them too.
++option(INSTALL_GLSL_SHADERS "Install the preprocessed GLSL shaders (used by tritium)" ON)
+ 
+ if (OPENGL_FOUND AND GLEW_FOUND)
+   if (WIN32 OR APPLE OR ENABLE_X11_SYSDEP)
+@@ -221,6 +225,13 @@ if (NOT BUILD_MINIMUM_MODULES)
+ 
+   if (BUILD_OPENGL_SYSDEP)
+     add_subdirectory(sysdep)
++  elseif (INSTALL_GLSL_SHADERS)
++    # sysdep is not built, but tritium still needs its ogl_core shaders.
++    include(${CMAKE_CURRENT_SOURCE_DIR}/sysdep/ogl_core_shaders.cmake)
++    add_custom_target(ogl_core_glsl)
++    set_target_properties(ogl_core_glsl PROPERTIES
++      SHADER_SOURCES "${OGL_CORE_SHADER_SOURCES}")
++    GLSL_PREPROC(ogl_core_glsl "${OGL_CORE_SHADER_DEPS}")
+   endif ()
+   
+   add_subdirectory(modules/molstr)
+diff --git a/src/glsl.cmake b/src/glsl.cmake
+index 48129e4f..aa8a2d38 100644
+--- a/src/glsl.cmake
++++ b/src/glsl.cmake
+@@ -71,6 +71,12 @@ function(GLSL_PREPROC _target SHADER_DEPENDENCIES)
+         list(APPEND PREPROCESSOR_FLAGS -P)  # Don't output #line directives
+         list(APPEND PREPROCESSOR_FLAGS -C)  # Preserve comments
+         list(APPEND PREPROCESSOR_FLAGS -w)  # Suppress warnings
++        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
++            # GNU cpp on glibc pre-includes stdc-predef.h, whose licence
++            # comment -C would copy into every shader, and predefines
++            # "linux" / "unix". Neither happens with clang on macOS.
++            list(APPEND PREPROCESSOR_FLAGS -undef -ffreestanding)
++        endif()
+         
+         # Add include directories
+         foreach(INCLUDE_DIR ${SHADER_INCLUDE_DIRS})
+diff --git a/src/modules/molvis/CMakeLists.txt b/src/modules/molvis/CMakeLists.txt
+index e0887f0a..2b1946d8 100644
+--- a/src/modules/molvis/CMakeLists.txt
++++ b/src/modules/molvis/CMakeLists.txt
+@@ -77,6 +77,9 @@ IF (BUILD_OPENGL_SYSDEP)
+     ${GLEW_INCLUDE_DIRS}
+     ${OPENGL_INCLUDE_DIR}
+   )
++ENDIF ()
++# The shaders are also used by tritium in the CLI configuration
++IF (BUILD_OPENGL_SYSDEP OR INSTALL_GLSL_SHADERS)
+   # GLSL shader files
+   SET(GLSL_SHADER_FILES
+     sphere_frag.glsl
+diff --git a/src/modules/xtal/CMakeLists.txt b/src/modules/xtal/CMakeLists.txt
+index ddd763b9..9cbe99e8 100644
+--- a/src/modules/xtal/CMakeLists.txt
++++ b/src/modules/xtal/CMakeLists.txt
+@@ -85,8 +85,8 @@ MCWRAPGEN_MODULE(XTAL_SRCS ${XTAL_MODLDR_SRC} ${XTAL_MCWG_QIFS})
+ add_library(xtal STATIC ${XTAL_SRCS} ${MCWG_HEADERS})
+ 
+ ###################
+-# GLSL shader files
+-IF (BUILD_OPENGL_SYSDEP)
++# GLSL shader files (also used by tritium in the CLI configuration)
++IF (BUILD_OPENGL_SYSDEP OR INSTALL_GLSL_SHADERS)
+   SET(GLSL_SHADER_FILES
+     mapmesh_vertex.glsl
+     mapmesh_frag.glsl
+diff --git a/src/sysdep/CMakeLists.txt b/src/sysdep/CMakeLists.txt
+index b55c9062..8fd02cf2 100644
+--- a/src/sysdep/CMakeLists.txt
++++ b/src/sysdep/CMakeLists.txt
+@@ -78,48 +78,9 @@ SET(GLSL_SHADER_FILES
+   silh_frag.glsl
+ )
+ 
+-SET(SHADER_SOURCES 
+-  ogl_core/trig_vert.glsl
+-  ogl_core/trig_frag.glsl
+-  ogl_core/trigedge_vert.glsl
+-  ogl_core/trigedge_frag.glsl
+-  ogl_core/pixdraw_vert.glsl
+-  ogl_core/pixdraw_frag.glsl
+-  ogl_core/linew_vert.glsl
+-  ogl_core/linew2_vert.glsl
+-  ogl_core/linew2idx_vert.glsl
+-  ogl_core/linevalidx_vert.glsl
+-  ogl_core/linew_frag.glsl
+-  ogl_core/trig_pick_vert.glsl
+-  ogl_core/trig_pick_frag.glsl
+-  ogl_core/linew2_pick_vert.glsl
+-  ogl_core/linew_pick_frag.glsl
+-  ogl_core/linew2idx_pick_vert.glsl
+-  ogl_core/linevalidx_pick_vert.glsl
+-  ogl_core/postproc_vert.glsl
+-  ogl_core/depthvis_frag.glsl
+-  ogl_core/ao_composite_frag.glsl
+-  ogl_core/gtao_frag.glsl
+-  ogl_core/ao_denoise_frag.glsl
+-  ogl_core/fxaa_frag.glsl
+-  ogl_core/smaa_edges_frag.glsl
+-  ogl_core/smaa_weights_frag.glsl
+-  ogl_core/smaa_blend_frag.glsl
+-  ogl_core/jitter_compose_frag.glsl
+-  ogl_core/hover_mask_frag.glsl
+-  ogl_core/hover_blur_frag.glsl
+-  ogl_core/hover_hl_frag.glsl
+-)
+-SET(SHADER_DEPS
+-  ogl_core/lighting_inc.glsl
+-  ogl_core/fog_inc.glsl
+-  ogl_core/matrices_inc.glsl
+-  ogl_core/linew_inc.glsl
+-  ogl_core/lib_atoms.glsl
+-  ogl_core/pick_inc.glsl
+-)
+-set_target_properties(sysdep PROPERTIES SHADER_SOURCES "${SHADER_SOURCES}")
+-GLSL_PREPROC(sysdep "${SHADER_DEPS}")
++include(${CMAKE_CURRENT_SOURCE_DIR}/ogl_core_shaders.cmake)
++set_target_properties(sysdep PROPERTIES SHADER_SOURCES "${OGL_CORE_SHADER_SOURCES}")
++GLSL_PREPROC(sysdep "${OGL_CORE_SHADER_DEPS}")
+ 
+ #####################
+ 
+diff --git a/src/sysdep/ogl_core_shaders.cmake b/src/sysdep/ogl_core_shaders.cmake
+new file mode 100644
+index 00000000..06dc4ccc
+--- /dev/null
++++ b/src/sysdep/ogl_core_shaders.cmake
+@@ -0,0 +1,50 @@
++#==============================================================================
++# GLSL shaders of the ogl_core backend
++#
++# Shared by the sysdep target (sysdep/CMakeLists.txt) and by the CLI
++# configuration, which does not build sysdep (see ../CMakeLists.txt): the
++# tritium Electron renderer (ElecDisplayContext) reads the preprocessed
++# shaders from share/data/shaders at run time on every platform.
++# Paths are absolute so that the lists can be used from any directory.
++#==============================================================================
++
++SET(OGL_CORE_SHADER_SOURCES
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/trig_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/trig_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/trigedge_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/trigedge_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/pixdraw_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/pixdraw_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/linew_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/linew2_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/linew2idx_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/linevalidx_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/linew_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/trig_pick_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/trig_pick_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/linew2_pick_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/linew_pick_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/linew2idx_pick_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/linevalidx_pick_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/postproc_vert.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/depthvis_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/ao_composite_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/gtao_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/ao_denoise_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/fxaa_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/smaa_edges_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/smaa_weights_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/smaa_blend_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/jitter_compose_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/hover_mask_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/hover_blur_frag.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/hover_hl_frag.glsl
++)
++SET(OGL_CORE_SHADER_DEPS
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/lighting_inc.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/fog_inc.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/matrices_inc.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/linew_inc.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/lib_atoms.glsl
++  ${CMAKE_CURRENT_LIST_DIR}/ogl_core/pick_inc.glsl
++)

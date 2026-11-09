@@ -1,0 +1,35 @@
+#!/bin/bash
+#
+# Launcher for a CueMol3 Linux package patched by apply.sh.
+#
+# Install as ~/.local/bin/cuemol3 (apply.sh --install-launcher does this).
+#   env CUEMOL3_APPDIR (default ~/.local/opt/CueMol3) -- the patched tree.
+#
+# Besides the two patches apply.sh puts into the tree (bindPeer shim,
+# shaders), starting the app needs:
+#   - LD_LIBRARY_PATH on the bundled Boost 1.84 directory: libcuemol2.so's
+#     RUNPATH is the macOS-only "@loader_path", which ld.so ignores
+#     (upstream fix: ../upstream-patches/0003-*.patch).
+#   - ELECTRON_RUN_AS_NODE unset: VS Code terminals export it, and Electron
+#     then starts as plain Node, reads stdin and exits 0 without a word.
+#   - --no-sandbox: chrome-sandbox is not setuid outside a dpkg install;
+#     upstream's own AppImage desktop entry passes the same flag.
+#
+set -euo pipefail
+
+APPDIR="${CUEMOL3_APPDIR:-$HOME/.local/opt/CueMol3}"
+LIBDIR="$APPDIR/resources/app/node_modules/@cuemol/core/build/lib"
+
+if [ ! -x "$APPDIR/@cuemolreact-gui" ]; then
+  echo "cuemol3: app not found: $APPDIR/@cuemolreact-gui" >&2
+  echo "cuemol3: run apply.sh first, or set CUEMOL3_APPDIR" >&2
+  exit 1
+fi
+
+exec env \
+  -u ELECTRON_RUN_AS_NODE \
+  -u ELECTRON_NO_ATTACH_CONSOLE \
+  -u VSCODE_ESM_ENTRYPOINT \
+  -u NODE_OPTIONS \
+  LD_LIBRARY_PATH="${LIBDIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+  "$APPDIR/@cuemolreact-gui" --no-sandbox "$@"

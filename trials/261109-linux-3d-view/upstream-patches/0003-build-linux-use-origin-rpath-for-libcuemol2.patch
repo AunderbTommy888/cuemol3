@@ -1,0 +1,46 @@
+Subject: build(linux): use $ORIGIN for libcuemol2's install rpath
+
+libcuemol2's INSTALL_RPATH is "@loader_path;...". @loader_path is a dyld
+(macOS) token; Linux ld.so ignores it, so libcuemol2.so cannot find the
+libboost_*.so.1.84.0 bundled in the same directory. On a system without
+Boost 1.84 the renderer dies with "error while loading shared libraries";
+with a mis-linked system Boost it dies with
+"undefined symbol: ...path_algorithms21find_parent_path_size...".
+(cuemol_internal.node finds libcuemol2 itself because tritium/core already
+switches between @loader_path and $ORIGIN; DT_RUNPATH is not transitive.)
+
+Pick the rpath per platform the same way tritium/core/CMakeLists.txt does.
+
+Verified: the same CMake snippet in a standalone harness installs a library
+whose RUNPATH reads "$ORIGIN:$ORIGIN/../lib/python/lib". libcuemol2 itself
+was not rebuilt.
+
+Apply with: git apply <this file>
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 85fcb829..f60baa4f 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -307,9 +307,21 @@ target_include_directories(
+ )
+ target_link_libraries(cuemol2 PRIVATE ${CUEMOL2_LINK_LIBRARIES})
+ 
++# Relocatable rpath so the loader finds the shared libs bundled next to
++# libcuemol2 (Boost, Python). macOS uses @loader_path (dyld), Linux uses
++# $ORIGIN (ld.so; it does not understand @loader_path); Windows has no rpath.
++if (APPLE)
++  set(CUEMOL2_INSTALL_RPATH
++    "@loader_path;@loader_path/../lib/python/lib;@loader_path/../Resources/python/lib")
++elseif (UNIX)
++  set(CUEMOL2_INSTALL_RPATH "$ORIGIN;$ORIGIN/../lib/python/lib")
++else ()
++  set(CUEMOL2_INSTALL_RPATH "")
++endif ()
++
+ set_target_properties(cuemol2 PROPERTIES
+   BUILD_RPATH "${Python3_LIBRARY_DIRS}"
+-  INSTALL_RPATH "@loader_path;@loader_path/../lib/python/lib;@loader_path/../Resources/python/lib"
++  INSTALL_RPATH "${CUEMOL2_INSTALL_RPATH}"
+ )
+ 
+ list(APPEND CUEMOL2_DEFS "LIBCUEMOL_EXPORTS=1")

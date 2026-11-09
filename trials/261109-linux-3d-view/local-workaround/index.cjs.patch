@@ -1,0 +1,45 @@
+--- a/src/index.cjs	2026-11-09 21:15:01.633267515 +0900
++++ b/src/index.cjs	2026-11-09 21:15:01.634267504 +0900
+@@ -9,4 +9,42 @@
+ const bindings = require('bindings')
+ const _internal = bindings('cuemol_internal.node')
+ 
++// ---------------------------------------------------------------------------
++// LOCAL PATCH (not from upstream) - restore the missing "bindPeer" export.
++//
++// In CueMol3 3.0.0.554 the shipped cuemol_internal.node never registers
++// "bindPeer" in its exports, although node_jsbr::bindPeer is compiled into the
++// binary and exported as a dynamic symbol. The renderer worker's GfxManager
++// calls this.cuemol.bindPeer(view, this) from bindCanvas, so without it the
++// 3D viewport stays empty ("bindCanvas failed: this.cuemol.bindPeer is not a
++// function" / "View::setup() setCurrent failed.").
++//
++// cuemol_bindpeer_shim.node is a tiny N-API addon that links against
++// cuemol_internal.node, resolves that symbol and registers it under the right
++// name. Remove this block (and the shim) once upstream ships a fixed build.
++// ---------------------------------------------------------------------------
++if (typeof _internal.bindPeer !== 'function') {
++  const path = require('path')
++  const shimPath = path.join(
++    __dirname, '..', 'build', 'Release', 'cuemol_bindpeer_shim.node'
++  )
++  try {
++    let shim
++    try {
++      shim = require(shimPath)
++    } catch (e) {
++      const m = { exports: {} }
++      process.dlopen(m, shimPath)
++      shim = m.exports
++    }
++    if (typeof shim.bindPeer === 'function') {
++      _internal.bindPeer = shim.bindPeer
++    } else {
++      console.error('[bindPeer patch] shim loaded but exports no bindPeer')
++    }
++  } catch (e) {
++    console.error('[bindPeer patch] failed to load shim:', e)
++  }
++}
++
+ exports.getModule = function () { return _internal }
