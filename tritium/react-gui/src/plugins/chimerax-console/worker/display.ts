@@ -5,21 +5,22 @@
  * ChimeraX keeps a display flag and a style per atom and a ribbon flag per
  * residue. CueMol draws what a renderer's selection holds, so the ChX
  * console keeps one renderer per atom style and one for the ribbon on each
- * molecule, named `chx:...`, and those renderers' selections ARE the
- * display state: nothing about it is kept anywhere else. Each command reads
- * them, works out the new selections, and writes them back through ops, in
- * the submission's undo transaction -- so undo (from the console or the GUI)
- * puts back the state the next command reads, and an edit made in the GUI
- * is where the next command starts from. Renderers not named `chx:` are
- * never touched.
+ * molecule, named `chx:...`. Renderers not named `chx:` are never touched.
  *
- * All four are made together the first time the console touches a
+ * Ribbons: the renderers' selections are the state. Each command reads them,
+ * works out the new selections, and writes them back through ops, in the
+ * submission's undo transaction -- so undo (from the console or the GUI)
+ * puts back the state the next command reads, and an edit made in the GUI
+ * is where the next command starts from.
+ *
+ * Atoms: a hidden atom keeps its style, which no renderer can hold, so the
+ * console keeps a per-atom state of its own (`displayState.ts`) and writes
+ * the atom renderers from it. A selection of an atom renderer edited in the
+ * GUI is set back from that state by the next command that changes atoms.
+ *
+ * All renderers are made together the first time the console touches a
  * molecule, so a colour given to "atoms" is in every atom renderer and stays
  * when an atom moves from one style to another.
- *
- * Limit: CueMol has no per-atom display flag, so the style of a hidden atom
- * is not kept -- an atom shown again comes back in the style the automatic
- * styling gives it (`autoStyle.ts` `initialStylesOf`).
  *
  * Nucleic acids: the backbone is drawn by `chx:nucl` (a tube through the
  * phosphates) and the bases by `chx:nuclbase` (a `nucl` renderer drawing no

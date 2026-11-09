@@ -308,16 +308,27 @@ renderer で表し、**その selection と paint が表示の状態そのもの
   100 残基以下なら板 (slab)、2000 残基以下なら ladder で塩基を描き、塩基を `bynucleotide` の色で塗る (主鎖は model の色)。
   ChimeraX の lighting の切り替えと、糖鎖の SNFG 表示は行わない。
 - **制約**:
-  - CueMol に原子ごとの表示フラグは無く、どの原子を描くかは renderer の selection だけで決まる。そのため**非表示の原子の
-    style は保持しない**。非表示の原子を `show` すると、auto style がその原子に与える style で出す (`autoStyle.ts` の
-    `initialStylesOf`: molecule の大きさから決め、small polymer は stick (金属とイオンは sphere)、medium は sphere
-    (ligand は stick、水は ball)、large は sphere)。ChimeraX は原子の style を表示と別に持ち、auto style は非表示の原子にも
-    style を付けるので (原子の既定は sphere)、`hide atoms` の後の `show <spec> atoms` はこれで ChimeraX と同じになる。
-    ただし、非表示の間に変えた style は保たない: `style :ALA sphere` -> `hide :ALA atoms` -> `show :ALA atoms` では、
-    small polymer の ALA は stick で出る (ChimeraX では sphere)。ALA が非表示のうちの `style :ALA sphere` も効かない。
-    もう一度 `style` を打てば直り、データは壊れない。保持するには style ごとの原子集合を scene に別に持つ必要があり、その代償 (selection 一覧が散らかる、
-    状態の二重化) に見合わないので行っていない。
-  - selection の式は、組み合わせた後、書き込む前に簡単にする (`writeSel`、[selection 式の簡単化](selection-simplify.md))。
+  - **原子の表示状態** (`atomDisplayState.ts`、`displayState.ts`): ChimeraX は原子ごとに表示フラグと描き方 (style) を
+    別に持つ。CueMol は renderer の selection にある原子だけを描くので、ChX は分子ごとに「原子 ID → 表示するか・style」
+    の状態を持ち、原子の 3 枠 (`chx:stick` / `chx:ball` / `chx:sphere`) の selection をそこから書く。
+    - `show` / `hide` は表示だけを、`style` は表示中も非表示の原子も style だけを変える。`show ... only` は spec の分子の中で
+      spec 以外の原子を隠す。`nospheres` は sphere の polymer と溶媒を、表示に関係なく stick にする。open と Initial Styles は
+      状態を作り直す (表示する原子と、全原子の style を auto style で決める。前の状態は引き継がない)。
+    - したがって `style :ALA sphere` -> `hide :ALA atoms` -> `show :ALA atoms` は sphere で出る。隠している間の `style` も効く。
+    - spec が原子に当たらない分子は変えず、ChX の renderer も作らない (`show ... only` がその分子の原子を全部隠さないように)。
+    - 状態は scene の app-data に、汎用の一時的な入れ物 (`TransientStrData`、キー `chx:display:<分子の UID>`) で置く。
+      コマンドの undo の txn の中で書くので、console からも GUI からも undo / redo で renderer と一緒に戻る。scene には
+      保存しない ([scene app data](scene-app-data.md))。
+    - 状態が無いとき (ChX がまだ触っていない分子、ファイルから開いた scene、最初のコマンドの undo の後) は、今の 3 枠の
+      selection から作る: 描かれている原子はその style で表示、それ以外は auto style の style (`initialStylesOf`) で非表示。
+      状態が知らない原子 (後から足された原子) も同じ規則で取り込む。状態が変わらないコマンドは何も書かない (redo を消さない)。
+    - 3 枠の selection は ChX が管理する。GUI で直接変えても、原子を変える次の ChX コマンドで状態どおりに戻る。
+    - selection は原子 ID (`aid`) ではなく、chain・残基番号・原子名・alt の式で書く (`MolCoord.toAtomNameSel`、
+      [selection 式の簡単化](selection-simplify.md) の 4 節)。scene を保存して開き直すと原子 ID は振り直されるが、描かれる
+      原子は変わらない。
+    - 保存・再読込の後: 表示中の原子はそのまま戻る。非表示の原子の、隠す前の style は保存されないので、auto style の style に
+      なる (例: 初期 style が stick の原子を sphere にして隠し、保存して開き直してから `show` すると stick で出る)。
+  - cartoon などの selection の式は、組み合わせた後、書き込む前に簡単にする (`writeSel`、[selection 式の簡単化](selection-simplify.md))。
     `show` / `hide` / `style` を繰り返しても伸びないが、最短になるとは限らない。
 
 ## 6. コマンド
@@ -590,9 +601,11 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
 - `spec/translate.test.ts`: 階層・insertion code・残基名・演算子の翻訳、model ごとの評価、16 進の色を spec にしないこと、
   未対応の語を断ること
 - `display.test.ts`: show / hide / style / cartoon の合成 (式は小さな原子の集合で評価して比べる)、他の renderer に
-  触らないこと、今の selection から始めること (undo / GUI の編集に追従)、style を変えても色が残り paint への切り替えは
-  1 度だけであること、地図に届くのは model の番号だけの指定であること、非表示の原子は auto style の style で出て、
-  表示中の原子は style を保つこと
+  触らないこと、非表示の原子が style を保つこと (隠している間の `style`、`show ... only` を含む)、spec が原子に当たらない
+  分子を変えず renderer も作らないこと、状態が無ければ今の selection から始め、何も変えないコマンドは何も書かないこと
+  (状態が知る原子を削除した後も)、書き込みの途中で失敗したら書いた selection を戻すこと、style を変えても色が残り
+  paint への切り替えは 1 度だけであること、地図に届くのは model の番号だけの指定であること
+- `atomDisplayState.test.ts`: 状態の保存形式の往復、削除した原子の ID を保ちつつ描かないこと、新しい原子を取り込むこと
 - `models.test.ts`: 番号を詰めず、使い回さないこと
 - `commands/mapCommands.test.ts`: `volume` の `level` が地図の値のまま、`transparency` が `alpha = 1 - t` で書かれ、box の
   `contour` の `step > 1` と 1・2・4・8 以外の `step` を何も書かずに断り、`region all` なら `lod` を書くこと、`volume zone` が
@@ -614,7 +627,8 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
   ごとに重ねること
 - `colorSchemes.test.ts`: chain の色を大文字小文字を区別せずに引くこと、`rainbow residues` が 64 段以下の範囲にまとめ、
   青から赤で、`^` で逆になること
-- `autoStyle.test.ts`: ChimeraX の大きさの閾値、短いペプチドを stick にすること、small polymer の selection の式
+- `autoStyle.test.ts`: ChimeraX の大きさの閾値、短いペプチドを stick にすること、small polymer の selection の式と、
+  非表示の原子も含む全原子の style
 - (`cli/syntax.test.ts` の前方一致に、`sel` `su` `tr` `tu` `sa` `la` `di` `mm` `al` の短縮形)
 - `chimeraxCommands.test.ts`: ChimeraX にあって ChX に無いコマンド (`sym`、前方一致の `fit`、2 語の `alphafold match`)
   は飛ばし、打ち間違い (`symx`、`alphafold fetchx`) はエラーのままにすること

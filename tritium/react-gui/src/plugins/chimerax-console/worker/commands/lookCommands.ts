@@ -23,7 +23,9 @@ import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
 import { applyAutoStyle } from '../autoStyle'
 import type { AutoStyle } from '../autoStyle'
-import { atomRenderers, ensureOwned, intersect, minus, readSel, runOp, union, writeSel } from '../display'
+import { restyle } from '../atomDisplayState'
+import { ensureOwned, runOp } from '../display'
+import { atomIds, commitDisplayState, loadDisplayState } from '../displayState'
 import { isMolecule, numberedObjects } from '../models'
 import { hideSurfaces } from '../surface'
 import { runChxLines } from './aliasCommands'
@@ -290,23 +292,18 @@ const unitcellDelete = chxCommand({
 
 /**
  * ChimeraX's `style (protein|nucleic|solvent) & @@draw_mode=0 stick` (the
- * presets' `nospheres`): the polymer and solvent atoms shown as spheres
- * become sticks.
+ * presets' `nospheres`): the polymer and solvent atoms drawn as spheres,
+ * shown or hidden, become sticks.
  */
 async function noSpheres(ctx: WorkerContext, cc: CmdContext): Promise<CmdOutcome> {
   for (const obj of numberedObjects(ctx, cc.sceneId).filter(isMolecule)) {
     const owned = await ensureOwned(ctx, cc, obj)
     if (!owned.ok) return owned
-    const r = atomRenderers(owned.ids)
-    const moved = intersect(readSel(ctx, cc.sceneId, r.sphere), '(protein or nucleic or water)')
-    const writes: [number, string][] = [
-      [r.stick, union(readSel(ctx, cc.sceneId, r.stick), moved)],
-      [r.sphere, minus(readSel(ctx, cc.sceneId, r.sphere), moved)],
-    ]
-    for (const [id, next] of writes) {
-      const w = await writeSel(ctx, cc, id, next)
-      if (!w.ok) return w
-    }
+    // Hidden atoms too: ChimeraX's `style` does not look at the display flag.
+    const target = atomIds(ctx, cc.sceneId, obj.uid, '(protein or nucleic or water)')
+    const before = loadDisplayState(ctx, cc.sceneId, obj, owned.ids)
+    const w = await commitDisplayState(ctx, cc, obj, owned.ids, before, restyle(before.state, target, 'stick', 'sphere'))
+    if (!w.ok) return w
   }
   return { ok: true }
 }

@@ -23,6 +23,7 @@ ObjectEvent.cpp
 RendererEvent.cpp
 SceneEvent.cpp
 SceneAppData.cpp
+TransientStrData.cpp
 ViewEvent.cpp
 ScalarObject.cpp
 ScrEventManager.cpp
@@ -99,6 +100,7 @@ ScalarObject.hpp
 Scene.hpp
 SceneEvent.hpp
 SceneAppData.hpp
+TransientStrData.hpp
 SceneEventCaster.hpp
 SceneExporter.hpp
 SceneManager.hpp
@@ -144,6 +146,7 @@ style/StyleSupports.hpp
 SET(QSYS_MCWG_QIFS
 Renderer.qif
 Scene.qif
+TransientStrData.qif
 SceneManager.qif
 StreamManager.qif
 View.qif

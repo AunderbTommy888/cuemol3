@@ -420,6 +420,14 @@ namespace molstr {
 
     qlib::LByteArrayPtr getSelArray(SelectionPtr psel) const;
 
+    /// The atoms psel matches now, as a selection expression without atom
+    /// IDs (chain, residue number with insertion code, atom name, alt conf),
+    /// so it still means the same atoms after a scene file renumbers them on
+    /// load. It matches exactly the same atoms in this molecule now; atoms
+    /// added later may or may not match it. "none" when nothing matches, ""
+    /// on failure (the expression found did not match the same atoms).
+    LString toAtomNameSel(SelectionPtr psel) const;
+
 #if 0
 
     /**

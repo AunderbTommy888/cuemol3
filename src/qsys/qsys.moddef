@@ -7,6 +7,7 @@
 // #endif
 
 #include "Scene.qif"
+#include "TransientStrData.qif"
 #include "SceneManager.qif"
 #include "StreamManager.qif"
 
@@ -49,6 +50,7 @@ module qsys
   Renderer uuid 31b9aa90-c17e-4631-a852-fa4d853dac1e;
   Camera uuid 3B88300A-0D04-49ad-980E-F7D509754F73;
 
+  TransientStrData;
   SceneXMLReader;
   SceneXMLWriter;
   InOutHandler;
