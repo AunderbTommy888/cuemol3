@@ -318,9 +318,21 @@ target_include_directories(
 )
 target_link_libraries(cuemol2 PRIVATE ${CUEMOL2_LINK_LIBRARIES})
 
+# Relocatable rpath so the loader finds the shared libs bundled next to
+# libcuemol2 (Boost, Python). macOS uses @loader_path (dyld), Linux uses
+# $ORIGIN (ld.so; it does not understand @loader_path); Windows has no rpath.
+if (APPLE)
+  set(CUEMOL2_INSTALL_RPATH
+    "@loader_path;@loader_path/../lib/python/lib;@loader_path/../Resources/python/lib")
+elseif (UNIX)
+  set(CUEMOL2_INSTALL_RPATH "$ORIGIN;$ORIGIN/../lib/python/lib")
+else ()
+  set(CUEMOL2_INSTALL_RPATH "")
+endif ()
+
 set_target_properties(cuemol2 PROPERTIES
   BUILD_RPATH "${Python3_LIBRARY_DIRS}"
-  INSTALL_RPATH "@loader_path;@loader_path/../lib/python/lib;@loader_path/../Resources/python/lib"
+  INSTALL_RPATH "${CUEMOL2_INSTALL_RPATH}"
 )
 
 list(APPEND CUEMOL2_DEFS "LIBCUEMOL_EXPORTS=1")
