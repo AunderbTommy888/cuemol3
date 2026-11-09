@@ -40,6 +40,26 @@ export interface EmitContext {
   currentSelection(model: number): string
   /** The scene's named selections, which the emitter writes as references. */
   namedSelections: ReadonlySet<string>
+  /** The atoms of model `model` that are displayed (`@@display`; `none` for none). */
+  displayedAtoms?(model: number): string
+  /**
+   * The specification a console name stands for (`name X spec`), read into
+   * its tree; undefined for a word that is not one. Emitted where the name
+   * is used, in each model, so a name may name a model.
+   */
+  expandName?(name: string): SpecNode | undefined
+}
+
+/** The console names being expanded, innermost last: a name used inside itself is refused. */
+const expanding: string[] = []
+
+/** How deep names may use other names. */
+const MAX_NAME_DEPTH = 10
+
+/** Where a group of a specification is emitted: the model, and the scene when there is one. */
+interface Scope {
+  model: number
+  ec: EmitContext | undefined
 }
 
 /** A residue number, with an optional insertion code (`10`, `-5`, `10A`), as `_parse_as_res_id` reads it. */
@@ -202,11 +222,62 @@ function enumCompare(t: AttrTest, table: Readonly<Record<string, string>>): stri
 const POLYMER_TYPES: Readonly<Record<string, string>> = { 0: 'not (protein or nucleic)', 1: 'protein', 2: 'nucleic' }
 /** `Residue.ss_type`: SS_COIL, SS_HELIX, SS_STRAND. */
 const SS_TYPES: Readonly<Record<string, string>> = { 0: 'coil', 1: 'helix', 2: 'sheet' }
+/**
+ * The Kyte-Doolittle hydropathy of the standard amino acids (Kyte and
+ * Doolittle 1982), ChimeraX's residue attribute `kdHydrophobicity`. Other
+ * residues have no value, so a comparison is false for them.
+ */
+const KD_HYDROPHOBICITY: Readonly<Record<string, number>> = {
+  ILE: 4.5, VAL: 4.2, LEU: 3.8, PHE: 2.8, CYS: 2.5, MET: 1.9, ALA: 1.8, GLY: -0.4, THR: -0.7, SER: -0.8,
+  TRP: -0.9, TYR: -1.3, PRO: -1.6, HIS: -3.2, GLU: -3.5, GLN: -3.5, ASP: -3.5, ASN: -3.5, LYS: -3.9, ARG: -4.5,
+}
+
+/** `::kdHydrophobicity` compared, as the residue names whose value passes (a table, so a name list). */
+function kdExpr(t: AttrTest): string {
+  const v = Number(t.value)
+  if (t.op !== null && (t.value === null || !Number.isFinite(v))) throw new SpecError('kdHydrophobicity is compared with a number', t.pos)
+  const pass = (x: number): boolean => {
+    switch (t.op) {
+      case null: return true
+      case '>': return x > v
+      case '>=': return x >= v
+      case '<': return x < v
+      case '<=': return x <= v
+      case '=': case '==': return x === v
+      default: return x !== v
+    }
+  }
+  const names = Object.entries(KD_HYDROPHOBICITY).filter(([, x]) => pass(x)).map(([n]) => n)
+  const expr = names.length === 0 ? NONE : `resn ${names.join(',')}`
+  return t.negated ? not(expr) : expr
+}
+
 /** True / false attributes: what they are true of. */
 const FLAGS: Readonly<Record<string, string>> = { is_helix: 'helix', is_strand: 'sheet' }
 
+/** The truth values a flag compares with (`display=false`, `display==1`). */
+const TRUTH: Readonly<Record<string, boolean>> = { true: true, false: false, 1: true, 0: false }
+
+/**
+ * `@@display`: the atoms displayed (the scene's own state, so it needs the
+ * scene); `^display`, `display=false` and `display!=true` the others.
+ */
+function displayExpr(t: AttrTest, scope: Scope): string {
+  if (!scope.ec?.displayedAtoms) throw new SpecError('the attribute "display" needs the scene', t.pos)
+  let want = !t.negated
+  if (t.op !== null) {
+    const v = t.value === null ? undefined : TRUTH[t.value.toLowerCase()]
+    if (v === undefined || !['=', '==', '!=', '!==', '<>'].includes(t.op)) throw new SpecError('display is compared with true or false', t.pos)
+    want = t.op === '=' || t.op === '==' ? v : !v
+  }
+  const shown = scope.ec.displayedAtoms(scope.model)
+  return want ? shown : not(shown)
+}
+
 /** One attribute test at the atom, residue or chain level. */
-function attrExpr(t: AttrTest, level: 'atom' | 'residue' | 'chain'): string {
+function attrExpr(t: AttrTest, level: 'atom' | 'residue' | 'chain', scope: Scope): string {
+  if (level === 'atom' && t.name === 'display') return displayExpr(t, scope)
+  if (level === 'residue' && t.name === 'kdHydrophobicity') return kdExpr(t)
   if (t.op === null) {
     const flag = level === 'residue' ? FLAGS[t.name] : undefined
     if (flag === undefined) throw new SpecError(`the attribute "${t.name}" is not supported yet`, t.pos, true)
@@ -230,8 +301,8 @@ function attrExpr(t: AttrTest, level: 'atom' | 'residue' | 'chain'): string {
 }
 
 /** Every test of a list holds (ChimeraX's `,` in an attribute list). */
-function testsExpr(tests: readonly AttrTest[] | null, level: 'atom' | 'residue' | 'chain'): string {
-  return tests === null ? ALL : and(tests.map((t) => attrExpr(t, level)))
+function testsExpr(tests: readonly AttrTest[] | null, level: 'atom' | 'residue' | 'chain', scope: Scope): string {
+  return tests === null ? ALL : and(tests.map((t) => attrExpr(t, level, scope)))
 }
 
 /** Whether a model passes its `##` tests; only `name` is read (the object's name). */
@@ -249,20 +320,42 @@ function modelPasses(tests: readonly AttrTest[], model: number, ec: EmitContext 
   })
 }
 
-function residueGroupExpr(g: ResidueGroup): string {
+function residueGroupExpr(g: ResidueGroup, scope: Scope): string {
   return and([
     g.residues === null ? ALL : or(g.residues.map(residueExpr)),
-    testsExpr(g.residueTests, 'residue'),
+    testsExpr(g.residueTests, 'residue', scope),
     g.atoms === null ? ALL : namesExpr('name', g.atoms, 'atom name'),
-    testsExpr(g.atomTests, 'atom'),
+    testsExpr(g.atomTests, 'atom', scope),
   ])
 }
 
-function chainGroupExpr(g: ChainGroup): string {
+/**
+ * Chain ids with ranges (`/a-h`): ChimeraX compares ids as strings, `start <=
+ * id <= end` (`atomspec.py` `string_matcher`), ignoring case unless the
+ * structure has lower-case chain ids (`structure.py`, `lower_case_chains`).
+ * CueMol has no range on chain ids, so a range becomes the model's chain ids
+ * that fall in it.
+ */
+function chainsExpr(parts: readonly ResiduePart[], scope: Scope, pos: number): string {
+  if (parts.every((p) => p.end === null)) return namesExpr('chain', parts, 'chain')
+  if (!scope.ec) throw new SpecError('a chain range needs the scene', pos)
+  const ids = scope.ec.chainsHit(scope.model, ALL)
+  const cased = ids.some((id) => id !== id.toUpperCase())
+  const norm = (x: string) => (cased ? x : x.toLowerCase())
+  const singles = parts.filter((p) => p.end === null)
+  const inRange = ids.filter((id) => parts.some((p) => p.end !== null && norm(id) >= norm(p.start) && norm(id) <= norm(p.end)))
+  const terms = [
+    ...(singles.length > 0 ? [namesExpr('chain', singles, 'chain')] : []),
+    ...(inRange.length > 0 ? [`chain ${inRange.join(',')}`] : []),
+  ]
+  return terms.length === 0 ? NONE : or(terms)
+}
+
+function chainGroupExpr(g: ChainGroup, scope: Scope): string {
   return and([
-    g.chains === null ? ALL : namesExpr('chain', g.chains, 'chain'),
-    testsExpr(g.chainTests, 'chain'),
-    g.residues.length === 0 ? ALL : or(g.residues.map(residueGroupExpr)),
+    g.chains === null ? ALL : chainsExpr(g.chains, scope, g.chains[0]?.pos ?? 0),
+    testsExpr(g.chainTests, 'chain', scope),
+    g.residues.length === 0 ? ALL : or(g.residues.map((r) => residueGroupExpr(r, scope))),
   ])
 }
 
@@ -330,6 +423,18 @@ export function emitFor(node: SpecNode, model: number, ec?: EmitContext): string
       }
       const expr = selectorExpr(node.name)
       if (expr !== null) return expr
+      // A console name: its specification, emitted here (it takes precedence over a CueMol named selection).
+      const named = ec?.expandName?.(node.name)
+      if (named) {
+        if (expanding.includes(node.name)) throw new SpecError(`the name "${node.name}" is used inside itself`, node.pos)
+        if (expanding.length >= MAX_NAME_DEPTH) throw new SpecError(`names are nested more than ${MAX_NAME_DEPTH} deep`, node.pos)
+        expanding.push(node.name)
+        try {
+          return emitFor(named, model, ec)
+        } finally {
+          expanding.pop()
+        }
+      }
       // A named selection of the scene: CueMol reads the name as a reference.
       if (ec?.namedSelections.has(node.name)) return node.name
       throw new SpecError(`the selector "${node.name}" is not supported yet`, node.pos, true)
@@ -339,6 +444,6 @@ export function emitFor(node: SpecNode, model: number, ec?: EmitContext): string
     case 'hier':
       if (!inModels(node.models, model)) return NONE
       if (node.modelTests !== null && !modelPasses(node.modelTests, model, ec)) return NONE
-      return node.chains.length === 0 ? ALL : or(node.chains.map(chainGroupExpr))
+      return node.chains.length === 0 ? ALL : or(node.chains.map((c) => chainGroupExpr(c, { model, ec })))
   }
 }

@@ -63,10 +63,10 @@ function framesOf(raw: string): number | null {
   return Number.isInteger(n) && n > 0 ? n : null
 }
 
-/** Refuse the keywords that move models or atoms, or set the centre: CueMol moves the camera only. */
+/** Refuse the keywords that move models or atoms, or set the centre: the console moves the camera only (so far). */
 function refuseGiven(cmd: string, args: Record<string, string>, names: readonly string[], why: string): CmdOutcome | null {
   const given = names.find((n) => args[n] !== undefined && args[n] !== '')
-  return given ? unsupported(`Error: ${cmd}: ${given} is not supported (${why})`) : null
+  return given ? unsupported(`Error: ${cmd}: ${given} is not supported yet (${why})`) : null
 }
 
 /** The camera, or the error for when there is no view. */
@@ -102,7 +102,7 @@ const turn = chxCommand({
   summary: 'Turn the scene about a screen axis (default y, 90 degrees).',
   async run(ctx, args, cc) {
     const refused = refuseGiven('turn', args, ['center', 'coordinateSystem', 'rock', 'wobble', 'wobbleAspect', 'models', 'atoms'],
-      'the camera turns about the view centre, and models are not moved')
+      'the console turns the camera about the view centre and does not move models')
     if (refused) return refused
     const axis = axisOf(args.axis || 'y')
     if (!axis) return { ok: false, error: `Error: turn: "${args.axis}" is not an axis (x, y, z or three numbers)` }
@@ -247,7 +247,7 @@ const viewName = chxCommand({
   words: ['view', 'name'],
   args: [{ name: 'name', type: StringArg, role: 'required' }],
   mutates: true,
-  summary: 'Save the camera under a name (the camera only: CueMol does not move models).',
+  summary: 'Save the camera under a name (the camera only: the console does not move models).',
   async run(ctx, args, cc) {
     const clash = RESERVED_VIEW_NAMES.find((r) => r.startsWith(args.name))
     if (clash) {
@@ -268,7 +268,7 @@ const viewMatrix = chxCommand({
   mutates: false,
   summary: 'Set the camera from 12 numbers (a 3x4 matrix by rows), or report it.',
   async run(ctx, args, cc) {
-    const refused = refuseGiven('view matrix', args, ['models', 'coordinateSystem'], 'CueMol objects have no positions of their own')
+    const refused = refuseGiven('view matrix', args, ['models', 'coordinateSystem'], 'the console does not move models')
     if (refused) return refused
     const cam = cameraOf(ctx, cc)
     if ('ok' in cam) return cam
@@ -384,6 +384,51 @@ export async function silhouettes(
 }
 
 /**
+ * Keep the silhouettes as wide in pixels as they were before the camera
+ * moved: ChimeraX's width is in pixels, CueMol's in angstroms, so a zoom
+ * would widen them (`view` on a few residues, tens of times). The `edges`
+ * outlines are scaled by how much the pixel size changed.
+ *
+ * @param before - the camera before the command ran
+ */
+export async function keepSilhouettePixels(ctx: WorkerContext, cc: CmdContext, before: CameraState): Promise<CmdOutcome> {
+  const after = readCamera(ctx, cc.viewId)
+  if (!after) return { ok: true }
+  const ratio = pixelSize(after) / pixelSize(before)
+  if (!Number.isFinite(ratio) || ratio <= 0 || Math.abs(ratio - 1) < 1e-6) return { ok: true }
+  for (const r of outlinedRenderers(ctx, cc.sceneId).filter((o) => o.egtype === SILHOUETTE_EDGE_TYPE)) {
+    const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: r.id, prop: 'eglinew', value: String(r.eglinew * ratio) })
+    if (!res.ok) return res
+  }
+  return { ok: true }
+}
+
+/**
+ * A command that keeps the silhouettes' pixel width (`keepSilhouettePixels`)
+ * across whatever it does to the camera. Only the outermost command does
+ * it: an alias or a preset runs commands inside its own.
+ */
+let keeping = 0
+export function keepingSilhouettes(c: ChxCommand): ChxCommand {
+  return {
+    ...c,
+    async run(ctx, args, cc) {
+      if (keeping > 0) return c.run(ctx, args, cc)
+      keeping++
+      try {
+        const before = readCamera(ctx, cc.viewId)
+        const out = await c.run(ctx, args, cc)
+        if (!before) return out
+        const kept = await keepSilhouettePixels(ctx, cc, before)
+        return kept.ok ? out : kept
+      } finally {
+        keeping--
+      }
+    },
+  }
+}
+
+/**
  * Give renderers just made the outline the rest of the scene has: ChimeraX's
  * silhouettes are one setting for the view, so a model opened after they
  * were turned on is outlined too. Read from the scene's renderers (one in
@@ -428,6 +473,48 @@ const graphicsSilhouettes = chxCommand({
   },
 })
 
+/** The scene's background colour, as `set` / `graphics` report it. */
+function reportBackground(ctx: WorkerContext, cc: CmdContext): CmdOutcome {
+  const props = getGenericProps(ctx, { sceneId: cc.sceneId, nodeId: cc.sceneId, nodeType: 'scene' })
+  const bg = props.ok ? props.entries.find((e) => e.key === 'bgcolor')?.value : undefined
+  cc.print(`Background color: ${String(bg ?? '')}`)
+  return { ok: true }
+}
+
+/** Set the scene's background colour. */
+function setBackground(ctx: WorkerContext, cc: CmdContext, color: string) {
+  return runOp(ctx, cc, 'set_node_prop', { nodeType: 'scene', nodeId: null, prop: 'bgcolor', value: splitColorArg(color).hex })
+}
+
+/**
+ * `graphics [bgColor c]` (`std_commands/graphics.py`; `backgroundColor` is
+ * its older name): the background colour, as `set bgColor`; alone, report it.
+ */
+const graphics = chxCommand({
+  words: ['graphics'],
+  args: [
+    { name: 'bgColor', type: ColorArg, role: 'keyword' },
+    { name: 'backgroundColor', type: ColorArg, role: 'keyword' },
+  ],
+  mutates: true,
+  summary: 'Set the background colour; alone, report it.',
+  async run(ctx, args, cc) {
+    const color = args.bgColor !== '' ? args.bgColor : args.backgroundColor
+    if (color === '') return reportBackground(ctx, cc)
+    const res = await setBackground(ctx, cc, color)
+    return res.ok ? { ok: true } : res
+  },
+})
+
+/** `wait [frames]`: the console applies each command at once, so there is nothing to wait for. */
+const wait = chxCommand({
+  words: ['wait'],
+  args: [{ name: 'frames', type: StringArg, role: 'optional' }],
+  mutates: false,
+  summary: 'Wait for motions to finish (nothing to do: the console applies each command at once).',
+  run: () => ({ ok: true }),
+})
+
 const set = chxCommand({
   words: ['set'],
   args: [
@@ -448,14 +535,9 @@ const set = chxCommand({
       if (args[k] !== '') cc.warn(`set: ${k} is not supported yet; ignored`)
     }
     const any = Object.values(args).some((v) => v !== '')
-    if (!any) {
-      const props = getGenericProps(ctx, { sceneId: cc.sceneId, nodeId: cc.sceneId, nodeType: 'scene' })
-      const bg = props.ok ? props.entries.find((e) => e.key === 'bgcolor')?.value : undefined
-      cc.print(`Background color: ${String(bg ?? '')}`)
-      return { ok: true }
-    }
+    if (!any) return reportBackground(ctx, cc)
     if (args.bgColor !== '') {
-      const res = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'scene', nodeId: null, prop: 'bgcolor', value: splitColorArg(args.bgColor).hex })
+      const res = await setBackground(ctx, cc, args.bgColor)
       if (!res.ok) return res
     }
     if (args.silhouettes !== '' || args.silhouetteWidth !== '' || args.silhouetteColor !== '') {
@@ -474,6 +556,8 @@ export const VIEW_COMMANDS: Record<string, ChxCommand> = {
   viewDelete,
   viewName,
   viewMatrix,
+  graphics,
   graphicsSilhouettes,
   set,
+  wait,
 }

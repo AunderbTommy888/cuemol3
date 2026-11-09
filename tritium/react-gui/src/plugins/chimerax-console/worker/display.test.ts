@@ -6,13 +6,16 @@
  * the contracts are about what is read and written there:
  *
  * - show / hide / style combine the specification into the selections, and
- *   no renderer not named `chx:` is touched;
+ *   no renderer not named `chx:` is touched; an atom shown again takes the
+ *   style the automatic styling gives it;
  * - a command starts from the selection as it is now, so an undo or an edit
  *   in the GUI is where the next command starts;
  * - a colour given to atoms is in every atom renderer, so it stays when an
  *   atom changes style;
  * - a renderer is switched to per-selection paint once only, so a second
- *   `color` does not wipe the first.
+ *   `color` does not wipe the first;
+ * - a map is reached as a whole by its model number only (a chain or residue
+ *   part reaches atoms), so `view /b:16-24` does not frame a map.
  *
  * The catalog ops are faked over an in-memory molecule; what is checked is
  * the dialect's bookkeeping, not the ops.
@@ -34,6 +37,8 @@ const state = vi.hoisted(() => ({
   rends: [] as Rend[],
   nextId: 100,
   switched: [] as string[],
+  objects: [] as { uid: number; name: string; className: string }[],
+  initial: { stick: '*', ball: 'none', sphere: 'none' },
 }))
 
 vi.mock('@renderer/worker/server/catalog', async (importOriginal) => ({
@@ -78,13 +83,21 @@ vi.mock('@renderer/worker/server/services/helpers/sceneResolver', () => ({
   getSceneOrNull: () => ({ getRenderer: (id: number) => ({ id }) }),
 }))
 vi.mock('@renderer/worker/server/services/scene/listSceneObjects', () => ({
-  listSceneObjects: () => ({ objects: [{ uid: 1, name: '1crn', className: 'MolCoord' }] }),
+  listSceneObjects: () => ({ objects: state.objects }),
+}))
+
+vi.mock('./autoStyle', () => ({
+  applyAutoStyle: async () => ({ ok: true }),
+  initialStylesOf: () => state.initial,
 }))
 
 import { CHX_COMMANDS } from './commands/registry'
 import { bindLine, resolveWords } from './cli/syntax'
+import { wholeMapsOf } from './display'
+import { resetModelNumbers } from './models'
 
-const ctx = {} as WorkerContext
+// No view: the camera is not read (keepingSilhouettes).
+const ctx = { sceMgr: { getView: () => null } } as unknown as WorkerContext
 const cc = {
   sceneId: 1, viewId: 2, cwd: '/', print: () => {}, printMarkdown: () => {}, warn: () => {}, markMutated: () => {},
   setCwd: () => {}, noteStream: () => {}, streamId: (t: string) => t, stopped: () => false,
@@ -159,6 +172,9 @@ describe('ChX display state', () => {
     state.rends = [{ id: 1, name: 'mine', sel: 'protein', paint: false, entries: [] }]
     state.nextId = 100
     state.switched = []
+    state.objects = [{ uid: 1, name: '1crn', className: 'MolCoord' }]
+    state.initial = { stick: '*', ball: 'none', sphere: 'none' }
+    resetModelNumbers()
   })
 
   it('combines show, hide, style and cartoon into the chx: selections, leaving other renderers alone', async () => {
@@ -172,6 +188,15 @@ describe('ChX display state', () => {
     // Residues 1-5 left the cartoon; the rest of the protein stays.
     expect(selected(rend('chx:cartoon').sel)).toEqual(['SER7@CA', 'GLY9@CA'])
     expect(rend('mine').sel).toBe('protein')
+  })
+
+  it('brings atoms back in the style the automatic styling gave them, keeping shown ones as they are', async () => {
+    await chx('show :SER atoms')
+    // A medium polymer's atoms are spheres (ChimeraX keeps the draw mode of a hidden atom).
+    state.initial = { stick: 'none', ball: 'none', sphere: '*' }
+    await chx('show :ALA,SER atoms')
+    expect(selected(rend('chx:stick').sel)).toEqual(['SER7@CA'])
+    expect(selected(rend('chx:sphere').sel)).toEqual(['ALA3@CA', 'ALA3@CB'])
   })
 
   it('starts from the selection as it is now (an undo, or an edit in the GUI)', async () => {
@@ -190,5 +215,12 @@ describe('ChX display state', () => {
       expect(rend(name).entries).toEqual([['chain B', '#0000ff'], ['chain A', '#ff0000']])
     }
     expect(state.switched).toEqual(['chx:stick', 'chx:ball', 'chx:sphere'])
+  })
+
+  it('reaches a map as a whole by its model number only', () => {
+    state.objects.push({ uid: 2, name: 'emd', className: 'DensityMap' })
+    expect(wholeMapsOf(ctx, 1, '#2').map((o) => o.uid)).toEqual([2])
+    expect(wholeMapsOf(ctx, 1, '').map((o) => o.uid)).toEqual([2])
+    expect(wholeMapsOf(ctx, 1, '/A:3-7')).toEqual([])
   })
 })

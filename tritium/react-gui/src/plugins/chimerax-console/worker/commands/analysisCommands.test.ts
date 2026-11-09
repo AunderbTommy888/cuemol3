@@ -26,6 +26,7 @@ const obj = (uid: number) => ({ uid, model: uid, name: `m${uid}`, className: 'Mo
 
 vi.mock('../display', async (importOriginal) => ({
   ...(await importOriginal<object>()),
+  ownedOn: () => new Map(),
   runOp: async (_ctx: unknown, _cc: unknown, name: string, args: Record<string, unknown>) => {
     state.ops.push({ name, args })
     return { ok: true, data: name === 'measure_geometry' ? { exactValue: 3.14159 } : undefined }

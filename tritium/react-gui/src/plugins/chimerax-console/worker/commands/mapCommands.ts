@@ -8,7 +8,13 @@
  * and writes the settings onto those (`map/volumecommand.py`):
  *
  * - `level`: the renderer's `level`, in the map's own values as ChimeraX's;
- *   one level per renderer, so several are refused.
+ *   one level per renderer, so several are refused. `sdLevel x` and
+ *   `rmsLevel x` are turned into that value from the map's mean and standard
+ *   deviation (mean + x*sd, and x*sqrt(mean^2 + sd^2)), as ChimeraX does;
+ *   CueMol's `siglevel` is not used, since on a cryo-EM map it is a top
+ *   fraction, not sigmas. The statistics are the whole map's, ChimeraX's
+ *   the region drawn at the current step (the same for a whole map).
+ * - `capFaces`: the surface renderer's `cap_mode` (on / off).
  * - `style mesh|surface`: `set_renderer_type` between `contour` and
  *   `isosurf` (it keeps the renderer's settings). `image` is refused.
  * - `step`: the renderer's `lod`. It thins an `isosurf`, and a `contour`
@@ -134,7 +140,7 @@ export async function applyXrayMapDefaults(ctx: WorkerContext, cc: CmdContext, o
 }
 
 /** The keywords `volume` reads but does not act on. */
-const VOLUME_IGNORED = ['subdivide', 'subdivisionLevels', 'smoothLines', 'squareMesh', 'capFaces', 'meshLighting', 'brightness', 'dimTransparency']
+const VOLUME_IGNORED = ['subdivide', 'subdivisionLevels', 'smoothLines', 'squareMesh', 'meshLighting', 'brightness', 'dimTransparency']
 
 /**
  * The keywords `volume` does not do, with the reason. Each is display
@@ -145,11 +151,40 @@ const VOLUME_REFUSED: Readonly<Record<string, string>> = {
   surfaceLevels: 'a CueMol map renderer draws one level; give level once',
   meshLevels: 'a CueMol map renderer draws one level; give level once',
   imageLevels: 'image style is not supported',
-  sdLevel: 'give the level in the map\'s values (level)',
-  rmsLevel: 'give the level in the map\'s values (level)',
   encloseVolume: 'a level from an enclosed volume is not supported',
   fastEncloseVolume: 'a level from an enclosed volume is not supported',
-  showOutlineBox: 'CueMol does not draw a map\'s outline box',
+  showOutlineBox: 'not supported yet',
+}
+
+/** A level given in the map's statistics: `sdLevel` or `rmsLevel`, and its factor. */
+interface StatLevel {
+  kind: 'sd' | 'rms'
+  factor: number
+}
+
+/**
+ * Read `sdLevel` / `rmsLevel` (a number, or ChimeraX's `level,brightness`,
+ * whose brightness is dropped). One level per renderer: with `level` too,
+ * `level` wins.
+ */
+function readStatLevel(args: Record<string, string>): { ok: true; level: StatLevel | null } | { ok: false; error: string } {
+  const given = (['sd', 'rms'] as const).filter((k) => args[`${k}Level`] !== '')
+  if (given.length === 0) return { ok: true, level: null }
+  if (given.length > 1 || args.level !== '') return { ok: false, error: 'Error: volume: give one of level, sdLevel and rmsLevel (a CueMol map renderer draws one level)' }
+  const kind = given[0]
+  const factor = Number(args[`${kind}Level`].split(',')[0])
+  if (!Number.isFinite(factor)) return { ok: false, error: `Error: volume: ${kind}Level is a number` }
+  return { ok: true, level: { kind, factor } }
+}
+
+/** The map's own value for a level given in its statistics (`volumecommand.py` `level_and_color_settings`). */
+function levelFromStats(ctx: WorkerContext, sceneId: number, objUid: number, l: StatLevel): string | null {
+  const props = getGenericProps(ctx, { sceneId, nodeId: objUid, nodeType: 'object' })
+  const num = (key: string): number => Number(props.ok ? props.entries.find((e) => e.key === key)?.value : NaN)
+  const mean = num('den_mean')
+  const sd = num('den_sigma')
+  const v = l.kind === 'sd' ? mean + l.factor * sd : l.factor * Math.sqrt(mean * mean + sd * sd)
+  return Number.isFinite(v) ? String(v) : null
 }
 
 /** `volume [spec] level / style / color / transparency / step / region / show / hide`. */
@@ -158,6 +193,9 @@ const volume = chxCommand({
   args: [
     { name: 'volumes', type: SpecArg, role: 'optional' },
     { name: 'level', type: FloatArg, role: 'keyword' },
+    { name: 'sdLevel', type: StringArg, role: 'keyword' },
+    { name: 'rmsLevel', type: StringArg, role: 'keyword' },
+    { name: 'capFaces', type: BoolArg, role: 'keyword' },
     { name: 'style', type: EnumOf(['mesh', 'surface', 'image']), role: 'keyword' },
     { name: 'color', type: ColorArg, role: 'keyword' },
     { name: 'transparency', type: FloatArg, role: 'keyword' },
@@ -169,7 +207,7 @@ const volume = chxCommand({
     ...VOLUME_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
   ],
   mutates: true,
-  summary: 'Set how density maps are drawn: level, style mesh/surface, color, transparency, step, region all, show / hide.',
+  summary: 'Set how density maps are drawn: level (or sdLevel / rmsLevel), style mesh/surface, color, transparency, step, region all, show / hide.',
   async run(ctx, args, cc): Promise<CmdOutcome> {
     warnIgnored(cc, 'volume', args, VOLUME_IGNORED)
     for (const k of Object.keys(VOLUME_REFUSED)) {
@@ -190,6 +228,8 @@ const volume = chxCommand({
     if (args.transparency !== '' && !(Number(args.transparency) >= 0 && Number(args.transparency) <= 1)) {
       return { ok: false, error: 'Error: volume: transparency is 0 to 1' }
     }
+    const statLevel = readStatLevel(args)
+    if (!statLevel.ok) return statLevel
     const color = args.color === '' ? null : splitColorArg(args.color)
     if (color && color.alpha !== null && color.alpha < 1) cc.warn('volume: transparency in a colour is not supported; give transparency')
     const found = mapsOf(ctx, cc.sceneId, args.volumes)
@@ -214,8 +254,14 @@ const volume = chxCommand({
           const res = await setProp(ctx, cc, id, 'region_mode', 'full')
           if (!res.ok) return res
         }
-        if (args.level !== '') {
-          const res = await setProp(ctx, cc, id, 'level', args.level)
+        const level = args.level !== '' ? args.level : statLevel.level ? levelFromStats(ctx, cc.sceneId, m.obj.uid, statLevel.level) : null
+        if (statLevel.level && level === null) return { ok: false, error: `Error: volume: the statistics of "${m.obj.name}" could not be read` }
+        if (level !== null) {
+          const res = await setProp(ctx, cc, id, 'level', level)
+          if (!res.ok) return res
+        }
+        if (args.capFaces !== '' && MAP_STYLES[style !== '' ? STYLE_TYPES[style] : r0.type] === 'surface') {
+          const res = await setProp(ctx, cc, id, 'cap_mode', args.capFaces === 'true' ? 'on' : 'off')
           if (!res.ok) return res
         }
         if (step !== null) {
@@ -258,26 +304,73 @@ const volumeZone = chxCommand({
     if (args.nearAtoms === '') return { ok: false, error: 'Error: volume zone: give nearAtoms' }
     if (args.newMap === 'true') return unsupported('Error: volume zone: newMap true is not supported (CueMol does not cut out a new map)')
     if (args.invert === 'true') return unsupported('Error: volume zone: invert is not supported')
-    const near = targetsOf(ctx, cc.sceneId, args.nearAtoms)
-    if (!near.ok) return near
-    if (near.targets.length === 0) return { ok: false, error: 'Error: volume zone: no atoms specified' }
-    if (near.targets.length > 1) {
-      return { ok: false, error: 'Error: volume zone: the atoms must be in one model (a CueMol map boundary is one molecule\'s atoms)' }
-    }
     const found = mapsOf(ctx, cc.sceneId, args.volumes)
     if (!found.ok) return found
-    // The boundary names its molecule; C++ takes the molecule of that name,
-    // passing over a map of the same name (`Scene::getObjectByNameAs`).
-    const t = near.targets[0]
-    for (const r of found.maps.flatMap((m) => m.rends)) {
-      for (const [prop, value] of [['bndry_molname', t.obj.name], ['bndry_sel', t.sel], ['bndry_rng', args.range]] as const) {
+    return zoneMaps(ctx, cc, 'volume zone', found.maps.map((m) => m.obj), args.nearAtoms, args.range)
+  },
+})
+
+/**
+ * Draw only the part of maps near some atoms: each map renderer's molecule
+ * boundary (`bndry_molname`, `bndry_sel`, `bndry_rng`), which is one
+ * molecule's atoms. `volume zone` and `surface zone` on a map.
+ */
+export async function zoneMaps(ctx: WorkerContext, cc: CmdContext, cmd: string, maps: readonly NumberedObject[], nearSpec: string, range: string): Promise<CmdOutcome> {
+  const near = targetsOf(ctx, cc.sceneId, nearSpec)
+  if (!near.ok) return near
+  if (near.targets.length === 0) return { ok: false, error: `Error: ${cmd}: no atoms specified` }
+  if (near.targets.length > 1) {
+    return { ok: false, error: `Error: ${cmd}: the atoms must be in one model (a CueMol map boundary is one molecule's atoms)` }
+  }
+  // The boundary names its molecule; C++ takes the molecule of that name,
+  // passing over a map of the same name (`Scene::getObjectByNameAs`).
+  const t = near.targets[0]
+  for (const m of maps) {
+    for (const r of mapRenderers(ctx, cc.sceneId, m.uid)) {
+      for (const [prop, value] of [['bndry_molname', t.obj.name], ['bndry_sel', t.sel], ['bndry_rng', range]] as const) {
         const res = await setProp(ctx, cc, r.id, prop, value)
         if (!res.ok) return res
       }
     }
-    return { ok: true }
-  },
-})
+  }
+  return { ok: true }
+}
+
+/** Draw the whole of maps again after a zone (`volume unzone`, `surface unzone` on a map). */
+export async function unzoneMaps(ctx: WorkerContext, cc: CmdContext, maps: readonly NumberedObject[]): Promise<CmdOutcome> {
+  for (const m of maps) {
+    for (const r of mapRenderers(ctx, cc.sceneId, m.uid)) {
+      // The boundary is off only with no molecule name (an empty selection is every atom).
+      for (const [prop, value] of [['bndry_molname', ''], ['region_mode', 'full']] as const) {
+        const res = await setProp(ctx, cc, r.id, prop, value)
+        if (!res.ok) return res
+      }
+    }
+  }
+  return { ok: true }
+}
+
+/** The map objects among an object specification's objects (those with map renderers). */
+/**
+ * Colour the contours of maps and set their opacity (`color` on a map,
+ * ChimeraX's `_set_model_colors` on a volume's surfaces): each contour
+ * renderer, mesh or surface, through `set_map_contour`. A null leaves that
+ * one as it is.
+ */
+export async function colorMaps(ctx: WorkerContext, cc: CmdContext, maps: readonly NumberedObject[], color: string | null, alpha: number | null): Promise<CmdOutcome> {
+  for (const m of maps) {
+    for (const r of mapRenderers(ctx, cc.sceneId, m.uid)) {
+      const res = await runOp(ctx, cc, 'set_map_contour', { rendId: r.id, level: null, extent: null, color, alpha })
+      if (!res.ok) return res
+    }
+  }
+  return { ok: true }
+}
+
+export function mapObjectsOf(ctx: WorkerContext, sceneId: number, spec: string): NumberedObject[] {
+  const found = objectsOf(ctx, sceneId, spec)
+  return found.ok ? found.objs.filter((o) => mapRenderers(ctx, sceneId, o.uid).length > 0) : []
+}
 
 /** `volume unzone [maps]`: the whole map again. */
 const volumeUnzone = chxCommand({
@@ -288,14 +381,7 @@ const volumeUnzone = chxCommand({
   async run(ctx, args, cc): Promise<CmdOutcome> {
     const found = mapsOf(ctx, cc.sceneId, args.volumes)
     if (!found.ok) return found
-    for (const r of found.maps.flatMap((m) => m.rends)) {
-      // The boundary is off only with no molecule name (an empty selection is every atom).
-      for (const [prop, value] of [['bndry_molname', ''], ['region_mode', 'full']] as const) {
-        const res = await setProp(ctx, cc, r.id, prop, value)
-        if (!res.ok) return res
-      }
-    }
-    return { ok: true }
+    return unzoneMaps(ctx, cc, found.maps.map((m) => m.obj))
   },
 })
 

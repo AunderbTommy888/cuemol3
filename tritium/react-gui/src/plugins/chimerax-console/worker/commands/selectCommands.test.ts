@@ -43,7 +43,8 @@ vi.mock('../display', async (importOriginal) => ({
     ok: true,
     targets: [...state.targets].map(([uid, sel]) => ({ obj: { uid, model: uid, name: `m${uid}`, className: 'MolCoord' }, sel })),
   }),
-  readSpec: (_ctx: unknown, _s: number, text: string) => ({ ok: true, node: { kind: 'selector', name: text, pos: 0 } }),
+  // The specification is read up to a space (a stand-in for where a real one ends).
+  readSpec: (_ctx: unknown, _s: number, text: string) => ({ ok: true, node: { kind: 'selector', name: text, pos: 0 }, consumed: text.includes(' ') ? text.indexOf(' ') : text.length }),
   targetsOfNode: (_ctx: unknown, _s: number, node: unknown) => {
     state.node = node
     return { ok: true, targets: [{ obj: { uid: 10, model: 10, name: 'm10', className: 'MolCoord' }, sel: 'S' }] }
@@ -53,6 +54,8 @@ vi.mock('../display', async (importOriginal) => ({
     for (let i = 0; i < (state.counts.get(expr) ?? 1); i++) visit()
   },
 }))
+// The scene is there, so the console's names are kept (chxNames.ts drops a gone scene's).
+vi.mock('@renderer/worker/server/services/helpers/sceneResolver', () => ({ getSceneOrNull: () => ({}) }))
 vi.mock('../models', () => ({
   numberedObjects: () => [10, 20].map((uid) => ({ uid, model: uid, name: `m${uid}`, className: 'MolCoord' })),
   isMolecule: () => true,
@@ -103,15 +106,20 @@ describe('select', () => {
 })
 
 describe('name', () => {
-  it('refuses a specification that means something different in each model', async () => {
+  it('keeps a specification that differs between models in the console only, and one that does not as a CueMol named selection too', async () => {
     state.targets.set(10, 'chain A')
     const out = await SELECT_COMMANDS.name.run(ctx, { name: 'site', text: '#1/A' }, cc)
-    expect(out.ok).toBe(false)
+    expect(out.ok).toBe(true)
     expect(state.ops.filter((o) => o.name === 'define_selection')).toEqual([])
 
     state.targets.set(20, 'chain A')
     expect((await SELECT_COMMANDS.name.run(ctx, { name: 'site', text: '/A' }, cc)).ok).toBe(true)
     expect(state.ops.filter((o) => o.name === 'define_selection').map((o) => o.args.selection)).toEqual(['chain A'])
+  })
+
+  it('refuses a text only partly a specification, rather than naming less than written', async () => {
+    const out = await SELECT_COMMANDS.name.run(ctx, { name: 'part', text: '#1/k junk' }, cc)
+    expect(out.ok).toBe(false)
   })
 })
 

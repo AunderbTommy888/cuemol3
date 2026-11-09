@@ -50,9 +50,8 @@ CueMol 側の機能追加が要るもの、断るもの、共通の対策) で�
 | `coulombic` | 8 | `calc_elepot` と表面の静電ポテンシャルの色付け | CueMol は APBS (ポアソン・ボルツマン、APBS が要る)、ChimeraX は Coulomb の和 (距離依存の誘電率)。値も見た目も違う |
 | `morph #1,2` | 9 | MorphMol (`add_morph_frame`) | ChimeraX の trajectory と再生 (`coordset`) の仕組みと、CueMol の Animation を合わせる設計 |
 | `sym #1 assembly n` | 3 | (無い) | mmCIF の会合体の情報が要る。CueMol の `show_symmetry` は結晶の対称で意味が違う |
-| `unitcell` (分子のコピーで単位胞を埋める) | 1 | (無い) | コピーを model として作る仕組み (`sym` と一緒に検討) |
+| `unitcell` (分子のコピーを model として作る部分) | 1 | `create_symmetry_copy` | 表示だけは実装済み (symm renderer)。後のコマンドが名指せる model のコピーと番号の管理は `sym` と一緒に検討 |
 | `clashes` / `contacts` / `interfaces` | 6 | (一部 `analyze_interactions`) | 判定の基準が CueMol に無い |
-| `nucleotides` | 2 | `nucl` renderer の塩基の描き方 | ChimeraX の `stubs` `slab` などとの対応を調べる。Cartoons/Nucleotides の preset もこれ待ち |
 
 ## 3. CueMol 側の機能追加が必要なもの
 
@@ -72,8 +71,8 @@ CueMol 側の機能追加が要るもの、断るもの、共通の対策) で�
   `scene save`、`.cxs` の保存。console から操作する意味が薄く、CueMol では GUI で行う。
 - **配列・外部データベースの解析**: `color byattr seq_conservation`、`sequence associate`、`blast`、
   `alphafold match` / `pae`、`mutationscores`、`alpha_missense`。ChimeraX の配列ビューアや外部サービスが前提。
-- **model を動かす・組み替える**: `turn/move ... model`、`view matrix models`、`mcopy`、`split`、`combine`、
-  `changechains`。CueMol の object は自分の位置を持たない (今も理由を言って断っている)。
+- **model を組み替える**: `mcopy`、`split`、`combine`、`changechains`。(`turn/move ... models`、`view matrix models` は
+  断る対象ではない: §7)
 - **構造の編集・モデリング**: `swapaa`、`addh`、`dockprep`、`resfit`、`molmap`、`clashes`、`contacts` (後の 2 つは
   `analyze_interactions` で一部できるかもしれないので、`hbonds` を作るときに再検討)。
 - **既に方針として断っているもの**: `name frozen`、sub-model (`#1.1`)、`#!`、`cofr <spec>`。
@@ -117,3 +116,54 @@ ChX の `view` だけが渡していなかった)。op に引数が足される�
 | `encloseVolume` | 30 | 色と step は効くが、閾値は ChimeraX と違う | [261108-em-map-features-plan](261108-em-map-features-plan.md) |
 | 大きな断層像の地図 | 54、55 | ChimeraX は断面の画像で出す。CueMol は何も写らない | 画像 (image) 表示が無いための機能差 |
 | 2 つ目の地図の open | (quickstart には無い) | EMDB / URL の地図は op 側が毎回地図に合わせるので、ChimeraX と違って視点が動く | GUI と共通の op なので変えていない |
+
+## 7. 作れるが未実装のもの (2026-11-08 の点検)
+
+ChX が「CueMol に無い」として断っていた箇所を、renderer の property (.qif)・style・既存の op と突き合わせて点検した
+(誤判定だった核酸の板、円柱の helix、`ringFill`、`sdLevel` / `rmsLevel`、`capFaces`、`distance` の色・太さ、
+`save displayedOnly` / `.stl`、`unitcell` の表示、`fromcartoons`、`depthCue` の文言は直した。
+[console-chimerax-dialect](../architecture/console-chimerax-dialect.md) §6 の冒頭の原則も参照)。残りで、既存の機能で
+作れるが規模のあるもの:
+
+| 項目 | 使える CueMol の機能 | 要る作業 |
+|---|---|---|
+| `size <分子の一部> stickRadius` | ballstick の `bondw` | `bondw` は renderer に 1 つ。一部だけ変えるには stick の renderer を分ける (`display.ts` の renderer の分け方の拡張) |
+| `surface dust`、`surface zone ... maxComponents` | `DistFieldSurfBuilder` の連結成分の列挙 | 今の `pruneComponents` は原子の表面からの距離で成分を残す (SES の外側の殻を除く処理) で、大きさで消す機能ではない。大きさの metric (ChimeraX の既定 `size` は bounding box の最大の辺) の集計と、原子を持たない map の表面への適用を C++ で足す |
+| 選択の強調表示が隠した原子も描く | `SelectionRenderer` | 分子の選択をすべて描く (`SelectionRenderer.cpp`)。表示中の原子だけを描く option を足す C++ の変更。GUI の挙動も変わるので判断が要る |
+| `view matrix models`、`turn` / `move ... models` / `atoms` | object の `xformMat`、`MolCoord.xformByMat` | fit や superpose (`keepAsProperty`) との兼ね合いの設計 |
+| `clip` | View の `slab` | slab は中心に対称な 1 つだけ (§3) |
+| `contacts` | `calcAtomContact*JSON` | [261108-hbonds-geometric-detection-plan](261108-hbonds-geometric-detection-plan.md) と一緒に |
+| `coulombic` | dsurface の `colormode potential` | ChimeraX の部分電荷からの Coulomb の和 (距離依存の誘電率) を計算する部分。APBS の `calc_elepot` は別の計算 (§2) |
+| `label height` の zoom への追従 | ラベルの `font_size` | 今は今の zoom での換算。zoom や viewport の変化に合わせて直すか、Å で描くラベルが要る |
+| `log clear` | console の `clear()` | dialect から呼ぶ hook |
+| `volume style image` | `GLSLMapVolRenderer` | 近似の設計 |
+| `cartoon style` の arrows / sides / worm、`cartoon suppressBackboneDisplay`、`label offset` | renderer の property | 対応づけの設計 |
+
+`camera` の stereo の各方式と `eyeSeparation`、配列ごとのランダムな色 (`bypolymer` / `byidentity`、medium / large
+polymer の open 時の色) は対応しない (ユーザー判断)。
+
+図の script の段階 B (r2) で残ったもののうち、plugin の外の変更が要るもの (ChX は「not supported yet」のまま):
+
+| 項目 | 要るもの |
+|---|---|
+| `clip` | 中心に対称でない near / far の面 (§3 と同じ) |
+| `2dlabels` / `key` | 画面に固定した文字・凡例の renderer (§8) |
+| `size ... atomRadius` | 原子ごとの半径 (§8) |
+| `surface dust`、`surface zone ... maxComponents` | `261108-map-surface-dust-plan.md` |
+| `label ... bgColor`、`lighting depthCueStart/End`、`set silhouetteDepthJump` | ラベルの背景、slab と別の fog の範囲、輪郭線の深さの閾値 |
+| `::area` | 残基の溶媒露出面積の属性 |
+| `color zone` | 地図の等値面を近くの原子の色で塗る色付け (`colormode molecule`) は C++ にあるが、その状態で画像を書き出すと `ImgSceneExporter::write` が例外になる (1a0m とその EDS の地図で再現: `volume #2 style surface` の後に原子の色付けにすると、以後の `save` がすべて失敗する)。この不具合を直してから使う。距離の上限 (`MapSurfRenderer::getColorMol` の最も近い原子の探索) も無い |
+| `transparency` / `cartoon style modeHelix` を分子の一部に | renderer を分ける `display.ts` の設計の拡張 (原則 4) |
+
+`windowsize` は対応しない (ユーザー判断。画像は `save` の `width` / `height` で決まる)。`preset pub` は ChimeraX 1.12
+でも 2 つに当たって error になる (script 側の問題)。
+
+## 8. 既存の API に無いもの (同じ点検で探して無かったもの)
+
+作れないという判断ではなく、今の .qif・op に相当するものが無いという意味。
+
+- `volume gaussian` など地図の filter: `src/modules/xtal` の .qif / .hpp に gauss / smooth / filter が無い。
+- `fitmap`: 地図とモデルの当てはめ (ssm / mmdb の superpose だけ)。
+- `mlp`: 親油性ポテンシャルの計算が無い。
+- `2dlabels` / `key`: 画面に固定した文字・色の凡例の renderer が無い (ラベルは原子に付く 3D のものだけ)。
+- 配列ビューア、`lighting` の光の向きと強さ (Umbreon の書き出しにだけある)、原子ごとの半径 (CPK は元素ごとの `vdwr_*`)。

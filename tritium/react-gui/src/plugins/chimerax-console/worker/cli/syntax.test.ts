@@ -42,8 +42,8 @@ describe('ChX syntax', () => {
     expect(resolve('cartoon hide :1-5')).toBe('cartoon hide')
     expect(resolve('cartoon h')).toBe('cartoon hide')
     // ChimeraX's short forms, which bundle order decides.
-    expect(['sel', 'su', 'tr', 'tu', 'sa', 'la', 'di', 'mm', 'al'].map(resolve)).toEqual(
-      ['select', 'surface', 'transparency', 'turn', 'save', 'label', 'distance', 'mmaker', 'alias'],
+    expect(['sel', 'su', 'tr', 'tu', 'sa', 'la', 'di', 'mm', 'al', 'disp', '~disp'].map(resolve)).toEqual(
+      ['select', 'surface', 'transparency', 'turn', 'save', 'label', 'distance', 'mmaker', 'alias', 'display', '~display'],
     )
     expect(resolve('bogus')).toMatch(/unknown command/)
   })
@@ -77,5 +77,13 @@ describe('ChX syntax', () => {
 
   it('keeps the backslashes of a quoted file name', () => {
     expect(bind('open "C:\\Users\\x.pdb"')).toMatchObject({ kind: 'args', args: { names: 'C:\\Users\\x.pdb' } })
+  })
+})
+
+describe('ChimeraX forms from the figure scripts', () => {
+  it('reads a snake_case keyword as camelCase, graphics bgColor, and color modify\'s operator', () => {
+    expect(bind('set bg_color gray')).toMatchObject({ kind: 'args', args: { bgColor: expect.stringMatching(/^#/) } })
+    expect(resolve('graphics bgColor white')).toBe('graphics')
+    expect(bind('color modify /b whiteness - 50')).toMatchObject({ kind: 'args', args: { objects: '/b', adjuster: 'whiteness', op: '-', number: '50' } })
   })
 })

@@ -18,7 +18,16 @@
  * when an atom moves from one style to another.
  *
  * Limit: CueMol has no per-atom display flag, so the style of a hidden atom
- * is not kept -- an atom shown again comes back as a stick.
+ * is not kept -- an atom shown again comes back in the style the automatic
+ * styling gives it (`autoStyle.ts` `initialStylesOf`).
+ *
+ * Nucleic acids: the backbone is drawn by `chx:nucl` (a tube through the
+ * phosphates) and the bases by `chx:nuclbase` (a `nucl` renderer drawing no
+ * tube), both following the cartoon (`show` / `hide` cartoons). The bases
+ * are slabs or a ladder while `chx:nuclbase` is shown (`nucleotides`), and
+ * drawn by nothing (atoms) while it is hidden. ChimeraX ties the slabs to
+ * the base atoms' display instead: here hiding the cartoon hides the slabs
+ * too, and hiding the atoms leaves them.
  */
 
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
@@ -32,12 +41,13 @@ import { makeSel } from '@renderer/worker/server/services/helpers/makeSel'
 import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneResolver'
 import type { CmdContext, OpRun } from '@plugins/console/worker/dialect-api'
 import { runOp as runConsoleOp } from '@plugins/console/worker/dialect-api'
-import { emitFor, NONE } from './spec/emit'
+import { ALL, emitFor, NONE } from './spec/emit'
 import type { EmitContext } from './spec/emit'
 import type { SpecNode } from './spec/parse'
 import { parseSpec, SpecError } from './spec/parse'
 import { isSelector, withSceneSelectors } from './spec/selectors'
 import { selectionNames } from './names'
+import { chxNames } from './chxNames'
 import { isMolecule, numberedObjects } from './models'
 import type { NumberedObject } from './models'
 
@@ -51,6 +61,10 @@ interface OwnedKind {
   styles: string
   /** What it is limited to (the ribbon draws proteins, `nucl` nucleic acids). */
   scope?: string
+  /** Properties set after the styles, which the styles do not give. */
+  props?: readonly [string, string][]
+  /** Made hidden (`chx:nuclbase` is shown only while bases are slabs or a ladder). */
+  hidden?: boolean
 }
 
 /** The atom renderers, one per ChimeraX atom style. */
@@ -65,10 +79,25 @@ export type AtomStyle = keyof typeof ATOM_STYLES
 /** The ribbon renderers: the protein cartoon and its nucleic acid companion. */
 export const CARTOONS: readonly OwnedKind[] = [
   { name: 'chx:cartoon', type: 'ribbon', styles: 'DefaultRibbon,DefaultHSCPaint', scope: 'protein' },
-  { name: 'chx:nucl', type: 'nucl', styles: 'DefaultNucl', scope: 'nucleic' },
+  // A tube along the phosphates, drawn as `nucl`'s tube was (DefaultNucl: pivot P, a round
+  // square section); a `tube` cannot take DefaultNucl itself. The bases are chx:nuclbase's.
+  {
+    name: 'chx:nucl', type: 'tube', styles: 'DefaultHSCPaint', scope: 'nucleic',
+    props: [['pivotatom', 'P'], ['axialdetail', '8'], ['section.type', 'roundsquare'], ['section.width', '0.4'], ['section.tuber', '2.5']],
+  },
 ]
 
-const ALL_KINDS: readonly OwnedKind[] = [...Object.values(ATOM_STYLES), ...CARTOONS]
+/** The renderer drawing nucleic acid bases as slabs (`base_type` detail1) or a ladder (basepair). */
+export const NUCL_BASE: OwnedKind = {
+  name: 'chx:nuclbase',
+  type: 'nucl',
+  styles: 'DefaultNucl',
+  scope: 'nucleic',
+  props: [['show_tube', 'false'], ['base_type', 'detail1']],
+  hidden: true,
+}
+
+const ALL_KINDS: readonly OwnedKind[] = [...Object.values(ATOM_STYLES), ...CARTOONS, NUCL_BASE]
 
 /** Run a catalog op as part of this command (the console's `runOp`, tagged `chx`). */
 export function runOp(ctx: WorkerContext, cc: CmdContext, name: string, args: Record<string, unknown>): Promise<OpRun> {
@@ -138,9 +167,11 @@ export function emitContext(ctx: WorkerContext, sceneId: number): EmitContext {
     const obj = mols.find((m) => m.model === model)
     if (obj) forEachAtom(ctx, sceneId, obj.uid, expr, (a) => visit(a.chainName))
   }
+  const own = chxNames(ctx, sceneId)
+  const names = selectionNames(ctx, sceneId)
   return {
     models: mols.map((m) => ({ model: m.model, name: m.name })),
-    namedSelections: selectionNames(ctx, sceneId),
+    namedSelections: names,
     currentSelection(model) {
       const obj = mols.find((m) => m.model === model)
       if (!obj) return NONE
@@ -159,16 +190,26 @@ export function emitContext(ctx: WorkerContext, sceneId: number): EmitContext {
       eachAtom(model, expr, () => { hit = true; return false })
       return hit
     },
+    displayedAtoms(model) {
+      const obj = mols.find((m) => m.model === model)
+      return obj ? displayedAtoms(ctx, sceneId, obj.uid) : NONE
+    },
+    expandName(name) {
+      const spec = own.get(name)
+      if (spec === undefined) return undefined
+      const read = withSceneSelectors(names, () => parseSpec(spec, isSelector))
+      return read?.node
+    },
   }
 }
 
 /** A specification read into its tree, with the scene's named selections as selectors. */
-export function readSpec(ctx: WorkerContext, sceneId: number, spec: string): { ok: true; node: SpecNode } | { ok: false; error: string; unsupported?: true } {
+export function readSpec(ctx: WorkerContext, sceneId: number, spec: string): { ok: true; node: SpecNode; consumed: number } | { ok: false; error: string; unsupported?: true } {
   try {
     const names = selectionNames(ctx, sceneId)
     const read = withSceneSelectors(names, () => parseSpec(spec, isSelector))
     if (!read) return { ok: false, error: `Error: "${spec}" is not an atom specification` }
-    return { ok: true, node: read.node }
+    return { ok: true, node: read.node, consumed: read.consumed }
   } catch (e) {
     if (e instanceof SpecError) return { ok: false, error: specError(spec, e), ...(e.unsupported ? { unsupported: true as const } : {}) }
     throw e
@@ -243,8 +284,79 @@ export async function ensureOwned(ctx: WorkerContext, cc: CmdContext, obj: Numbe
     ids.set(kind.name, id)
     const styled = await runOp(ctx, cc, 'set_renderer_styles', { rendId: id, styles: kind.styles })
     if (!styled.ok) return styled
+    for (const [prop, value] of kind.props ?? []) {
+      const set = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: id, prop, value })
+      if (!set.ok) return set
+    }
+    if (kind.hidden) {
+      const hid = await runOp(ctx, cc, 'set_visible', { nodeId: id, nodeType: 'renderer', visible: false })
+      if (!hid.ok) return hid
+    }
   }
   return { ok: true, ids }
+}
+
+/** Whether a renderer is shown (its `visible`). */
+export function isVisible(ctx: WorkerContext, sceneId: number, rendId: number): boolean {
+  const props = getGenericProps(ctx, { sceneId, nodeId: rendId, nodeType: 'renderer' })
+  return props.ok ? props.entries.find((e) => e.key === 'visible')?.value !== false : false
+}
+
+/** Whether an object is shown (its `visible`; `hide ... models` clears it). */
+export function isObjectVisible(ctx: WorkerContext, sceneId: number, objUid: number): boolean {
+  const props = getGenericProps(ctx, { sceneId, nodeId: objUid, nodeType: 'object' })
+  return props.ok ? props.entries.find((e) => e.key === 'visible')?.value !== false : false
+}
+
+/**
+ * The objects other than molecules (maps) a specification reaches as a
+ * whole: every one for an empty specification, else those a model part
+ * names with nothing below it (`#1`, `#1-3`). A chain, residue, atom or
+ * selector part reaches atoms only, so no map (as in ChimeraX, where a
+ * volume has none).
+ */
+export function wholeMapsOf(ctx: WorkerContext, sceneId: number, spec: string): NumberedObject[] {
+  const maps = numberedObjects(ctx, sceneId).filter((o) => !isMolecule(o))
+  if (spec.trim() === '' || maps.length === 0) return maps
+  const read = readSpec(ctx, sceneId, spec)
+  if (!read.ok) return []
+  const ec = emitContext(ctx, sceneId)
+  return maps.filter((o) => {
+    try {
+      return emitFor(read.node, o.model, ec) === ALL
+    } catch (e) {
+      if (e instanceof SpecError) return false
+      throw e
+    }
+  })
+}
+
+/** How a molecule's bases are drawn: as atoms, or by `chx:nuclbase` as slabs or a ladder. */
+export type BaseMode = 'atoms' | 'slab' | 'ladder'
+
+/** The base mode of a molecule, from its `chx:nuclbase` (shown, and its `base_type`). */
+export function baseMode(ctx: WorkerContext, sceneId: number, ids: Map<string, number>): BaseMode {
+  const id = ids.get(NUCL_BASE.name)
+  if (id === undefined || !isVisible(ctx, sceneId, id)) return 'atoms'
+  const props = getGenericProps(ctx, { sceneId, nodeId: id, nodeType: 'renderer' })
+  return props.ok && props.entries.find((e) => e.key === 'base_type')?.value === 'basepair' ? 'ladder' : 'slab'
+}
+
+/**
+ * The atoms of a molecule ChimeraX counts as displayed (its atom `display`
+ * flag): what the shown atom renderers draw. Ribbons, tubes, base slabs and
+ * surfaces are not atoms. `none` for a molecule the console never touched.
+ * One definition for `@@display` and `save displayedOnly`.
+ */
+export function displayedAtoms(ctx: WorkerContext, sceneId: number, objUid: number): string {
+  const owned = ownedOn(ctx, sceneId, objUid)
+  let out = NONE
+  for (const name of Object.values(ATOM_STYLES).map((k) => k.name)) {
+    const id = owned.get(name)
+    if (id === undefined || !isVisible(ctx, sceneId, id)) continue
+    out = union(out, readSel(ctx, sceneId, id))
+  }
+  return out
 }
 
 /** `(a) or (b)`, simplified where one side is everything or nothing. */

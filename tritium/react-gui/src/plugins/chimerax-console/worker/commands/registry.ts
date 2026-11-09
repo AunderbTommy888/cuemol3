@@ -12,7 +12,7 @@ import { COLOR_COMMANDS } from './colorCommands'
 import { DISPLAY_COMMANDS } from './displayCommands'
 import { FILE_COMMANDS } from './fileCommands'
 import { MISC_COMMANDS, setCommandList } from './miscCommands'
-import { VIEW_COMMANDS } from './viewCommands'
+import { VIEW_COMMANDS, keepingSilhouettes } from './viewCommands'
 import { ALIAS_COMMANDS, setAliasCommandList } from './aliasCommands'
 import { SELECT_COMMANDS } from './selectCommands'
 import { REPR_COMMANDS } from './reprCommands'
@@ -20,8 +20,11 @@ import { ANALYSIS_COMMANDS } from './analysisCommands'
 import { LOOK_COMMANDS } from './lookCommands'
 import { MAP_COMMANDS, MAP_OPERATION_COMMANDS } from './mapCommands'
 
-/** Every command, in ChimeraX's registration order. */
-export const CHX_COMMANDS: readonly ChxCommand[] = [
+/**
+ * Every command, in ChimeraX's registration order. Each keeps the silhouettes'
+ * width in pixels across a camera move (`keepingSilhouettes`).
+ */
+export const CHX_COMMANDS: readonly ChxCommand[] = ([
   ALIAS_COMMANDS.alias,
   ALIAS_COMMANDS.aliasList,
   ALIAS_COMMANDS.aliasDelete,
@@ -37,12 +40,18 @@ export const CHX_COMMANDS: readonly ChxCommand[] = [
   COLOR_COMMANDS.color,
   COLOR_COMMANDS.colorByattribute,
   COLOR_COMMANDS.colorBfactor,
+  COLOR_COMMANDS.colorList,
+  COLOR_COMMANDS.colorZone,
+  COLOR_COMMANDS.colorModify,
   COLOR_COMMANDS.colour,
   FILE_COMMANDS.delete,
   VIEW_COMMANDS.graphicsSilhouettes,
+  VIEW_COMMANDS.graphics,
   DISPLAY_COMMANDS.hide,
   LOOK_COMMANDS.lighting,
+  LOOK_COMMANDS.lightingModel,
   VIEW_COMMANDS.move,
+  DISPLAY_COMMANDS.nucleotides,
   FILE_COMMANDS.open,
   COLOR_COMMANDS.rainbow,
   LOOK_COMMANDS.ribbon,
@@ -57,6 +66,7 @@ export const CHX_COMMANDS: readonly ChxCommand[] = [
   SELECT_COMMANDS.selectDown,
   SELECT_COMMANDS.unselect,
   VIEW_COMMANDS.set,
+  VIEW_COMMANDS.wait,
   DISPLAY_COMMANDS.show,
   REPR_COMMANDS.size,
   DISPLAY_COMMANDS.style,
@@ -80,12 +90,19 @@ export const CHX_COMMANDS: readonly ChxCommand[] = [
   REPR_COMMANDS.surface,
   REPR_COMMANDS.surfaceHidePatches,
   REPR_COMMANDS.surfaceClose,
+  REPR_COMMANDS.surfaceZone,
+  REPR_COMMANDS.surfaceUnzone,
   REPR_COMMANDS.unsurface,
   ANALYSIS_COMMANDS.matchmaker,
   ANALYSIS_COMMANDS.mmaker,
   ANALYSIS_COMMANDS.distance,
+  ANALYSIS_COMMANDS.dssp,
   ANALYSIS_COMMANDS.distanceDelete,
   ANALYSIS_COMMANDS.undistance,
+  // show / hide's other names, after distance so that `di` stays `distance`.
+  DISPLAY_COMMANDS.display,
+  DISPLAY_COMMANDS.unshow,
+  DISPLAY_COMMANDS.undisplay,
   SELECT_COMMANDS.info,
   SELECT_COMMANDS.infoModels,
   SELECT_COMMANDS.infoChains,
@@ -106,7 +123,7 @@ export const CHX_COMMANDS: readonly ChxCommand[] = [
   LOOK_COMMANDS.unitcellOutline,
   LOOK_COMMANDS.unitcellDelete,
   MISC_COMMANDS.help,
-]
+] as ChxCommand[]).map(keepingSilhouettes)
 
 setCommandList(() => CHX_COMMANDS)
 setAliasCommandList(() => CHX_COMMANDS)

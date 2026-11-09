@@ -11,7 +11,9 @@
  *   as a stick, the model colour with heteroatoms by element.
  * - small polymer: the cartoon, the ligands and metals with the residues
  *   within 3.6 A of them as sticks (metals and ions as spheres), hydrogens
- *   on carbon hidden, the model colour with heteroatoms by element.
+ *   on carbon hidden, the model colour with heteroatoms by element. Nucleic
+ *   acid bases are slabs (100 nucleotides or fewer) or a ladder (2000 or
+ *   fewer), coloured by base (`nucleotides`, `nucleotide_colors`).
  * - medium polymer: every atom as a sphere, ligands as sticks, solvent as
  *   balls; coloured by chain when all chains have one sequence, ligands and
  *   solvent by element.
@@ -27,10 +29,16 @@
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
 import { chainColor, modelColor } from './colorSchemes'
-import { ATOM_STYLES, CARTOONS, ensureOwned, forEachAtom, minus, writeSel } from './display'
+import { ATOM_STYLES, CARTOONS, ensureOwned, forEachAtom, minus, NUCL_BASE, writeSel } from './display'
+import type { AtomStyle, BaseMode } from './display'
+import { nucleotideEntries } from './colorSchemes'
 import type { NumberedObject } from './models'
 import { NONE } from './spec/emit'
+import { HALIDE_ION, LIGAND, METAL, NONPOLAR_H } from './atomClasses'
+
+export { LIGAND, METAL, NONPOLAR_H }
 import { elementEntries, paintTarget } from './commands/colorCommands'
+import { setBaseMode } from './commands/displayCommands'
 import type { PaintEntry } from './commands/colorCommands'
 
 /** ChimeraX's size thresholds (`atomic/structure.py`). */
@@ -38,41 +46,10 @@ const SMALL_THRESHOLD = 200_000
 const MEDIUM_THRESHOLD = 1_000_000
 const MIN_RIBBON_THRESHOLD = 10
 const MAX_RIBBON_THRESHOLD = 5000
+const SLAB_THRESHOLD = 100
+const LADDER_THRESHOLD = 2000
 
 const POLYMER = '(protein or nucleic)'
-
-/** Metal elements found in structures. */
-const METALS = [
-  'Li', 'Na', 'K', 'Rb', 'Cs', 'Be', 'Mg', 'Ca', 'Sr', 'Ba', 'Al', 'Ga', 'In', 'Tl', 'Sn', 'Pb', 'Bi',
-  'Sc', 'Ti', 'V', 'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Y', 'Zr', 'Mo', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd',
-  'W', 'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'La', 'Ce', 'Eu', 'Gd', 'Tb', 'Yb', 'Lu', 'U',
-]
-
-/** Metal atoms. */
-export const METAL = `elem ${METALS.join(',')}`
-
-/** Ions that are not metals (halides), as ligands. */
-const HALIDE_ION = 'ligand and elem F,Cl,Br,I'
-
-/** Ligands, metals included, ions that are not metals left out (`ligand_like_atoms` with the metals). */
-export const LIGAND = `ligand and not (${HALIDE_ION})`
-
-/** Hydrogens on N, O or S in the standard residues, by name. */
-const POLAR_H = [
-  'name H,H1,H2,H3,HN',
-  'resn ARG and name HE,HH11,HH12,HH21,HH22',
-  'resn ASN and name HD21,HD22',
-  'resn GLN and name HE21,HE22',
-  'resn HIS and name HD1,HE2',
-  'resn TRP and name HE1',
-  'resn LYS and name HZ1,HZ2,HZ3',
-  'resn SER,CYS and name HG',
-  'resn THR and name HG1',
-  'resn TYR and name HH',
-].map((s) => `(${s})`).join(' or ')
-
-/** Hydrogens on carbon in proteins (ChimeraX's IDATM type HC), told by name. */
-export const NONPOLAR_H = `protein and hydrogen and not (${POLAR_H})`
 
 /** The atoms the small-polymer style shows: the residues within 3.6 A of a ligand or metal. */
 export const SMALL_SHOWN = minus(`byres ((${LIGAND}) expand 3.6)`, NONPOLAR_H)
@@ -93,6 +70,24 @@ export function autoStyleOf(m: MoleculeSize): AutoStyle {
   if (m.chains < 5 && m.atoms < SMALL_THRESHOLD && m.residues < MAX_RIBBON_THRESHOLD) return 'small polymer'
   if (m.chains < 250 && m.atoms < MEDIUM_THRESHOLD) return 'medium polymer'
   return 'large polymer'
+}
+
+/** How many nucleic acid residues a molecule has. */
+function nucleicCount(ctx: WorkerContext, sceneId: number, objUid: number): number {
+  let n = 0
+  let lastKey = ''
+  forEachAtom(ctx, sceneId, objUid, 'nucleic', (a) => {
+    const key = `${a.chainName}:${a.residIndex}`
+    if (key !== lastKey) n++
+    lastKey = key
+  })
+  return n
+}
+
+/** The nucleotides a small polymer draws: slabs, a ladder, or (too many) neither. */
+export function baseModeOf(nucleotides: number): BaseMode | null {
+  if (nucleotides === 0 || nucleotides > LADDER_THRESHOLD) return null
+  return nucleotides <= SLAB_THRESHOLD ? 'slab' : 'ladder'
 }
 
 /** A molecule's size, read from its atoms. */
@@ -119,6 +114,32 @@ function sizeOf(ctx: WorkerContext, sceneId: number, objUid: number): MoleculeSi
   }
 }
 
+/**
+ * The style an atom comes back in when it is shown again: the one the
+ * automatic styling gave it. ChimeraX keeps an atom's draw mode apart from
+ * its display, and the styling sets it for every atom, shown or not (small
+ * polymer: sticks, metals and ions spheres; medium: spheres, ligands sticks,
+ * solvent balls; large: spheres, the atom's default). CueMol draws an atom
+ * only in the renderer of its style, so a hidden atom has none; this is
+ * what it would have had, from the molecule's size. A `style` given while
+ * the atom was hidden is not kept.
+ */
+export function initialStylesOf(ctx: WorkerContext, sceneId: number, objUid: number): Record<AtomStyle, string> {
+  const size = sizeOf(ctx, sceneId, objUid)
+  const style = autoStyleOf(size)
+  if (style === 'non-polymer' || (style === 'small polymer' && size.residues <= MIN_RIBBON_THRESHOLD)) {
+    return { stick: '*', ball: NONE, sphere: NONE }
+  }
+  if (style === 'small polymer') {
+    const spheres = `(${METAL} or ${HALIDE_ION})`
+    return { stick: minus('*', spheres), ball: NONE, sphere: spheres }
+  }
+  if (style === 'medium polymer') {
+    return { stick: LIGAND, ball: 'water', sphere: minus('*', `(${LIGAND}) or water`) }
+  }
+  return { stick: NONE, ball: NONE, sphere: '*' }
+}
+
 /** The selections of the console's renderers a style draws. */
 interface Shown {
   stick: string
@@ -142,6 +163,7 @@ export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: Nu
   const model = modelColor(obj.model)
   if (!model.exact) cc.warn(`open: #${obj.model} is past ChimeraX's model colours; its colour differs from ChimeraX's`)
   const none = NONE
+  let bases: BaseMode | null = null
   let shown: Shown
   // Paint entries per target letters, painted in order (a later entry wins).
   let paints: [string, PaintEntry[]][]
@@ -151,6 +173,7 @@ export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: Nu
     paints = [['ac', [['*', model.hex]]], ['a', elementEntries('*', false)]]
   } else if (style === 'small polymer') {
     const spheres = `(${SMALL_SHOWN}) and (${METAL} or ${HALIDE_ION})`
+    bases = baseModeOf(nucleicCount(ctx, cc.sceneId, obj.uid))
     shown = { stick: minus(SMALL_SHOWN, spheres), ball: none, sphere: spheres, cartoon: 'protein', nucl: 'nucleic' }
     paints = [['ac', [['*', model.hex]]], ['a', elementEntries('*', false)]]
   } else if (style === 'medium polymer') {
@@ -170,6 +193,7 @@ export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: Nu
     [ATOM_STYLES.sphere.name, shown.sphere],
     [CARTOONS[0].name, shown.cartoon],
     [CARTOONS[1].name, shown.nucl],
+    [NUCL_BASE.name, shown.nucl],
   ]
   for (const [name, sel] of writes) {
     const id = ids.get(name)
@@ -183,6 +207,13 @@ export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: Nu
   for (const [i, [target, entries]] of paints.entries()) {
     const res = await paintTarget(ctx, cc, { obj, sel: '*' }, target, entries, false, i === 0)
     if (!res.ok) return res
+  }
+  const drawn = await setBaseMode(ctx, cc, ids, bases ?? 'atoms')
+  if (!drawn.ok) return drawn
+  if (bases) {
+    // The base slabs by base (`nucleic.ring_colors = nucleotide_colors(...)`); the rest keeps the model colour.
+    const ringed = await paintTarget(ctx, cc, { obj, sel: '*' }, 'f', nucleotideEntries(), false, true)
+    if (!ringed.ok) return ringed
   }
   return { ok: true }
 }
