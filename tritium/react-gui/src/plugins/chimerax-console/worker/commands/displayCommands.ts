@@ -25,14 +25,18 @@ import {
   minus,
   NUCL_BASE,
   ownedOn,
+  readAtomSets,
   readSel,
   runOp,
+  STYLE_KEYS,
   targetsOf,
   union,
+  unionOf,
   wholeMapsOf,
+  writeAtomSets,
   writeSel,
 } from '../display'
-import type { AtomStyle, BaseMode, Target } from '../display'
+import type { AtomSets, AtomStyle, BaseMode, Target } from '../display'
 import { numberedObjects } from '../models'
 import type { NumberedObject } from '../models'
 import { hideSurfaces, showSurfaces } from '../surface'
@@ -113,24 +117,8 @@ async function showHide(
     const owned = await ensureOwned(ctx, cc, t.obj)
     if (!owned.ok) return owned
     if (parts.has('atoms')) {
-      const r = atomRenderers(owned.ids)
-      const sel = (id: number) => readSel(ctx, cc.sceneId, id)
-      // With `only`, what each style shows outside the specification goes.
-      const kept = (id: number) => (only ? intersect(sel(id), t.sel) : sel(id))
-      let writes: [number, string][]
-      if (show) {
-        // Atoms already shown keep their style; the others come in with the
-        // one the automatic styling gave them (autoStyle.ts).
-        const fresh = minus(t.sel, union(union(sel(r.stick), sel(r.ball)), sel(r.sphere)))
-        const initial = fresh === NONE ? null : initialStylesOf(ctx, cc.sceneId, t.obj.uid)
-        writes = (['stick', 'ball', 'sphere'] as const).map((s) => [r[s], union(kept(r[s]), initial ? intersect(fresh, initial[s]) : NONE)])
-      } else {
-        writes = [r.stick, r.ball, r.sphere].map((id) => [id, minus(sel(id), t.sel)])
-      }
-      for (const [id, next] of writes) {
-        const w = await writeSel(ctx, cc, id, next)
-        if (!w.ok) return w
-      }
+      const res = await showHideAtoms(ctx, cc, t, owned.ids, show, only)
+      if (!res.ok) return res
     }
     if (parts.has('cartoons')) {
       // The base slabs follow the nucleic cartoon (display.ts).
@@ -153,6 +141,63 @@ async function showHide(
     }
   }
   return { ok: true }
+}
+
+/** A record over the three atom styles. */
+const byStyle = (f: (s: AtomStyle) => string): Record<AtomStyle, string> =>
+  Object.fromEntries(STYLE_KEYS.map((s) => [s, f(s)])) as Record<AtomStyle, string>
+
+/**
+ * Show or hide the atoms of one target, keeping the style of the atoms
+ * hidden (display.ts): hide moves them to the hidden-style renderer of
+ * their style, show moves them back, and an unassigned atom comes in with
+ * the style the automatic styling gives it. With `only`, the atoms shown
+ * outside the specification are hidden the same way. Every set is worked
+ * out from the ones read at the start.
+ */
+async function showHideAtoms(ctx: WorkerContext, cc: CmdContext, t: Target, ids: Map<string, number>, show: boolean, only: boolean): Promise<CmdOutcome> {
+  const cur = readAtomSets(ctx, cc.sceneId, ids)
+  let next: AtomSets
+  if (show) {
+    const fresh = minus(minus(t.sel, unionOf(cur.shown)), unionOf(cur.hidden))
+    const initial = fresh === NONE ? null : initialStylesOf(ctx, cc.sceneId, t.obj.uid)
+    next = {
+      shown: byStyle((s) => union(union(only ? intersect(cur.shown[s], t.sel) : cur.shown[s], intersect(cur.hidden[s], t.sel)), initial ? intersect(fresh, initial[s]) : NONE)),
+      hidden: byStyle((s) => union(minus(cur.hidden[s], t.sel), only ? minus(cur.shown[s], t.sel) : NONE)),
+    }
+  } else {
+    next = {
+      shown: byStyle((s) => minus(cur.shown[s], t.sel)),
+      hidden: byStyle((s) => union(cur.hidden[s], intersect(cur.shown[s], t.sel))),
+    }
+  }
+  return writeAtomSets(ctx, cc, t.obj, ids, next)
+}
+
+/**
+ * Give the atoms `sel` of a molecule the style `to`, shown or not
+ * (ChimeraX's draw mode): shown atoms move to its drawn renderer, hidden
+ * ones to its hidden-style renderer, and unassigned ones go there only
+ * when `to` is not the style they have unassigned (display.ts).
+ *
+ * @param initial - the unassigned atoms' styles, when the caller has them
+ */
+export async function restyleAtoms(
+  ctx: WorkerContext, cc: CmdContext, obj: NumberedObject, ids: Map<string, number>, sel: string, to: AtomStyle,
+  initial?: Record<AtomStyle, string>,
+): Promise<CmdOutcome> {
+  const cur = readAtomSets(ctx, cc.sceneId, ids)
+  const shownAll = unionOf(cur.shown)
+  const hiddenAll = unionOf(cur.hidden)
+  const fresh = minus(minus(sel, shownAll), hiddenAll)
+  const init = fresh === NONE ? null : initial ?? initialStylesOf(ctx, cc.sceneId, obj.uid)
+  const next: AtomSets = {
+    shown: byStyle((s) => (s === to ? union(cur.shown[s], intersect(sel, shownAll)) : minus(cur.shown[s], sel))),
+    hidden: byStyle((s) => (s === to
+      ? union(union(cur.hidden[s], intersect(sel, hiddenAll)), init ? minus(fresh, init[s]) : NONE)
+      : minus(cur.hidden[s], sel))),
+  }
+  return writeAtomSets(ctx, cc, obj, ids, next)
 }
 
 /**
@@ -507,19 +552,8 @@ const style = chxCommand({
       if (to === '') continue
       const owned = await ensureOwned(ctx, cc, t.obj)
       if (!owned.ok) return owned
-      const r = atomRenderers(owned.ids)
-      const others = STYLES.filter((s) => s !== to)
-      const sel = (s: AtomStyle) => readSel(ctx, cc.sceneId, r[s])
-      // Only atoms shown move: a hidden atom has no style to keep (display.ts).
-      const moved = intersect(t.sel, union(sel(others[0]), sel(others[1])))
-      const writes: [number, string][] = [
-        [r[to], union(sel(to), moved)],
-        ...others.map((s): [number, string] => [r[s], minus(sel(s), t.sel)]),
-      ]
-      for (const [id, next] of writes) {
-        const w = await writeSel(ctx, cc, id, next)
-        if (!w.ok) return w
-      }
+      const res = await restyleAtoms(ctx, cc, t.obj, owned.ids, t.sel, to)
+      if (!res.ok) return res
     }
     return { ok: true }
   },

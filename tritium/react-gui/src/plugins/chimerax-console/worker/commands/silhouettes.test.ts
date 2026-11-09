@@ -35,7 +35,7 @@ vi.mock('../camera', async (importOriginal) => ({
 }))
 vi.mock('@renderer/worker/server/catalog/refs', () => ({
   objectNodes: () => [...new Set(state.rends.map((r) => r.obj))].map((id) => ({ id })),
-  rendererNodesOf: (obj: { id: number }) => state.rends.filter((r) => r.obj === obj.id).map((r) => ({ id: r.id, type: 'renderer' })),
+  rendererNodesOf: (obj: { id: number }) => state.rends.filter((r) => r.obj === obj.id).map((r) => ({ id: r.id, name: `r${r.id}`, type: 'renderer' })),
 }))
 vi.mock('@renderer/worker/server/services/props/read', () => ({
   getGenericProps: (_ctx: unknown, a: { nodeId: number }) => {

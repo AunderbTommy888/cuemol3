@@ -29,7 +29,7 @@
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
 import { chainColor, modelColor } from './colorSchemes'
-import { ATOM_STYLES, CARTOONS, ensureOwned, forEachAtom, minus, NUCL_BASE, writeSel } from './display'
+import { ATOM_STYLES, CARTOONS, ensureOwned, forEachAtom, minus, NUCL_BASE, STYLE_KEYS, union, writeHidden, writeSel } from './display'
 import type { AtomStyle, BaseMode } from './display'
 import { nucleotideEntries } from './colorSchemes'
 import type { NumberedObject } from './models'
@@ -115,19 +115,18 @@ function sizeOf(ctx: WorkerContext, sceneId: number, objUid: number): MoleculeSi
 }
 
 /**
- * The style an atom comes back in when it is shown again: the one the
- * automatic styling gave it. ChimeraX keeps an atom's draw mode apart from
- * its display, and the styling sets it for every atom, shown or not (small
- * polymer: sticks, metals and ions spheres; medium: spheres, ligands sticks,
- * solvent balls; large: spheres, the atom's default). CueMol draws an atom
- * only in the renderer of its style, so a hidden atom has none; this is
- * what it would have had, from the molecule's size. A `style` given while
- * the atom was hidden is not kept.
+ * The style ChimeraX's automatic styling gives every atom, shown or not
+ * (`apply_auto_styling`, after the Initial Styles reset every atom to
+ * sphere): small polymer sticks, metals and ions spheres; medium spheres,
+ * ligands sticks, solvent balls; large spheres; non-polymer sticks. CueMol
+ * draws an atom only in the renderer of its style, so this is the style of
+ * an atom in no console renderer ("unassigned", `display.ts`).
+ *
+ * @param given - the style asked for (a preset); by the molecule's size when absent
  */
-export function initialStylesOf(ctx: WorkerContext, sceneId: number, objUid: number): Record<AtomStyle, string> {
-  const size = sizeOf(ctx, sceneId, objUid)
-  const style = autoStyleOf(size)
-  if (style === 'non-polymer' || (style === 'small polymer' && size.residues <= MIN_RIBBON_THRESHOLD)) {
+function drawModesOf(size: MoleculeSize, given?: AutoStyle): Record<AtomStyle, string> {
+  const style = given ?? autoStyleOf(size)
+  if (style === 'non-polymer' || (style === 'small polymer' && given === undefined && size.residues <= MIN_RIBBON_THRESHOLD)) {
     return { stick: '*', ball: NONE, sphere: NONE }
   }
   if (style === 'small polymer') {
@@ -138,6 +137,11 @@ export function initialStylesOf(ctx: WorkerContext, sceneId: number, objUid: num
     return { stick: LIGAND, ball: 'water', sphere: minus('*', `(${LIGAND}) or water`) }
   }
   return { stick: NONE, ball: NONE, sphere: '*' }
+}
+
+/** The style an unassigned atom of molecule `objUid` has: the automatic styling's, from the molecule's size. */
+export function initialStylesOf(ctx: WorkerContext, sceneId: number, objUid: number): Record<AtomStyle, string> {
+  return drawModesOf(sizeOf(ctx, sceneId, objUid))
 }
 
 /** The selections of the console's renderers a style draws. */
@@ -154,8 +158,11 @@ interface Shown {
  * and for the Initial Styles presets (`apply_auto_styling(style=...)`).
  *
  * @param given - the style to apply (a preset); by the molecule's size when absent
+ * @param preset - a preset on a molecule already open: the styles of the
+ *   hidden atoms are set again too (ChimeraX resets every atom first), so
+ *   none kept from before stays; when it opens, there are none to set
  */
-export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: NumberedObject, given?: AutoStyle): Promise<CmdOutcome> {
+export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: NumberedObject, given?: AutoStyle, preset = false): Promise<CmdOutcome> {
   const owned = await ensureOwned(ctx, cc, obj)
   if (!owned.ok) return owned
   const size = sizeOf(ctx, cc.sceneId, obj.uid)
@@ -200,6 +207,15 @@ export async function applyAutoStyle(ctx: WorkerContext, cc: CmdContext, obj: Nu
     if (id === undefined) continue
     const w = await writeSel(ctx, cc, id, sel)
     if (!w.ok) return w
+  }
+  if (preset) {
+    // The hidden atoms keep the preset's style where it differs from the one they have unassigned.
+    const after = drawModesOf(size, given)
+    const initial = drawModesOf(size)
+    const visible = union(union(shown.stick, shown.ball), shown.sphere)
+    const hidden = Object.fromEntries(STYLE_KEYS.map((s) => [s, minus(minus(after[s], visible), initial[s])])) as Record<AtomStyle, string>
+    const h = await writeHidden(ctx, cc, obj, ids, hidden)
+    if (!h.ok) return h
   }
   // Painted in order, each entry first in the table: the later ones win. The
   // first colours every atom, so the table is cleared before it (a preset

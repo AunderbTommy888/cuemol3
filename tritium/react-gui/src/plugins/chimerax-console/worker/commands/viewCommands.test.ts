@@ -34,7 +34,7 @@ vi.mock('../camera', async (importOriginal) => ({
 
 // One renderer outlined as the silhouettes are, 0.1 A wide.
 vi.mock('@renderer/worker/server/catalog/refs', () => ({
-  objectNodes: () => [{ id: 1, children: [{ id: 5, type: 'renderer' }] }],
+  objectNodes: () => [{ id: 1, children: [{ id: 5, name: 'chx:sphere', type: 'renderer' }] }],
   rendererNodesOf: (obj: { children: unknown[] }) => obj.children,
 }))
 vi.mock('@renderer/worker/server/services/props/read', () => ({

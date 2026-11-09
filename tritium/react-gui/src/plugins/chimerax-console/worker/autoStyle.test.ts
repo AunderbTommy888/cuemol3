@@ -5,7 +5,8 @@
  * Pinned: ChimeraX's size thresholds, the short peptide (a polymer of 10
  * residues or fewer) drawn as sticks rather than as a cartoon, and the
  * small-polymer selections -- the cartoon on the polymer, sticks on the
- * residues near a ligand, spheres on its metals.
+ * residues near a ligand, spheres on its metals -- and that opening keeps
+ * no hidden atom's style while a preset sets them all again (display.ts).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,6 +19,8 @@ const { state } = vi.hoisted(() => ({
     residues: 0,
     /** The selections written, by renderer name. */
     written: new Map<string, string>(),
+    /** The hidden-style selections written (`writeHidden`), one record per call. */
+    hidden: [] as Record<string, string>[],
   },
 }))
 
@@ -28,6 +31,10 @@ vi.mock('./display', async (importOriginal) => ({
   ensureOwned: async () => ({ ok: true, ids: new Map(IDS.map((n, i) => [n, i])) }),
   writeSel: async (_ctx: unknown, _cc: unknown, id: number, sel: string) => {
     state.written.set(IDS[id], sel)
+    return { ok: true }
+  },
+  writeHidden: async (_ctx: unknown, _cc: unknown, _obj: unknown, _ids: unknown, hidden: Record<string, string>) => {
+    state.hidden.push(hidden)
     return { ok: true }
   },
   forEachAtom: (_ctx: unknown, _s: number, _uid: number, _expr: string, visit: (a: unknown) => void) => {
@@ -43,7 +50,10 @@ const ctx = {} as WorkerContext
 const cc = { sceneId: 1, viewId: 2, print: vi.fn(), warn: vi.fn() } as unknown as CmdContext
 const obj = { uid: 10, model: 1, name: 'm', className: 'MolCoord' }
 
-beforeEach(() => state.written.clear())
+beforeEach(() => {
+  state.written.clear()
+  state.hidden = []
+})
 
 describe('auto style', () => {
   it('sizes a molecule up with ChimeraX\'s thresholds', () => {
@@ -65,5 +75,15 @@ describe('auto style', () => {
     expect(state.written.get('chx:cartoon')).toBe('protein')
     expect(state.written.get('chx:stick')).toContain(`byres ((${LIGAND}) expand 3.6)`)
     expect(state.written.get('chx:sphere')).toBe(`(${SMALL_SHOWN}) and (${METAL} or ligand and elem F,Cl,Br,I)`)
+    // Opening keeps no hidden atom's style: the atoms not shown are unassigned.
+    expect(state.hidden).toEqual([])
+  })
+
+  it('sets the hidden atoms\' styles again with a preset, keeping none from before', async () => {
+    state.residues = 11
+    await applyAutoStyle(ctx, cc, obj, 'non-polymer', true)
+    expect(state.written.get('chx:stick')).toBe('*')
+    // Every atom is shown, so every hidden-style selection is emptied.
+    expect(state.hidden).toEqual([{ stick: 'none', ball: 'none', sphere: 'none' }])
   })
 })

@@ -308,15 +308,36 @@ renderer で表し、**その selection と paint が表示の状態そのもの
   100 残基以下なら板 (slab)、2000 残基以下なら ladder で塩基を描き、塩基を `bynucleotide` の色で塗る (主鎖は model の色)。
   ChimeraX の lighting の切り替えと、糖鎖の SNFG 表示は行わない。
 - **制約**:
-  - CueMol に原子ごとの表示フラグは無く、どの原子を描くかは renderer の selection だけで決まる。そのため**非表示の原子の
-    style は保持しない**。非表示の原子を `show` すると、auto style がその原子に与える style で出す (`autoStyle.ts` の
-    `initialStylesOf`: molecule の大きさから決め、small polymer は stick (金属とイオンは sphere)、medium は sphere
-    (ligand は stick、水は ball)、large は sphere)。ChimeraX は原子の style を表示と別に持ち、auto style は非表示の原子にも
-    style を付けるので (原子の既定は sphere)、`hide atoms` の後の `show <spec> atoms` はこれで ChimeraX と同じになる。
-    ただし、非表示の間に変えた style は保たない: `style :ALA sphere` -> `hide :ALA atoms` -> `show :ALA atoms` では、
-    small polymer の ALA は stick で出る (ChimeraX では sphere)。ALA が非表示のうちの `style :ALA sphere` も効かない。
-    もう一度 `style` を打てば直り、データは壊れない。保持するには style ごとの原子集合を scene に別に持つ必要があり、その代償 (selection 一覧が散らかる、
-    状態の二重化) に見合わないので行っていない。
+  - **非表示の原子の style**: ChimeraX は原子ごとに表示 (`display`) と style (`draw_mode`) を別に持ち、`style` は非表示の
+    原子にも効き、`hide` しても style は残る。CueMol には原子ごとの表示フラグが無く、どの原子を描くかは renderer の
+    selection だけで決まるので、非表示の原子の style は、style ごとに 1 つの描かない renderer (`chx:stick:hidden` /
+    `chx:ball:hidden` / `chx:sphere:hidden`、常に非表示) の selection で持つ (`display.ts` の `HIDDEN_STYLES`)。
+    - 各原子は、描く 3 つと非表示の 3 つ、計 6 つの selection の高々 1 つに入る。どれにも入らない原子 (未所属) は、
+      開いてから style を変えていない原子で、その style は auto style が与えるもの (`autoStyle.ts` の `initialStylesOf`:
+      molecule の大きさから決め、small polymer は stick (金属とイオンは sphere)、medium は sphere (ligand は stick、
+      水は ball)、large は sphere。ChimeraX でも auto style は非表示の原子にも style を付け、原子の既定は sphere)。
+      未所属の原子は記録しなくても style が分かるので、非表示の renderer には入れない。
+    - `hide ... atoms` は原子を同じ style の非表示の renderer へ移し、`show ... atoms` は戻す (未所属の原子は auto style
+      の style で出す)。`show ... only` で対象の外から消える原子も、同じ style の非表示の renderer へ移す。
+    - `style` は、表示中の原子を描く renderer の間で、非表示の原子を非表示の renderer の間で移す。未所属の原子は、
+      指定の style が auto style の style と違うときだけ非表示の renderer に入れる。
+    - preset の `nospheres` (ChimeraX の `style (protein|nucleic|solvent) & @@draw_mode=0 stick`) は、表示で絞らない
+      `style` として同じ処理を通す (`lookCommands.ts` の `noSpheres`)。sphere の原子は、描く sphere、非表示の sphere、
+      auto style が sphere の未所属の原子。
+    - `open` の auto style は描く renderer だけを書き、非表示の renderer は作らない。Initial Styles の preset は、
+      ChimeraX (`atomic/presets.py`) が全原子を表示・sphere に戻してから auto style を当てるのに合わせ、前の非表示の
+      状態を引き継がずに作り直す: preset の後に表示されない原子のうち、preset の style が auto style (大きさから) の
+      style と違う原子だけを非表示の renderer に入れる。
+    - 新しい集合は、どれもコマンドの開始時の 6 つの selection から計算して、同じ txn で書く。
+    - 非表示の renderer は、入れる原子が実際にある (`anyHit`) ときに初めて作り、空になっても消さず selection を `none`
+      にして使い回す。消して作り直すと、undo の履歴が消した renderer の実体を持ち続け、往復のたびに増えるため
+      (`Object::destroyRenderer` -> `ObjLoadEditInfo::setupRendDestroy`)。1 molecule に高々 3 つ。
+    - 非表示の renderer は色や大きさを持たない。色の paint の entry は描く renderer に spec の selection で書かれ、
+      その renderer に今いる原子に限らないので、非表示の間に塗った色も戻ったときに効く。大きさ・透明度・ring fill は
+      renderer ごとの値なので、戻った先の renderer の値になる。輪郭線 (`graphics silhouettes`) は非表示の renderer に
+      付けない。
+    - 制約: GUI で非表示の renderer を表示にしたり selection を編集したりするのは止めない。次のコマンドはその中身を
+      非表示の原子として読む (表示にしても ChX からは非表示の原子)。GUI の renderer 一覧に空の非表示の renderer が残る。
   - selection の式は、組み合わせた後、書き込む前に簡単にする (`writeSel`、[selection 式の簡単化](selection-simplify.md))。
     `show` / `hide` / `style` を繰り返しても伸びないが、最短になるとは限らない。
 
@@ -591,8 +612,10 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
   未対応の語を断ること
 - `display.test.ts`: show / hide / style / cartoon の合成 (式は小さな原子の集合で評価して比べる)、他の renderer に
   触らないこと、今の selection から始めること (undo / GUI の編集に追従)、style を変えても色が残り paint への切り替えは
-  1 度だけであること、地図に届くのは model の番号だけの指定であること、非表示の原子は auto style の style で出て、
-  表示中の原子は style を保つこと
+  1 度だけであること、地図に届くのは model の番号だけの指定であること、未所属の原子は auto style の style で出て、
+  表示中の原子は style を保つこと、非表示の原子の style を非表示の renderer に持ち (hide / show の往復で 1 度だけ作り、
+  消さずに空にする)、非表示の原子への `style` と `show ... only` で消えた原子の style が戻ったときに効くこと、
+  preset の `nospheres` が非表示の sphere の原子を非表示のまま stick にすること
 - `models.test.ts`: 番号を詰めず、使い回さないこと
 - `commands/mapCommands.test.ts`: `volume` の `level` が地図の値のまま、`transparency` が `alpha = 1 - t` で書かれ、box の
   `contour` の `step > 1` と 1・2・4・8 以外の `step` を何も書かずに断り、`region all` なら `lod` を書くこと、`volume zone` が
@@ -614,7 +637,8 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
   ごとに重ねること
 - `colorSchemes.test.ts`: chain の色を大文字小文字を区別せずに引くこと、`rainbow residues` が 64 段以下の範囲にまとめ、
   青から赤で、`^` で逆になること
-- `autoStyle.test.ts`: ChimeraX の大きさの閾値、短いペプチドを stick にすること、small polymer の selection の式
+- `autoStyle.test.ts`: ChimeraX の大きさの閾値、短いペプチドを stick にすること、small polymer の selection の式、
+  開いたときは非表示の renderer を書かず、Initial Styles の preset は非表示の style を前から引き継がずに書き直すこと
 - (`cli/syntax.test.ts` の前方一致に、`sel` `su` `tr` `tu` `sa` `la` `di` `mm` `al` の短縮形)
 - `chimeraxCommands.test.ts`: ChimeraX にあって ChX に無いコマンド (`sym`、前方一致の `fit`、2 語の `alphafold match`)
   は飛ばし、打ち間違い (`symx`、`alphafold fetchx`) はエラーのままにすること
