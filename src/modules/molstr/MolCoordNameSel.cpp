@@ -23,31 +23,10 @@ namespace {
 
 typedef std::set<LString> NameSet;
 
-/// Whether a name can be written bare: a selection token that is no keyword
-/// (keywords are lower case, so a name with no lower-case letter is safe).
-bool isBareName(const LString &s)
-{
-  if (s.isEmpty()) return false;
-  for (int i = 0; i < s.length(); ++i) {
-    const char c = s.getAt(i);
-    const bool ok = (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
-                    (i > 0 && c == '\'');
-    if (!ok) return false;
-  }
-  // a bare number would read as a number, not a name
-  const char c0 = s.getAt(0);
-  if (c0 >= '0' && c0 <= '9') {
-    bool allDigits = true;
-    for (int i = 0; i < s.length(); ++i)
-      if (s.getAt(i) < '0' || s.getAt(i) > '9') allDigits = false;
-    if (allDigits) return false;
-  }
-  return true;
-}
-
+/// A name, quoted: a quoted name matches exactly (a bare one ignores case,
+/// so `chain A` would also match chain `a`, and may be read as a keyword).
 LString quoteName(const LString &s)
 {
-  if (isBareName(s)) return s;
   LString r = "\"";
   for (int i = 0; i < s.length(); ++i) {
     const char c = s.getAt(i);

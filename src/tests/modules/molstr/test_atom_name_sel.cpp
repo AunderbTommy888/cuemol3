@@ -1,5 +1,6 @@
 // MolCoord::toAtomNameSel: the expression it writes selects the same atoms,
-// keeps insertion codes and alternate conformations apart, stays one term
+// keeps insertion codes, alternate conformations and chain names differing
+// by case only apart, stays one term
 // per chain for a selection the same in every residue, and still means the
 // same atoms after a QDF round trip renumbers them.
 #include <gtest/gtest.h>
@@ -94,16 +95,22 @@ TEST(AtomNameSel, SameAtomsBeforeAndAfterQdfRoundTrip)
     }
     addAtom(pMol, "B", ResidIndex(1), "N");
     addAtom(pMol, "B", ResidIndex(1), "CA");
+    // a chain whose name differs from A by case only
+    addAtom(pMol, "a", ResidIndex(1), "N");
+    addAtom(pMol, "a", ResidIndex(1), "CA");
+    addAtom(pMol, "a", ResidIndex(1), "H");
     // a gap in the atom IDs, which the QDF reader closes up
     ASSERT_TRUE(pMol->deleteAtoms(sel("chain A and resi 2 and name H")));
 
-    // The same in every residue: one term for chain A, chain B whole.
+    // The same in every residue: one term each for chains A and a, chain B whole.
     const LString heavy = pMol->toAtomNameSel(sel("not name H"));
-    EXPECT_EQ(count(heavy, "resi"), 1) << heavy.c_str();
+    EXPECT_EQ(count(heavy, "resi"), 2) << heavy.c_str();
     EXPECT_EQ(keysOf(pMol, heavy), keysOf(pMol, "not name H"));
+    // A whole chain: not chain a with it.
+    EXPECT_EQ(keysOf(pMol, pMol->toAtomNameSel(sel("chain \"A\""))), keysOf(pMol, "chain \"A\""));
 
     // Partly selected: an insertion-code residue, one conformation, one atom.
-    const LString part = "(chain A and resi 3A) or (chain A and resi 4 and name CB and alt A) or (chain A and resi 1 and name CA)";
+    const LString part = "(chain \"A\" and resi 3A) or (chain \"A\" and resi 4 and name CB and alt A) or (chain \"A\" and resi 1 and name CA)";
     const LString expr = pMol->toAtomNameSel(sel(part));
     ASSERT_FALSE(expr.isEmpty());
     EXPECT_EQ(expr.indexOf("aid"), -1) << expr.c_str();
