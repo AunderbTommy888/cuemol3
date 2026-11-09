@@ -6,9 +6,8 @@
  * the contracts are about what is read and written there:
  *
  * - show / hide / style combine the specification into the selections, and
- *   no renderer not named `chx:` is touched; a hidden atom keeps its style
- *   in a hidden renderer (made once, never deleted), and an unassigned atom
- *   shown takes the style the automatic styling gives it;
+ *   no renderer not named `chx:` is touched; an atom shown again takes the
+ *   style the automatic styling gives it;
  * - a command starts from the selection as it is now, so an undo or an edit
  *   in the GUI is where the next command starts;
  * - a colour given to atoms is in every atom renderer, so it stays when an
@@ -81,18 +80,10 @@ vi.mock('@renderer/worker/server/services/coloring/colorTargets', () => ({
   getColoringClassName: (rend: { id: number }) => (state.rends.find((r) => r.id === rend.id)?.paint ? 'PaintColoring' : 'CPKColoring'),
 }))
 vi.mock('@renderer/worker/server/services/helpers/sceneResolver', () => ({
-  getSceneOrNull: () => ({ getRenderer: (id: number) => ({ id }), getObject: () => ({}) }),
+  getSceneOrNull: () => ({ getRenderer: (id: number) => ({ id }) }),
 }))
-// A selection is its expression, walked over ATOMS (`forEachAtom`, for `anyHit`).
-vi.mock('@renderer/worker/server/services/helpers/makeSel', () => ({ makeSel: (_ctx: unknown, expr: string) => expr }))
 vi.mock('@renderer/worker/server/services/scene/listSceneObjects', () => ({
   listSceneObjects: () => ({ objects: state.objects }),
-}))
-
-// A preset's command lines (the cartoon ones after nospheres) are not what is checked here.
-vi.mock('./commands/aliasCommands', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  runChxLines: async () => ({ ok: true }),
 }))
 
 vi.mock('./autoStyle', () => ({
@@ -105,22 +96,8 @@ import { bindLine, resolveWords } from './cli/syntax'
 import { wholeMapsOf } from './display'
 import { resetModelNumbers } from './models'
 
-/** An `AtomIterator` over the ATOMS its selection expression picks. */
-function atomIterator() {
-  let list: Atom[] = []
-  let i = 0
-  return {
-    target: null as unknown,
-    sel: '' as unknown,
-    first() { list = ATOMS.filter((a) => selected(String(this.sel)).includes(`${a.resn}${a.resi}@${a.name}`)); i = 0 },
-    next() { i++ },
-    hasMore() { return i < list.length },
-    get() { const a = list[i]; return { chainName: a.chain, residIndex: String(a.resi), residName: a.resn, name: a.name } },
-  }
-}
-
 // No view: the camera is not read (keepingSilhouettes).
-const ctx = { sceMgr: { getView: () => null }, svc: { createObj: () => atomIterator() } } as unknown as WorkerContext
+const ctx = { sceMgr: { getView: () => null } } as unknown as WorkerContext
 const cc = {
   sceneId: 1, viewId: 2, cwd: '/', print: () => {}, printMarkdown: () => {}, warn: () => {}, markMutated: () => {},
   setCwd: () => {}, noteStream: () => {}, streamId: (t: string) => t, stopped: () => false,
@@ -168,7 +145,7 @@ function selected(expr: string): string[] {
       return (a) => !e(a)
     }
     if (t === '*' || t === 'protein') return () => true
-    if (t === 'none' || t === 'ligand' || t === 'nucleic' || t === 'water') return () => false
+    if (t === 'none' || t === 'ligand') return () => false
     const v = toks[i++].split(',')
     if (t === 'resn') return (a) => v.includes(a.resn)
     if (t === 'name') return (a) => v.includes(a.name)
@@ -220,41 +197,6 @@ describe('ChX display state', () => {
     await chx('show :ALA,SER atoms')
     expect(selected(rend('chx:stick').sel)).toEqual(['SER7@CA'])
     expect(selected(rend('chx:sphere').sel)).toEqual(['ALA3@CA', 'ALA3@CB'])
-  })
-
-  it('keeps the style of hidden atoms in one hidden renderer, made once and emptied rather than deleted', async () => {
-    state.initial = { stick: 'none', ball: 'none', sphere: '*' }
-    await chx('show :ALA atoms')
-    await chx('style :ALA stick')
-    for (let round = 0; round < 2; round++) {
-      await chx('hide :ALA atoms')
-      expect(selected(rend('chx:stick:hidden').sel)).toEqual(['ALA3@CA', 'ALA3@CB'])
-      await chx('show :ALA atoms')
-      expect(selected(rend('chx:stick').sel)).toEqual(['ALA3@CA', 'ALA3@CB'])
-      expect(selected(rend('chx:sphere').sel)).toEqual([])
-      expect(selected(rend('chx:stick:hidden').sel)).toEqual([])
-    }
-    expect(state.rends.filter((r) => r.name.endsWith(':hidden')).map((r) => r.name)).toEqual(['chx:stick:hidden'])
-  })
-
-  it('gives a hidden atom the style asked for, and keeps the one an atom hidden by show only had', async () => {
-    await chx('style :SER sphere')
-    await chx('show :ALA atoms')
-    await chx('style :ALA sphere')
-    await chx('show :GLY atoms only')
-    await chx('show :ALA,SER atoms')
-    expect(selected(rend('chx:sphere').sel)).toEqual(['ALA3@CA', 'ALA3@CB', 'SER7@CA'])
-    expect(selected(rend('chx:stick').sel)).toEqual(['GLY9@CA'])
-  })
-
-  it('turns hidden sphere atoms to sticks with a preset (nospheres), leaving them hidden', async () => {
-    await chx('show :ALA atoms')
-    await chx('style :ALA sphere')
-    await chx('hide :ALA atoms')
-    await chx('preset ribbons/slabs')
-    expect(selected(rend('chx:stick:hidden').sel)).toEqual(['ALA3@CA', 'ALA3@CB'])
-    expect(selected(rend('chx:sphere:hidden').sel)).toEqual([])
-    expect(selected(rend('chx:stick').sel)).toEqual([])
   })
 
   it('starts from the selection as it is now (an undo, or an edit in the GUI)', async () => {

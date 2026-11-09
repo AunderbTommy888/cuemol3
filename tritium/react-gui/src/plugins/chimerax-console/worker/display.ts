@@ -17,16 +17,9 @@
  * molecule, so a colour given to "atoms" is in every atom renderer and stays
  * when an atom moves from one style to another.
  *
- * Hidden atoms: CueMol has no per-atom display flag, so the style of an
- * atom ChimeraX keeps while it is hidden is kept by a second, never drawn
- * renderer per style (`chx:stick:hidden` ...; `HIDDEN_STYLES`): `hide` moves
- * atoms there, `show` moves them back, and `style` on a hidden atom moves it
- * from one to another. An atom in none of the six ("unassigned") has the
- * style the automatic styling gives it (`autoStyle.ts` `initialStylesOf`),
- * so only an atom whose style differs from that is kept. Each atom is in at
- * most one of the six. A hidden renderer is made the first time an atom
- * goes in, and is kept (emptied, never deleted) after: deleting and making
- * it again would pile renderers up in the undo history.
+ * Limit: CueMol has no per-atom display flag, so the style of a hidden atom
+ * is not kept -- an atom shown again comes back in the style the automatic
+ * styling gives it (`autoStyle.ts` `initialStylesOf`).
  *
  * Nucleic acids: the backbone is drawn by `chx:nucl` (a tube through the
  * phosphates) and the bases by `chx:nuclbase` (a `nucl` renderer drawing no
@@ -105,23 +98,6 @@ export const NUCL_BASE: OwnedKind = {
 }
 
 const ALL_KINDS: readonly OwnedKind[] = [...Object.values(ATOM_STYLES), ...CARTOONS, NUCL_BASE]
-
-/** The atom styles, in a fixed order. */
-export const STYLE_KEYS: readonly AtomStyle[] = ['stick', 'ball', 'sphere']
-
-const HIDDEN_SUFFIX = ':hidden'
-
-/** The renderers keeping the style of hidden atoms, one per style; never drawn, made when first needed. */
-export const HIDDEN_STYLES: Readonly<Record<AtomStyle, OwnedKind>> = {
-  stick: { ...ATOM_STYLES.stick, name: `${ATOM_STYLES.stick.name}${HIDDEN_SUFFIX}`, hidden: true },
-  ball: { ...ATOM_STYLES.ball, name: `${ATOM_STYLES.ball.name}${HIDDEN_SUFFIX}`, hidden: true },
-  sphere: { ...ATOM_STYLES.sphere, name: `${ATOM_STYLES.sphere.name}${HIDDEN_SUFFIX}`, hidden: true },
-}
-
-/** Whether a renderer name is one of the hidden-style renderers. */
-export function isHiddenStyleName(name: string): boolean {
-  return name.startsWith(OWNED) && name.endsWith(HIDDEN_SUFFIX)
-}
 
 /** Run a catalog op as part of this command (the console's `runOp`, tagged `chx`). */
 export function runOp(ctx: WorkerContext, cc: CmdContext, name: string, args: Record<string, unknown>): Promise<OpRun> {
@@ -299,82 +275,25 @@ export async function ensureOwned(ctx: WorkerContext, cc: CmdContext, obj: Numbe
   const ids = ownedOn(ctx, cc.sceneId, obj.uid)
   for (const kind of ALL_KINDS) {
     if (ids.has(kind.name)) continue
-    const made = await makeOwned(ctx, cc, obj, kind, ids)
+    const made = await runOp(ctx, cc, 'create_renderer', {
+      objId: obj.uid, rendererType: kind.type, name: kind.name, selection: NONE, centerView: false,
+    })
     if (!made.ok) return made
+    const id = ownedOn(ctx, cc.sceneId, obj.uid).get(kind.name)
+    if (id === undefined) return { ok: false, error: `Error: could not make ${kind.name} on "${obj.name}"` }
+    ids.set(kind.name, id)
+    const styled = await runOp(ctx, cc, 'set_renderer_styles', { rendId: id, styles: kind.styles })
+    if (!styled.ok) return styled
+    for (const [prop, value] of kind.props ?? []) {
+      const set = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: id, prop, value })
+      if (!set.ok) return set
+    }
+    if (kind.hidden) {
+      const hid = await runOp(ctx, cc, 'set_visible', { nodeId: id, nodeType: 'renderer', visible: false })
+      if (!hid.ok) return hid
+    }
   }
   return { ok: true, ids }
-}
-
-/** Make one console renderer on `obj` (drawing nothing) and add its uid to `ids`. */
-async function makeOwned(ctx: WorkerContext, cc: CmdContext, obj: NumberedObject, kind: OwnedKind, ids: Map<string, number>): Promise<OpRun> {
-  const made = await runOp(ctx, cc, 'create_renderer', {
-    objId: obj.uid, rendererType: kind.type, name: kind.name, selection: NONE, centerView: false,
-  })
-  if (!made.ok) return made
-  const id = ownedOn(ctx, cc.sceneId, obj.uid).get(kind.name)
-  if (id === undefined) return { ok: false, error: `Error: could not make ${kind.name} on "${obj.name}"` }
-  ids.set(kind.name, id)
-  const styled = await runOp(ctx, cc, 'set_renderer_styles', { rendId: id, styles: kind.styles })
-  if (!styled.ok) return styled
-  for (const [prop, value] of kind.props ?? []) {
-    const set = await runOp(ctx, cc, 'set_node_prop', { nodeType: 'renderer', nodeId: id, prop, value })
-    if (!set.ok) return set
-  }
-  if (kind.hidden) {
-    const hid = await runOp(ctx, cc, 'set_visible', { nodeId: id, nodeType: 'renderer', visible: false })
-    if (!hid.ok) return hid
-  }
-  return { ok: true }
-}
-
-/** The atoms of a molecule by style: shown (the drawn renderers) and hidden (the hidden-style ones). */
-export interface AtomSets {
-  shown: Record<AtomStyle, string>
-  hidden: Record<AtomStyle, string>
-}
-
-/** The atom sets as the renderers hold them now; `none` for a hidden-style renderer not made yet. */
-export function readAtomSets(ctx: WorkerContext, sceneId: number, ids: Map<string, number>): AtomSets {
-  const read = (name: string) => {
-    const id = ids.get(name)
-    return id === undefined ? NONE : readSel(ctx, sceneId, id)
-  }
-  const by = (f: (s: AtomStyle) => string) => Object.fromEntries(STYLE_KEYS.map((s) => [s, f(s)])) as Record<AtomStyle, string>
-  return { shown: by((s) => read(ATOM_STYLES[s].name)), hidden: by((s) => read(HIDDEN_STYLES[s].name)) }
-}
-
-/** The union of a style record's three selections. */
-export function unionOf(r: Record<AtomStyle, string>): string {
-  return STYLE_KEYS.reduce((acc, s) => union(acc, r[s]), NONE)
-}
-
-/**
- * Write the hidden-style selections. A renderer not made yet is made only
- * when its selection matches an atom of the molecule; one made is kept and
- * emptied rather than deleted (see the file comment).
- */
-export async function writeHidden(ctx: WorkerContext, cc: CmdContext, obj: NumberedObject, ids: Map<string, number>, hidden: Record<AtomStyle, string>): Promise<OpRun> {
-  for (const s of STYLE_KEYS) {
-    const kind = HIDDEN_STYLES[s]
-    if (!ids.has(kind.name)) {
-      if (hidden[s] === NONE || !emitContext(ctx, cc.sceneId).anyHit(obj.model, hidden[s])) continue
-      const made = await makeOwned(ctx, cc, obj, kind, ids)
-      if (!made.ok) return made
-    }
-    const w = await writeSel(ctx, cc, ids.get(kind.name) as number, hidden[s])
-    if (!w.ok) return w
-  }
-  return { ok: true }
-}
-
-/** Write all six atom selections (computed from the sets read at the start of the command). */
-export async function writeAtomSets(ctx: WorkerContext, cc: CmdContext, obj: NumberedObject, ids: Map<string, number>, next: AtomSets): Promise<OpRun> {
-  const r = atomRenderers(ids)
-  for (const s of STYLE_KEYS) {
-    const w = await writeSel(ctx, cc, r[s], next.shown[s])
-    if (!w.ok) return w
-  }
-  return writeHidden(ctx, cc, obj, ids, next.hidden)
 }
 
 /** Whether a renderer is shown (its `visible`). */

@@ -21,10 +21,9 @@ import { BoolArg, EnumOf, FloatArg, IntArg, RestOfLine, SpecArg, StringArg } fro
 import { readCamera } from '../camera'
 import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
-import { applyAutoStyle, initialStylesOf } from '../autoStyle'
+import { applyAutoStyle } from '../autoStyle'
 import type { AutoStyle } from '../autoStyle'
-import { ensureOwned, intersect, minus, readAtomSets, runOp, union, unionOf } from '../display'
-import { restyleAtoms } from './displayCommands'
+import { atomRenderers, ensureOwned, intersect, minus, readSel, runOp, union, writeSel } from '../display'
 import { isMolecule, numberedObjects } from '../models'
 import { hideSurfaces } from '../surface'
 import { runChxLines } from './aliasCommands'
@@ -291,21 +290,23 @@ const unitcellDelete = chxCommand({
 
 /**
  * ChimeraX's `style (protein|nucleic|solvent) & @@draw_mode=0 stick` (the
- * presets' `nospheres`): the polymer and solvent atoms drawn as spheres
- * become sticks, shown or hidden (a `style`, display.ts). The sphere atoms
- * are the shown and hidden ones, and the unassigned ones the automatic
- * styling makes spheres.
+ * presets' `nospheres`): the polymer and solvent atoms shown as spheres
+ * become sticks.
  */
 async function noSpheres(ctx: WorkerContext, cc: CmdContext): Promise<CmdOutcome> {
   for (const obj of numberedObjects(ctx, cc.sceneId).filter(isMolecule)) {
     const owned = await ensureOwned(ctx, cc, obj)
     if (!owned.ok) return owned
-    const cur = readAtomSets(ctx, cc.sceneId, owned.ids)
-    const initial = initialStylesOf(ctx, cc.sceneId, obj.uid)
-    const unassigned = minus(minus(initial.sphere, unionOf(cur.shown)), unionOf(cur.hidden))
-    const spheres = union(union(cur.shown.sphere, cur.hidden.sphere), unassigned)
-    const res = await restyleAtoms(ctx, cc, obj, owned.ids, intersect(spheres, '(protein or nucleic or water)'), 'stick', initial)
-    if (!res.ok) return res
+    const r = atomRenderers(owned.ids)
+    const moved = intersect(readSel(ctx, cc.sceneId, r.sphere), '(protein or nucleic or water)')
+    const writes: [number, string][] = [
+      [r.stick, union(readSel(ctx, cc.sceneId, r.stick), moved)],
+      [r.sphere, minus(readSel(ctx, cc.sceneId, r.sphere), moved)],
+    ]
+    for (const [id, next] of writes) {
+      const w = await writeSel(ctx, cc, id, next)
+      if (!w.ok) return w
+    }
   }
   return { ok: true }
 }
@@ -316,7 +317,7 @@ function initialStyle(style: AutoStyle | undefined) {
     for (const obj of numberedObjects(ctx, cc.sceneId).filter(isMolecule)) {
       const hidden = await hideSurfaces(ctx, cc, { obj, sel: '*' })
       if (!hidden.ok) return hidden
-      const styled = await applyAutoStyle(ctx, cc, obj, style, true)
+      const styled = await applyAutoStyle(ctx, cc, obj, style)
       if (!styled.ok) return styled
     }
     return { ok: true }

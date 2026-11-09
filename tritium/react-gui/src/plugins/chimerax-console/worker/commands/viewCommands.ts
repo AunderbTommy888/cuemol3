@@ -38,7 +38,7 @@ import {
   turnedRotation,
 } from '../camera'
 import type { CameraState } from '../camera'
-import { isHiddenStyleName, runOp, targetsOf } from '../display'
+import { runOp, targetsOf } from '../display'
 import { unsupported } from './warn'
 
 // --- Helpers ---
@@ -319,8 +319,7 @@ const NO_EDGE_TYPES = new Set(['simple', 'trace', 'spline', 'contour', 'gpu_mapm
 function outlinedRenderers(ctx: WorkerContext, sceneId: number): { id: number; objUid: number; egtype: string; eglinew: number; egcolor: string }[] {
   const out: { id: number; objUid: number; egtype: string; eglinew: number; egcolor: string }[] = []
   for (const obj of objectNodes(ctx, sceneId)) {
-    // The hidden-style renderers are never drawn (display.ts).
-    for (const r of rendererNodesOf(obj).filter((n) => n.type === 'renderer' && !isHiddenStyleName(n.name))) {
+    for (const r of rendererNodesOf(obj).filter((n) => n.type === 'renderer')) {
       const props = getGenericProps(ctx, { sceneId, nodeId: r.id, nodeType: 'renderer' })
       if (!props.ok) continue
       const get = (k: string) => props.entries.find((e) => e.key === k)?.value
