@@ -4,11 +4,22 @@
  * and a pattern expanded as zsh expands it.
  */
 
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { expandGlob, pathWord, readPathList, splitPathWords } from './paths'
+
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
 
 describe('a path list', () => {
   it('splits on spaces, keeps quoted and escaped text literal, and writes a path back the same way', () => {
@@ -25,7 +36,7 @@ describe('a path list', () => {
   })
 
   it('expands a pattern level by level, as typed, without dot files', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuemol-glob-'))
+    const dir = makeTmpDir('cuemol-glob-')
     for (const d of ['set1', 'set2', '.cache']) fs.mkdirSync(path.join(dir, d))
     for (const f of ['set1/b.pdb', 'set1/a.pdb', 'set2/c.pdb', 'set2/c.txt', '.cache/x.pdb', 'set1/.y.pdb']) {
       fs.writeFileSync(path.join(dir, f), '')

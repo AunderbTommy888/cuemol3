@@ -5,7 +5,7 @@
  * as one undo step, skipping the objects it fails on.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, beforeEach } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -17,6 +17,17 @@ import { parseQax, writeQax } from '@renderer/worker/server/actions/qax/codec'
 import type { QaxMacro } from '@renderer/worker/server/actions/qax/model'
 import { bindMacroItems, macroShape } from '@renderer/worker/server/actions/qax/run'
 import { runLibraryEntry } from '@renderer/worker/server/services/actions/library'
+
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
 
 /** One undo step of the given ops, each with the paths its node arguments had. */
 function row(id: number, ops: [string, Record<string, unknown>, Record<string, string>][]): ActionRow {
@@ -70,7 +81,7 @@ describe('Action library macros', () => {
       params: [{ name: 't', type: 'MolCoord' }],
       items: [{ kind: 'op', name: 'set_visible', args: [{ name: 'nodeId', param: 't' }, { name: 'nodeType', text: 'object' }, { name: 'visible', text: 'false' }] }],
     }
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qax-lib-'))
+    const dir = makeTmpDir('qax-lib-')
     const file = path.join(dir, 'hide.qax')
     fs.writeFileSync(file, writeQax({ version: 1, actions: [], macros: [hide] }))
 

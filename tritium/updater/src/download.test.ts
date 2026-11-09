@@ -1,11 +1,22 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, readdirSync } from 'node:fs'
+import { afterEach, afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { createHash } from 'node:crypto'
 import { downloadVerified } from './download'
+
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
 // The asset is served behind a redirect, as GitHub serves it from its storage host.
 const body = Buffer.from('installer bytes')
@@ -23,7 +34,7 @@ afterAll(() => { server.close() })
 
 describe('downloadVerified', () => {
   it('keeps the file only when it matches the digest', async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'upd-dl-'))
+    const dir = makeTmpDir('upd-dl-')
     const good = 'sha256:' + createHash('sha256').update(body).digest('hex')
     await downloadVerified({ url: `${base}/asset`, dest: path.join(dir, 'ok.dmg'), digest: good })
     expect(existsSync(path.join(dir, 'ok.dmg'))).toBe(true)
