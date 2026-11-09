@@ -3,15 +3,26 @@
  * `pkill` are stubs on PATH: the stub `open` plays the new app, writing the
  * launch marker or not.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildSwapScript } from './swapScript'
 
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
 function setup(newAppStarts: boolean) {
-  const root = mkdtempSync(path.join(tmpdir(), 'upd-swap-'))
+  const root = makeTmpDir('upd-swap-')
   const app = path.join(root, 'Applications', 'CueMol3.app')
   const staging = path.join(root, 'work', 'staging', 'CueMol3.app')
   for (const [dir, v] of [[app, 'old'], [staging, 'new']] as const) {

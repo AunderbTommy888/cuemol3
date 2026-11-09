@@ -11,7 +11,7 @@
  * ran.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, beforeEach } from 'vitest'
 import type { Scene } from '@cuemol/core/src/wrappers/Scene'
 import { fakeObject, fakeRenderer, fakeScene, makeWorkerCtx } from '@renderer/worker/testing'
 import type { FakeScene } from '@renderer/worker/testing'
@@ -33,6 +33,17 @@ import { withUndoTxn, undoTxnResult } from '@renderer/worker/server/services/wit
 import { invokeOp, runInTxn } from '@renderer/worker/server/catalog/opRuntime'
 import type { AnyOp } from '@renderer/worker/server/catalog/op'
 import { fail } from '@renderer/worker/shared/result'
+
+// Temp dirs a test makes, removed after it.
+const tmpDirs: string[] = []
+function makeTmpDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
 
 /** A scene whose undo stack behaves as the C++ one does. */
 interface StackScene extends FakeScene {
@@ -413,7 +424,7 @@ describe('serviceOps', () => {
     editWith(scene, ctx, 'clear', [CLEAR])
     editWith(scene, ctx, 'again', [HIDE])
     const ids = rowsOf(scene).map((r) => r.id)
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qax-')), 'steps.qax')
+    const file = path.join(makeTmpDir('qax-'), 'steps.qax')
 
     expect(exportActionSteps(ctx, { sceneId: scene.uid, stepIds: [ids[2], ids[0]], filePath: file })).toEqual({ ok: true, count: 2 })
     const doc = parseQax(fs.readFileSync(file, 'utf8'))
