@@ -7,11 +7,12 @@
  * global alias (`data/default_style.xml`: `protein`, `nucleic`, `ligand`,
  * `water`, `helix`, `sheet`, `coil`) the alias is used; backbone and side
  * chain are spelled out by atom name. A selector CueMol has no equivalent
- * for is still recognised as one -- so `color ions red` does not read
- * `ions` as a colour -- and refused when it is translated.
+ * for is still recognised as one -- so `color ribose red` does not read
+ * `ribose` as a colour -- and refused when it is translated.
  */
 
 import { ELEMENT_COLORS } from '../colorTables'
+import { IONS, NONPOLAR_H } from '../atomClasses'
 
 /** Atom names of a protein and a nucleic acid backbone. */
 const BACKBONE =
@@ -32,11 +33,14 @@ const TRANSLATED: Readonly<Record<string, string>> = {
   helix: 'helix',
   strand: 'sheet',
   coil: 'coil',
+  // Approximations by element and name (atomClasses.ts): ChimeraX tells these by structure.
+  ions: IONS,
+  HC: NONPOLAR_H,
 }
 
 /** Selectors ChimeraX has that the console cannot translate yet. */
 const KNOWN_ONLY = new Set([
-  'ions', 'main', 'min-backbone', 'ribose', 'pbonds', 'pbondatoms', 'hbonds', 'hbondatoms',
+  'main', 'min-backbone', 'ribose', 'pbonds', 'pbondatoms', 'hbonds', 'hbondatoms',
   'sel-residues', 'template-mismatch',
 ])
 

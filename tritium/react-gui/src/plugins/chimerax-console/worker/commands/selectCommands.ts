@@ -32,6 +32,8 @@ import type { NumberedObject } from '../models'
 import { ALL, NONE } from '../spec/emit'
 import type { SpecNode } from '../spec/parse'
 import { namedSelections } from '../names'
+import { chxNames, deleteChxName, setChxName } from '../chxNames'
+import { selectorExpr } from '../spec/selectors'
 import { unsupported, warnIgnored } from './warn'
 
 // --- select ---
@@ -296,6 +298,15 @@ const selectClear = chxCommand({
 /** A name CueMol's selection scanner reads as one reference (`SEL_TOKEN`). */
 const NAME_RE = /^[_a-zA-Z0-9][*'_a-zA-Z0-9]*$/
 
+/**
+ * `name X spec`: name the specification's text (`chxNames.ts`), read again
+ * wherever the name is used -- so it may name a model (`name ALC1 #2/k,l`)
+ * and use other names. It is translated once first, so a mistake (or a name
+ * used inside itself) is reported here. When it means the same in every
+ * molecule it is also kept as a CueMol named selection (`define_selection`),
+ * which the GUI shows and the scene saves; one that differs between models
+ * lives in the console only, for this session, and is said to.
+ */
 const name = chxCommand({
   words: ['name'],
   args: [
@@ -306,25 +317,45 @@ const name = chxCommand({
   summary: 'Name a specification, to use the name as a selector later; with no specification, show the definition.',
   async run(ctx, args, cc) {
     if (args.text.trim() === '') {
+      const own = chxNames(ctx, cc.sceneId).get(args.name)
+      if (own !== undefined) {
+        cc.print(`${args.name}: ${own}`)
+        return { ok: true }
+      }
       const def = namedSelections(ctx, cc.sceneId).find((s) => s.name === args.name)
       if (!def) return { ok: false, error: `Error: no name "${args.name}"` }
       cc.print(`${def.name}: ${def.expr}`)
       return { ok: true }
     }
-    if (!NAME_RE.test(args.name) || args.name === 'all' || args.name === 'sel') {
-      return { ok: false, error: `Error: name: "${args.name}" cannot be a name (letters, digits and _ only; not all or sel)` }
+    if (!NAME_RE.test(args.name) || args.name === 'all' || args.name === 'sel' || selectorExpr(args.name) !== null) {
+      return { ok: false, error: `Error: name: "${args.name}" cannot be a name (letters, digits and _ only; not all, sel or a builtin selector)` }
     }
-    const found = targetsOf(ctx, cc.sceneId, args.text)
-    if (!found.ok) return found
-    // One expression for every molecule: a specification that means one
-    // thing in #1 and another in #2 cannot be kept as one.
+    const spec = args.text.trim()
+    // The whole text must be the specification: one read only in part would name less than written.
+    const read = readSpec(ctx, cc.sceneId, spec)
+    if (read.ok && spec.slice(read.consumed).trim() !== '') {
+      return { ok: false, error: `${spec}\n${' '.repeat(read.consumed)}^ name: the specification ends here; the rest is not part of it` }
+    }
+    // Kept first, then translated: a name used inside itself shows up only with the new definition.
+    const before = setChxName(cc.sceneId, args.name, spec)
+    const found = targetsOf(ctx, cc.sceneId, spec)
+    if (!found.ok) {
+      deleteChxName(cc.sceneId, args.name, before)
+      return found
+    }
     const mols = numberedObjects(ctx, cc.sceneId).filter(isMolecule)
     const exprs = new Set(mols.map((m) => found.targets.find((t) => t.obj.uid === m.uid)?.sel ?? NONE))
+    const cuemol = namedSelections(ctx, cc.sceneId).find((s) => s.name === args.name)
     if (exprs.size > 1) {
-      return { ok: false, error: 'Error: name: the specification differs between models (it names a model, or reaches across them), which a CueMol named selection cannot keep' }
+      // A CueMol named selection of the name would now say something else: removed.
+      if (cuemol) {
+        const res = await runOp(ctx, cc, 'remove_selection', { styleSet: cuemol.styleSet, name: cuemol.name })
+        if (!res.ok) return res
+      }
+      cc.print(`name: "${args.name}" means a different thing in each model, so it is kept by the console for this session only (not saved with the scene)`)
+      return { ok: true }
     }
-    const expr = [...exprs][0] ?? NONE
-    const res = await runOp(ctx, cc, 'define_selection', { name: args.name, selection: expr, styleSet: null })
+    const res = await runOp(ctx, cc, 'define_selection', { name: args.name, selection: [...exprs][0] ?? NONE, styleSet: null })
     return res.ok ? { ok: true } : res
   },
 })
@@ -343,8 +374,10 @@ const nameDelete = chxCommand({
   mutates: false,
   summary: 'Forget a name, or all of them.',
   async run(ctx, args, cc) {
+    const own = [...chxNames(ctx, cc.sceneId).keys()].filter((n) => args.name === 'all' || n === args.name)
     const defs = namedSelections(ctx, cc.sceneId).filter((s) => args.name === 'all' || s.name === args.name)
-    if (defs.length === 0 && args.name !== 'all') return { ok: false, error: `Error: no name "${args.name}"` }
+    if (defs.length === 0 && own.length === 0 && args.name !== 'all') return { ok: false, error: `Error: no name "${args.name}"` }
+    for (const n of own) deleteChxName(cc.sceneId, n)
     for (const d of defs) {
       const res = await runOp(ctx, cc, 'remove_selection', { styleSet: d.styleSet, name: d.name })
       if (!res.ok) return res
@@ -359,8 +392,11 @@ const nameList = chxCommand({
   mutates: false,
   summary: 'List the names.',
   run(ctx, _args, cc) {
-    const defs = namedSelections(ctx, cc.sceneId)
-    if (defs.length === 0) cc.print('There are no user-defined specifier names.')
+    // The console's names as written; CueMol named selections it does not have (made in the GUI) as expressions.
+    const own = chxNames(ctx, cc.sceneId)
+    const defs = namedSelections(ctx, cc.sceneId).filter((d) => !own.has(d.name))
+    if (own.size === 0 && defs.length === 0) cc.print('There are no user-defined specifier names.')
+    for (const [n, spec] of own) cc.print(`${n}: ${spec}`)
     for (const d of defs) cc.print(`${d.name}: ${d.expr}`)
     return { ok: true }
   },

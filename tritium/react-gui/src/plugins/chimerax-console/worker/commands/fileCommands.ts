@@ -25,7 +25,7 @@ import { resolvePath } from '@plugins/console/worker/dialect-api'
 import { BoolArg, FileNameArg, FileNamesArg, IntArg, SpecArg, splitRepeated, StringArg } from '../cli/argTypes'
 import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
-import { CARTOONS, emitContext, runOp, targetsOf } from '../display'
+import { CARTOONS, displayedAtoms, emitContext, intersect, runOp, targetsOf } from '../display'
 import { isMolecule, numberedObjects } from '../models'
 import type { NumberedObject } from '../models'
 import { emitFor, NONE } from '../spec/emit'
@@ -206,8 +206,27 @@ const open = chxCommand({
 })
 
 /**
+ * The UniProt accession of a UniProt entry name (`O51E2_HUMAN` -> `Q9H255`),
+ * from the UniProt REST search, as ChimeraX looks a name up
+ * (`uniprot/fetch_uniprot.py` `map_uniprot_ident`).
+ */
+async function uniprotAccession(name: string): Promise<{ ok: true; accession: string } | { ok: false; error: string }> {
+  const url = `https://rest.uniprot.org/uniprotkb/search?query=id:${encodeURIComponent(name)}&fields=accession&format=tsv`
+  try {
+    const resp = await fetch(url)
+    if (!resp.ok) return { ok: false, error: `Error: alphafold fetch: could not look up "${name}" at UniProt (HTTP ${resp.status})` }
+    // A header line ("Entry"), then one accession per line.
+    const accession = (await resp.text()).split(/\r?\n/).slice(1).map((l) => l.trim()).find((l) => l !== '')
+    return accession ? { ok: true, accession } : { ok: false, error: `Error: alphafold fetch: UniProt has no entry named "${name}"` }
+  } catch (e) {
+    return { ok: false, error: `Error: alphafold fetch: could not look up "${name}" at UniProt (${e instanceof Error ? e.message : String(e)})` }
+  }
+}
+
+/**
  * `alphafold fetch <UniProt>`: the AlphaFold DB model, as `open
- * alphafold:<UniProt>` opens it (coloured by pLDDT).
+ * alphafold:<UniProt>` opens it (coloured by pLDDT). A UniProt entry name
+ * (`NOS3_HUMAN`) is looked up to its accession first, and names the model.
  */
 const alphafoldFetch = chxCommand({
   words: ['alphafold', 'fetch'],
@@ -217,11 +236,14 @@ const alphafoldFetch = chxCommand({
     ...['alignTo', 'trim', 'ignoreCache', 'version'].map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
   ],
   mutates: true,
-  summary: 'Fetch an AlphaFold DB model by UniProt id, coloured by pLDDT.',
-  run(ctx, args, cc) {
+  summary: 'Fetch an AlphaFold DB model by UniProt accession or entry name, coloured by pLDDT.',
+  async run(ctx, args, cc) {
     warnIgnored(cc, 'alphafold fetch', args, ['alignTo', 'trim', 'ignoreCache', 'version'])
     if (args.pae === 'true') cc.warn('alphafold fetch: pae is not supported (predicted aligned error); ignored')
-    return openOne(ctx, cc, `alphafold:${args.uniprotId}`, { name: '', format: '', fromDatabase: '' })
+    if (!args.uniprotId.includes('_')) return openOne(ctx, cc, `alphafold:${args.uniprotId}`, { name: '', format: '', fromDatabase: '' })
+    const looked = await uniprotAccession(args.uniprotId)
+    if (!looked.ok) return looked
+    return openOne(ctx, cc, `alphafold:${looked.accession}`, { name: `AlphaFold ${args.uniprotId}`, format: '', fromDatabase: '' })
   },
 })
 
@@ -294,8 +316,8 @@ const deleteAtoms = chxCommand({
   },
 })
 
-const SAVE_IGNORED = ['supersample', 'pixelSize', 'quality']
-const SAVE_REFUSED = ['selectedOnly', 'displayedOnly', 'relModel', 'allCoordsets']
+const SAVE_IGNORED = ['pixelSize', 'quality']
+const SAVE_REFUSED = ['relModel', 'allCoordsets']
 
 const save = chxCommand({
   words: ['save'],
@@ -306,16 +328,22 @@ const save = chxCommand({
     { name: 'width', type: IntArg, role: 'keyword' },
     { name: 'height', type: IntArg, role: 'keyword' },
     { name: 'transparentBackground', type: BoolArg, role: 'keyword' },
+    { name: 'supersample', type: IntArg, role: 'keyword' },
+    { name: 'selectedOnly', type: BoolArg, role: 'keyword' },
+    { name: 'displayedOnly', type: BoolArg, role: 'keyword' },
     ...SAVE_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
     ...SAVE_REFUSED.map((name) => ({ name, type: StringArg, role: 'keyword' as const })),
   ],
   mutates: false,
-  summary: 'Save an image (.png), the scene (.qsc) or a model (.pdb).',
+  summary: 'Save an image (.png), the scene (.qsc), a model (.pdb) or the shapes (.stl).',
   completions: [{ source: 'files', description: 'file' }],
   // Saving the scene resets the undo stack: it cannot run inside the submission's transaction.
   outsideTxn: (args) => /\.qsc$/i.test(args.filename ?? '') || /^(qsc|session)$/i.test(args.format ?? ''),
   async run(ctx, args, cc) {
     warnIgnored(cc, 'save', args, SAVE_IGNORED)
+    // CueMol's image export always antialiases by jitter supersampling (OffScreenView: 32 samples),
+    // more than ChimeraX's usual supersample 3; only asking for none differs.
+    if (args.supersample !== '' && Number(args.supersample) <= 1) cc.warn('save: supersample 1 is not supported (CueMol always antialiases the exported image); ignored')
     const refused = SAVE_REFUSED.find((k) => args[k] !== '')
     if (refused) return unsupported(`Error: save: ${refused} is not supported`)
     const path = resolvePath(cc.cwd, args.filename)
@@ -331,14 +359,23 @@ const save = chxCommand({
       })
     }
     if (ext === 'qsc') return runOp(ctx, cc, 'save_scene', { path })
+    if (ext === 'stl') return runOp(ctx, cc, 'export_scene', { path, format: 'stl', width: null, height: null, transparent: null, dpi: null })
     if (ext === 'pdb') {
       const found = objectsOf(ctx, cc.sceneId, args.models)
       if (!found.ok) return found
       const mols = found.objs.filter(isMolecule)
       if (mols.length !== 1) return { ok: false, error: `Error: save: a .pdb file holds one model here; name it with models (${mols.length} given)` }
-      return runOp(ctx, cc, 'save_object', { objId: mols[0].uid, fileName: path, selection: null, format: null, link: false })
+      // selectedOnly / displayedOnly: the selected atoms, the displayed ones (`displayedAtoms`), or both.
+      let selection: string | null = null
+      if (args.selectedOnly === 'true') selection = emitContext(ctx, cc.sceneId).currentSelection(mols[0].model)
+      if (args.displayedOnly === 'true') {
+        const shown = displayedAtoms(ctx, cc.sceneId, mols[0].uid)
+        selection = selection === null ? shown : intersect(selection, shown)
+      }
+      if (selection === NONE) return { ok: false, error: 'Error: save: no atoms to save' }
+      return runOp(ctx, cc, 'save_object', { objId: mols[0].uid, fileName: path, selection, format: null, link: false })
     }
-    return unsupported(`Error: save: "${ext}" files are not supported (png, qsc, pdb)`)
+    return unsupported(`Error: save: "${ext}" files are not supported (png, qsc, pdb, stl)`)
   },
 })
 

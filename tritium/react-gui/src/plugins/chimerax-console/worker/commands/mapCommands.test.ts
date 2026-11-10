@@ -9,7 +9,9 @@
  * means every atom of the molecule -- instead of the molecule name; a
  * keyword the console does not do that throws away the rest of the command
  * (`color tan` after `encloseVolume`); and an EDS map left in CueMol's blue
- * box instead of ChimeraX's grey mesh of the whole map at its top 1% level.
+ * box instead of ChimeraX's grey mesh of the whole map at its top 1% level;
+ * and `sdLevel` / `rmsLevel` written as sigmas (`siglevel`, a top fraction
+ * on a cryo-EM map) instead of the map value ChimeraX works out.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -48,7 +50,11 @@ vi.mock('@renderer/worker/server/catalog/refs', () => ({
 vi.mock('@renderer/worker/server/services/props/read', () => ({
   getGenericProps: () => ({
     ok: true,
-    entries: [{ key: 'type_name', value: state.type }, { key: 'region_mode_resolved', value: state.region }],
+    // The map's statistics (mean 1, standard deviation 2) and its renderer.
+    entries: [
+      { key: 'type_name', value: state.type }, { key: 'region_mode_resolved', value: state.region },
+      { key: 'den_mean', value: 1 }, { key: 'den_sigma', value: 2 },
+    ],
   }),
 }))
 vi.mock('@renderer/worker/server/services/helpers/sceneResolver', () => ({
@@ -89,6 +95,12 @@ describe('volume', () => {
     // Over the whole map it thins.
     expect((await run('volume', { volumes: '#2', step: '2', region: 'all' })).ok).toBe(true)
     expect(writes()).toEqual(['region_mode=full', 'lod=step2'])
+  })
+
+  it('turns sdLevel and rmsLevel into map values from the mean and standard deviation', async () => {
+    expect((await run('volume', { volumes: '#2', sdLevel: '1.5' })).ok).toBe(true)
+    expect((await run('volume', { volumes: '#2', rmsLevel: '2' })).ok).toBe(true)
+    expect(writes()).toEqual(['level=4', `level=${2 * Math.sqrt(5)}`])
   })
 
   it('skips a keyword it does not do with a warning and applies the rest of the command', async () => {

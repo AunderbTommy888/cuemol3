@@ -183,3 +183,39 @@ export async function closeSurfaces(ctx: WorkerContext, cc: CmdContext, t: Targe
   }
   return { ok: true }
 }
+
+/** A molecule name written as CueMol's `around` target. */
+function quoteName(name: string): string {
+  return `"${name.replace(/"/g, '\\"')}"`
+}
+
+/**
+ * Show only the patches of molecule `t.obj`'s console surfaces near some
+ * atoms (`surface zone`): each surface's `showsel` keeps the atoms within
+ * `dist` of them (`expand` in the same molecule, `around` from another).
+ * ChimeraX keeps the triangles whose corners are all within `dist`; a
+ * dsurface shows whole patches per atom, so the zone follows atom centres.
+ */
+export async function zoneSurfaces(ctx: WorkerContext, cc: CmdContext, t: Target, near: readonly Target[], dist: number): Promise<OpRun> {
+  const parts = near.map((n) => (n.obj.uid === t.obj.uid ? `(${n.sel}) expand ${dist}` : `(${n.sel}) around ${dist} [${quoteName(n.obj.name)}]`))
+  const zone = parts.length === 0 ? NONE : parts.map((p) => `(${p})`).join(' or ')
+  for (const s of surfacesOn(ctx, cc.sceneId, t.obj.uid)) {
+    const cur = readShowSel(ctx, cc.sceneId, s.id)
+    const w = await writeShowSel(ctx, cc, s.id, intersect(cur, zone))
+    if (!w.ok) return w
+  }
+  return { ok: true }
+}
+
+/**
+ * Show the whole of molecule `t.obj`'s console surfaces again (`surface
+ * unzone`). The patches shown before the zone are not kept (the zone is
+ * written into `showsel`), so every patch is shown.
+ */
+export async function unzoneSurfaces(ctx: WorkerContext, cc: CmdContext, t: Target): Promise<OpRun> {
+  for (const s of surfacesOn(ctx, cc.sceneId, t.obj.uid)) {
+    const w = await writeShowSel(ctx, cc, s.id, '*')
+    if (!w.ok) return w
+  }
+  return { ok: true }
+}

@@ -4,13 +4,13 @@
  */
 
 import type { ConsoleCommand } from '@plugins/console/worker/dialect-api'
-import { BoolArg, IntArg, Or, RestOfLine, SpecArg, StringArg } from '../cli/argTypes'
+import { BoolArg, IntArg, NoArg, Or, RestOfLine, SpecArg, StringArg } from '../cli/argTypes'
 import type { ArgType } from '../cli/argTypes'
 import { chxCommand, isChxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
 import { resolveWords, usageOf } from '../cli/syntax'
 import { framingOf } from '../camera'
-import { readSpec, runOp, targetsOf } from '../display'
+import { readSpec, runOp, targetsOf, wholeMapsOf } from '../display'
 import { unsupported, warnIgnored } from './warn'
 import { recallView } from './viewCommands'
 
@@ -18,15 +18,23 @@ import { recallView } from './viewCommands'
 const NamedViewArg: ArgType = { ...StringArg, name: 'a view name' }
 
 /**
- * `view [objects | name] [frames] [cofr]`. ChimeraX reads the first word as
- * a specification, else as a view name (`Or(ObjectsArg, NamedViewArg)`).
+ * `view [objects | name] [frames] [clip] [cofr]`. ChimeraX reads the first
+ * word as a specification, else as a view name (`Or(ObjectsArg,
+ * NamedViewArg)`). `clip` (true by default) puts the near and far planes
+ * around what is fitted, which the slab does here; `clip false` removes
+ * them in ChimeraX, but CueMol always has a slab, so the slab is left as it
+ * is. A named view keeps its own slab either way, as in ChimeraX.
+ * `orient` first puts the view back to its initial direction (ChimeraX
+ * `initial_camera_view`), then fits as usual.
  */
 const view = chxCommand({
   words: ['view'],
   args: [
     { name: 'objects', type: Or(SpecArg, NamedViewArg), role: 'optional' },
     { name: 'frames', type: IntArg, role: 'optional' },
+    { name: 'clip', type: BoolArg, role: 'keyword' },
     { name: 'cofr', type: BoolArg, role: 'keyword' },
+    { name: 'orient', type: NoArg, role: 'keyword' },
     { name: 'pad', type: StringArg, role: 'keyword', ignored: true },
   ],
   mutates: false,
@@ -46,13 +54,21 @@ const view = chxCommand({
     }
     if (args.frames !== '') cc.warn('view: frames is not supported (the view changes at once); ignored')
     warnIgnored(cc, 'view', args, ['pad'])
+    if (args.orient === 'true') {
+      const res = await runOp(ctx, cc, 'set_view', {
+        zoom: null, slab: null, distance: null, center: null, rotation: [1, 0, 0, 0], fitSlab: null, objId: null,
+      })
+      if (!res.ok) return res
+    }
     const found = targetsOf(ctx, cc.sceneId, args.objects)
     if (!found.ok) return found
-    const framing = framingOf(ctx, cc.sceneId, cc.viewId, found.targets)
+    // Maps count too, by what they draw, when named as models (a molecule's atoms are the specification's).
+    const maps = wholeMapsOf(ctx, cc.sceneId, args.objects).map((o) => o.uid)
+    const framing = framingOf(ctx, cc.sceneId, cc.viewId, found.targets, maps)
     if (!framing) return { ok: false, error: 'Error: view: nothing to show' }
     // Every argument of set_view is given: one left out reaches the op as undefined, not null.
     const res = await runOp(ctx, cc, 'set_view', {
-      zoom: framing.zoom, slab: framing.slab, distance: null, center: framing.center, rotation: null, fitSlab: null, objId: null,
+      zoom: framing.zoom, slab: args.clip === 'false' ? null : framing.slab, distance: null, center: framing.center, rotation: null, fitSlab: null, objId: null,
     })
     return res.ok ? { ok: true } : res
   },
@@ -63,9 +79,9 @@ const viewInitial = chxCommand({
   words: ['view', 'initial'],
   args: [{ name: 'models', type: SpecArg, role: 'optional' }],
   mutates: false,
-  summary: 'Put models back where they were opened (nothing to do: CueMol objects do not move).',
+  summary: 'Put models back where they were opened (nothing to do: the console does not move models).',
   run(_ctx, _args, cc) {
-    cc.print('view initial: CueMol objects have no positions of their own, so they are in their initial positions')
+    cc.print('view initial: the console does not move models, so they are in their initial positions')
     return { ok: true }
   },
 })

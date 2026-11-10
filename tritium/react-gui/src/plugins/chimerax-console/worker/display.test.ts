@@ -2,17 +2,26 @@
  * @file plugins/chimerax-console/worker/display.test.ts
  * @description What the ChX display commands write, as ops on the console's own renderers.
  *
- * The state is the `chx:` renderers' selections and paint, nothing else, so
- * the contracts are about what is read and written there:
+ * Cartoons and paint are the `chx:` renderers' state; atoms have a display
+ * state of their own (`displayState.ts`), kept in a scene app-data entry, from
+ * which the atom renderers are written. The contracts:
  *
- * - show / hide / style combine the specification into the selections, and
- *   no renderer not named `chx:` is touched;
- * - a command starts from the selection as it is now, so an undo or an edit
- *   in the GUI is where the next command starts;
+ * - show / hide / style write the specification into the selections, and no
+ *   renderer not named `chx:` is touched; a hidden atom keeps its style
+ *   (also one given while hidden, and through `show ... only`);
+ * - a molecule the specification reaches no atom of is left alone (no
+ *   renderer made);
+ * - with no state kept (an undo of the first command, a scene opened from a
+ *   file), a command starts from the selections as they are, and one that
+ *   changes nothing writes nothing (redo is kept), also once atoms the state
+ *   knows are deleted;
+ * - a failed write puts back what the command had written;
  * - a colour given to atoms is in every atom renderer, so it stays when an
  *   atom changes style;
  * - a renderer is switched to per-selection paint once only, so a second
- *   `color` does not wipe the first.
+ *   `color` does not wipe the first;
+ * - a map is reached as a whole by its model number only (a chain or residue
+ *   part reaches atoms), so `view /b:16-24` does not frame a map.
  *
  * The catalog ops are faked over an in-memory molecule; what is checked is
  * the dialect's bookkeeping, not the ops.
@@ -32,8 +41,17 @@ interface Rend {
 
 const state = vi.hoisted(() => ({
   rends: [] as Rend[],
+  /** The ids of the atoms there are (indexes into ATOMS). */
+  present: [0, 1, 2, 3],
+  /** The app-data store (the kept display state). */
+  store: new Map<string, { value: string; has_value: boolean }>(),
+  /** Writes that change something: selections and store values. */
+  writes: 0,
+  failStore: false,
   nextId: 100,
   switched: [] as string[],
+  objects: [] as { uid: number; name: string; className: string }[],
+  initial: { stick: '*', ball: 'none', sphere: 'none' },
 }))
 
 vi.mock('@renderer/worker/server/catalog', async (importOriginal) => ({
@@ -48,6 +66,7 @@ vi.mock('@renderer/worker/server/catalog', async (importOriginal) => ({
         break
       case 'set_renderer_selection':
         byId(a.rendId).sel = String(a.selection)
+        state.writes++
         break
       case 'set_renderer_coloring':
         byId(a.nodeId).paint = true
@@ -74,17 +93,51 @@ vi.mock('@renderer/worker/server/services/props/read', () => ({
 vi.mock('@renderer/worker/server/services/coloring/colorTargets', () => ({
   getColoringClassName: (rend: { id: number }) => (state.rends.find((r) => r.id === rend.id)?.paint ? 'PaintColoring' : 'CPKColoring'),
 }))
+vi.mock('@renderer/worker/server/services/helpers/makeSel', () => ({ makeSel: (_ctx: unknown, expr: string) => expr }))
 vi.mock('@renderer/worker/server/services/helpers/sceneResolver', () => ({
-  getSceneOrNull: () => ({ getRenderer: (id: number) => ({ id }) }),
+  getSceneOrNull: () => ({
+    getRenderer: (id: number) => ({ id }),
+    getObject: () => ({
+      getSelArray: (expr: string) => new Uint8Array(Int32Array.from(selectedIds(expr)).buffer),
+      toAtomNameSel: (expr: string) => expr,
+    }),
+    getAppData: (key: string) => entry(key, false),
+    getCreateAppData: (key: string) => entry(key, true),
+  }),
 }))
+
+/** A fake TransientStrData entry over `state.store`. */
+function entry(key: string, create: boolean) {
+  if (!state.store.has(key)) {
+    if (!create) return null
+    state.store.set(key, { value: '', has_value: false })
+  }
+  const e = state.store.get(key) as { value: string; has_value: boolean }
+  return {
+    getProp: (n: 'value' | 'has_value') => e[n],
+    setProp: (n: 'value' | 'has_value', v: never) => {
+      if (state.failStore) throw new Error('store failed')
+      e[n] = v
+      if (n === 'value') state.writes++
+    },
+  }
+}
 vi.mock('@renderer/worker/server/services/scene/listSceneObjects', () => ({
-  listSceneObjects: () => ({ objects: [{ uid: 1, name: '1crn', className: 'MolCoord' }] }),
+  listSceneObjects: () => ({ objects: state.objects }),
+}))
+
+vi.mock('./autoStyle', () => ({
+  applyAutoStyle: async () => ({ ok: true }),
+  initialStylesOf: () => state.initial,
 }))
 
 import { CHX_COMMANDS } from './commands/registry'
 import { bindLine, resolveWords } from './cli/syntax'
+import { wholeMapsOf } from './display'
+import { resetModelNumbers } from './models'
 
-const ctx = {} as WorkerContext
+// No view: the camera is not read (keepingSilhouettes).
+const ctx = { sceMgr: { getView: () => null }, svc: { copyToTypedArray: (a: unknown) => a } } as unknown as WorkerContext
 const cc = {
   sceneId: 1, viewId: 2, cwd: '/', print: () => {}, printMarkdown: () => {}, warn: () => {}, markMutated: () => {},
   setCwd: () => {}, noteStream: () => {}, streamId: (t: string) => t, stopped: () => false,
@@ -115,9 +168,10 @@ type Atom = (typeof ATOMS)[number]
 /**
  * The atoms a CueMol expression selects, for the subset the dialect writes:
  * and / or / not, brackets, `*`, `none`, `protein`, `ligand` (none here),
- * `resn`, `name`, `chain`, `resi a:b`.
+ * `resn`, `name`, `chain`, `resi a:b`, `aid a:b` (the index into ATOMS);
+ * only atoms there are (`state.present`).
  */
-function selected(expr: string): string[] {
+function selectedIds(expr: string): number[] {
   const toks = expr.match(/\(|\)|[^\s()]+/g) ?? []
   let i = 0
   const term = (): (a: Atom) => boolean => {
@@ -137,7 +191,9 @@ function selected(expr: string): string[] {
     if (t === 'resn') return (a) => v.includes(a.resn)
     if (t === 'name') return (a) => v.includes(a.name)
     if (t === 'chain') return (a) => v.includes(a.chain)
-    if (t === 'resi') return (a) => v.some((r) => { const [lo, hi = lo] = r.split(':').map(Number); return a.resi >= lo && a.resi <= hi })
+    const inRange = (x: number) => v.some((r) => { const [lo, hi = lo] = r.split(':').map(Number); return x >= lo && x <= hi })
+    if (t === 'resi') return (a) => inRange(a.resi)
+    if (t === 'aid') return (a) => inRange(ATOMS.indexOf(a))
     throw new Error(`unexpected ${t}`)
   }
   const andExpr = () => {
@@ -151,7 +207,12 @@ function selected(expr: string): string[] {
     return e
   }
   const f = orExpr()
-  return ATOMS.filter(f).map((a) => `${a.resn}${a.resi}@${a.name}`)
+  return ATOMS.flatMap((a, id) => (state.present.includes(id) && f(a) ? [id] : []))
+}
+
+/** The atoms an expression selects, by name. */
+function selected(expr: string): string[] {
+  return selectedIds(expr).map((id) => `${ATOMS[id].resn}${ATOMS[id].resi}@${ATOMS[id].name}`)
 }
 
 describe('ChX display state', () => {
@@ -159,6 +220,13 @@ describe('ChX display state', () => {
     state.rends = [{ id: 1, name: 'mine', sel: 'protein', paint: false, entries: [] }]
     state.nextId = 100
     state.switched = []
+    state.objects = [{ uid: 1, name: '1crn', className: 'MolCoord' }]
+    state.initial = { stick: '*', ball: 'none', sphere: 'none' }
+    state.present = [0, 1, 2, 3]
+    state.store.clear()
+    state.writes = 0
+    state.failStore = false
+    resetModelNumbers()
   })
 
   it('combines show, hide, style and cartoon into the chx: selections, leaving other renderers alone', async () => {
@@ -174,11 +242,50 @@ describe('ChX display state', () => {
     expect(rend('mine').sel).toBe('protein')
   })
 
-  it('starts from the selection as it is now (an undo, or an edit in the GUI)', async () => {
+  it('keeps the style of a hidden atom, and leaves a molecule the specification reaches no atom of alone', async () => {
+    await chx('show :TRP atoms only')
+    expect(state.rends.map((r) => r.name)).toEqual(['mine'])
+
+    await chx('show :ALA,SER atoms')
+    await chx('style :ALA sphere')
+    await chx('hide :ALA')
+    // A style given while hidden is kept too, and through show ... only.
+    await chx('style :ALA@CB ball')
+    await chx('show :SER atoms only')
+    await chx('show :ALA atoms')
+    expect(selected(rend('chx:sphere').sel)).toEqual(['ALA3@CA'])
+    expect(selected(rend('chx:ball').sel)).toEqual(['ALA3@CB'])
+    expect(selected(rend('chx:stick').sel)).toEqual(['SER7@CA'])
+  })
+
+  it('starts from the selections with no state kept, and writes nothing when nothing changes', async () => {
     await chx('show :ALA')
+    // An undo of that command: the state is gone, the selection is back.
+    state.store.clear()
     rend('chx:stick').sel = 'resn GLY'
     await chx('show :SER')
     expect(selected(rend('chx:stick').sel)).toEqual(['SER7@CA', 'GLY9@CA'])
+
+    state.store.clear()
+    state.writes = 0
+    await chx('show :GLY')
+    expect(state.writes).toBe(0)
+
+    // A state kept, then an atom it knows deleted: still nothing to write.
+    await chx('style :SER ball')
+    await chx('style :SER stick')
+    state.present = [0, 1, 2]
+    state.writes = 0
+    await chx('show :SER')
+    expect(state.writes).toBe(0)
+  })
+
+  it('puts the selections back when keeping the state fails', async () => {
+    await chx('show :ALA')
+    state.failStore = true
+    await expect(chx('style :ALA sphere')).rejects.toThrow('store failed')
+    expect(selected(rend('chx:stick').sel)).toEqual(['ALA3@CA', 'ALA3@CB'])
+    expect(selected(rend('chx:sphere').sel)).toEqual([])
   })
 
   it('keeps a colour across a style change, and switches a renderer to paint once only', async () => {
@@ -190,5 +297,12 @@ describe('ChX display state', () => {
       expect(rend(name).entries).toEqual([['chain B', '#0000ff'], ['chain A', '#ff0000']])
     }
     expect(state.switched).toEqual(['chx:stick', 'chx:ball', 'chx:sphere'])
+  })
+
+  it('reaches a map as a whole by its model number only', () => {
+    state.objects.push({ uid: 2, name: 'emd', className: 'DensityMap' })
+    expect(wholeMapsOf(ctx, 1, '#2').map((o) => o.uid)).toEqual([2])
+    expect(wholeMapsOf(ctx, 1, '').map((o) => o.uid)).toEqual([2])
+    expect(wholeMapsOf(ctx, 1, '/A:3-7')).toEqual([])
   })
 })

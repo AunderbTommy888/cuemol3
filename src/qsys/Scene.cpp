@@ -2230,6 +2230,7 @@ void Scene::appDataWriteTo(qlib::LDom2Node *pNode) const
   for (const appdatatab_t::value_type &elem : m_appdata) {
     const AppDataEntry &ent = elem.second;
     if (!ent.pObj.isnull()) {
+      if (!ent.pObj->isPersistent()) continue;
       qlib::LDom2Node *pChNode = pNode->appendChild();
       pChNode->setTagName("appdata");
       pChNode->setStrAttr("id", elem.first);

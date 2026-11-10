@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { chainColor, RAINBOW, RAINBOW_STEPS, rainbowRanges, readPalette } from './colorSchemes'
+import { modifyColor } from './colorModify'
 
 describe('chain colours', () => {
   it('reads ChimeraX\'s table case-blind, and hashes an id outside it', () => {
@@ -32,5 +33,20 @@ describe('rainbow residues', () => {
 
     const reversed = readPalette('^rainbow')
     expect(reversed.ok && rainbowRanges(['1', '2'], reversed.palette).map((r) => r[2])).toEqual(['#ff0000', '#0000ff'])
+  })
+})
+
+describe('palettes and colour changes', () => {
+  it('reads ColorBrewer palettes by name and count, and by name alone at the default count', () => {
+    const p4 = readPalette('Pastel2-4')
+    expect(p4.ok && p4.palette.stops.length).toBe(4)
+    const p = readPalette('pastel2')
+    expect(p.ok && p.palette.stops.length).toBe(6)
+  })
+
+  it('changes a colour as ChimeraX\'s color modify (values from Python colorsys)', () => {
+    expect(modifyColor('#d2b48c', 'hue', 'add', 45 / 360)).toBe('#bbd28c')
+    expect(modifyColor('#40ff40', 'whiteness', 'add', -0.5)).toBe('#00ff00')
+    expect(modifyColor('#808080', 'hue', 'add', 0.1)).toBe('#808080')
   })
 })

@@ -127,6 +127,21 @@ Scene や直列化の変更は不要:
 
 id は小文字の名詞 (`render`)、アプリ固有なら接頭辞付き (`tritium.layout`) を推奨。
 
+### 一時的な入れ物 (`TransientStrData`)
+
+qsys の汎用の key/value の入れ物 (`src/qsys/TransientStrData.{qif,hpp,cpp}`)。property は `value` (string) と
+`has_value` (boolean) の 2 つだけで、キーは app-data の id。client が scene ごとに持つ状態を、undo / redo に載せたいが
+保存はしたくないときに使う (今の利用者は ChX console の原子の表示状態、id `chx:display:<分子の UID>`)。
+
+- 書き込みは他の app data と同じく undo できる編集 (`SceneAppData::propChanged`)。renderer の変更と同じ txn で書けば
+  一緒に戻る。
+- **削除は論理削除**: `has_value = false` を書く。`removeAppData` は undo できず、`PropEditInfo` は UID で入れ物を
+  探すので、入れ物は消さない (scene を閉じるまで残る)。
+- **保存しない**: `SceneAppData::isPersistent()` (既定 true) を false で上書きし、`Scene::appDataWriteTo` は false の
+  入れ物を書かない。値の `nopersist` だけでは `<appdata>` 要素が残るため。
+- 任意の型、入れ物独自の undo、入れ物全体の snapshot、保存する版は持たない (要る用途が出たら `isPersistent()` が true の
+  派生を足す)。
+
 ## レンダー時の適用 (C++ `applyRenderSettings`)
 
 設定 -> umbreon exporter property の写像は C++ に 1 つだけ置き、tritium / cuetty / Python が共有する
@@ -282,7 +297,7 @@ block key (+ `umbreon_npr` の hatch 2 key) を C++ 型に強制して返す。`
 |---|---|
 | 属性値の LF/CR/TAB ラウンドトリップ | `src/tests/qlib/test_ldom2stream.cpp` |
 | event category mapping (GUI が購読する文字列) | `src/tests/qsys/test_sceneevent.cpp` |
-| 未登録 class -> null、未登録 type の verbatim 温存 | `src/tests/qsys/test_scene_appdata.cpp` |
+| 未登録 class -> null、未登録 type の verbatim 温存、`TransientStrData` の書き込みと論理削除の undo/redo、保存されないこと | `src/tests/qsys/test_scene_appdata.cpp` |
 | fresh object が宣言 default と一致 (subclass 上書き含む)、未変更は要素ごと省略 / 変更した属性だけ出力 / reset で消える、qsc 往復 (子ブロック・複数行 spec)、子ブロック内の不正値の tolerance (`umbreon.x` で報告)、子 object の変更の undo/redo (txn 外は非記録)、event (parent 名付き、ロード中は無音) | `src/tests/modules/rendering/test_render_settings.cpp` (`test_render`, 常時ビルド) |
 | 全 backend の値ラウンドトリップ、fallback (不正値 -> C++ default、欠落、umbreon 不可、`""` backend、default 自体が不正) と warn/strict | `react-gui/src/renderer/__test__/sceneRenderSettings.test.ts` |
 | 書き込みの undo 粒度 (差分 key のみ・子 wrapper 経由・default 同値は `resetProp`・1 txn・変更なしは txn なし)、scene に無ければ fresh object の値 | `react-gui/src/renderer/__test__/renderSettingsService.test.ts` |

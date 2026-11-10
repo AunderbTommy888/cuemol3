@@ -17,12 +17,15 @@ import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import { objectNodes, rendererNodesOf } from '@renderer/worker/server/catalog/refs'
 import { getGenericProps } from '@renderer/worker/server/services/props/read'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
-import { BoolArg, EnumOf, IntArg, RestOfLine, SpecArg, StringArg } from '../cli/argTypes'
+import { BoolArg, EnumOf, FloatArg, IntArg, RestOfLine, SpecArg, StringArg } from '../cli/argTypes'
+import { readCamera } from '../camera'
 import { chxCommand } from '../cli/command'
 import type { ChxCommand } from '../cli/command'
 import { applyAutoStyle } from '../autoStyle'
 import type { AutoStyle } from '../autoStyle'
-import { atomRenderers, ensureOwned, intersect, minus, readSel, runOp, union, writeSel } from '../display'
+import { restyle } from '../atomDisplayState'
+import { ensureOwned, runOp } from '../display'
+import { atomIds, commitDisplayState, loadDisplayState } from '../displayState'
 import { isMolecule, numberedObjects } from '../models'
 import { hideSurfaces } from '../surface'
 import { runChxLines } from './aliasCommands'
@@ -88,31 +91,68 @@ const lighting = chxCommand({
       const res = await setAo(ctx, cc, on)
       if (!res.ok) return res
     }
-    if (args.shadows === 'true') cc.warn('lighting: shadows are not supported (CueMol draws no shadows); ignored')
-    if (args.depthCue === 'true') cc.warn('lighting: depthCue is not supported (CueMol has no depth cueing); ignored')
+    if (args.shadows === 'true') cc.warn('lighting: shadows are not supported yet (CueMol\'s view draws no shadows); ignored')
+    // CueMol's fog follows the slab and is always on (GUIView::computeSlabPlanes),
+    // so depthCue true is already the case; it cannot be turned off.
+    if (args.depthCue === 'false') cc.warn('lighting: depthCue false is not supported (CueMol\'s depth cueing, the fog, cannot be turned off); ignored')
     return { ok: true }
   },
+})
+
+/** `lighting model <models> ...`: lighting per model, which CueMol's scene-wide lighting cannot hold. */
+const lightingModel = chxCommand({
+  words: ['lighting', 'model'],
+  args: [{ name: 'rest', type: RestOfLine, role: 'optional' }],
+  mutates: false,
+  summary: 'Not supported yet: lighting per model (CueMol\'s lighting is one setting for the scene).',
+  run: () => unsupported('Error: lighting model is not supported yet (CueMol\'s lighting is one setting for the whole scene, not per model)'),
 })
 
 // --- camera ---
 
 const CAMERA_MODES = ['mono', 'ortho', '360', '360tb', '360sbs', 'dome', 'sbs', 'tb', 'stereo', 'crosseye', 'walleye']
 
+/**
+ * `camera fieldOfView <degrees>`: ChimeraX's horizontal field of view. A
+ * CueMol perspective view shows `zoom` (a height) at the view's `distance`
+ * from the eye, so the angle is set by the distance, the zoom kept:
+ * `distance = zoom x aspect / (2 tan(fov / 2))` (the converse of `view
+ * matrix`'s). An orthographic view has no field of view, so it waits for
+ * `camera mono`, as ChimeraX's.
+ */
+async function setFieldOfView(ctx: WorkerContext, cc: CmdContext, deg: number): Promise<CmdOutcome> {
+  if (!(deg > 0 && deg < 180)) return { ok: false, error: 'Error: camera: fieldOfView is an angle between 0 and 180 degrees' }
+  const cam = readCamera(ctx, cc.viewId)
+  if (!cam) return { ok: false, error: 'Error: camera: no view' }
+  const aspect = cam.width / Math.max(1, cam.height)
+  const distance = (cam.zoom * aspect) / (2 * Math.tan((deg * Math.PI) / 360))
+  const res = await runOp(ctx, cc, 'set_view', { zoom: null, slab: null, distance, center: null, rotation: null, fitSlab: null, objId: null })
+  if (!res.ok) return res
+  const proj = await runOp(ctx, cc, 'set_projection', { perspective: null })
+  if (proj.ok && (proj.data as { perspective?: boolean } | undefined)?.perspective === false) {
+    cc.warn('camera: the field of view is used in perspective (camera mono); the view is orthographic now')
+  }
+  return { ok: true }
+}
+
 const camera = chxCommand({
   words: ['camera'],
   args: [
     { name: 'type', type: EnumOf(CAMERA_MODES), role: 'optional' },
-    { name: 'fieldOfView', type: StringArg, role: 'keyword' },
+    { name: 'fieldOfView', type: FloatArg, role: 'keyword' },
     { name: 'eyeSeparation', type: StringArg, role: 'keyword', ignored: true },
     { name: 'pixelEyeSeparation', type: StringArg, role: 'keyword', ignored: true },
     { name: 'convergence', type: StringArg, role: 'keyword', ignored: true },
     { name: 'cubeMapSize', type: StringArg, role: 'keyword', ignored: true },
   ],
   mutates: false,
-  summary: 'Set the projection: mono (perspective) or ortho (orthographic).',
+  summary: 'Set the projection: mono (perspective) or ortho (orthographic), and the field of view.',
   async run(ctx, args, cc): Promise<CmdOutcome> {
     warnIgnored(cc, 'camera', args, ['eyeSeparation', 'pixelEyeSeparation', 'convergence', 'cubeMapSize'])
-    if (args.fieldOfView !== '') return unsupported('Error: camera: fieldOfView is not supported (CueMol sets the view by its zoom)')
+    if (args.fieldOfView !== '') {
+      const fov = await setFieldOfView(ctx, cc, Number(args.fieldOfView))
+      if (!fov.ok || args.type === '') return fov
+    }
     if (args.type === '') {
       const res = await runOp(ctx, cc, 'set_projection', { perspective: null })
       if (!res.ok) return res
@@ -178,41 +218,92 @@ const unitcellOutline = chxCommand({
   },
 })
 
-/** `unitcell` and `unitcell delete` fill the cell with copies of a model: refused. */
-function unitcellCopies(words: string[]): ChxCommand {
-  return chxCommand({
-    words,
-    args: [{ name: 'rest', type: RestOfLine, role: 'optional' }],
-    mutates: false,
-    summary: 'Not supported: fills the unit cell with copies of a model (use unitcell outline for the box).',
-    run: () => ({
-      ok: false,
-      error: `Error: ${words.join(' ')} is not supported (it makes copies of the model to fill the unit cell, which CueMol does not; unitcell outline draws the box)`,
-    }),
-  })
+/** The `unitcell` keywords the drawn copies cannot follow. */
+const UNITCELL_IGNORED = ['cells', 'offset', 'origin', 'symFromFile', 'spacegroup', 'ncs', 'pack']
+
+/** The renderers of an object whose type is `type` (`*symm`, `*unitcell`). */
+function renderersOfType(ctx: WorkerContext, sceneId: number, objUid: number, type: string): number[] {
+  const node = objectNodes(ctx, sceneId).find((n) => n.id === objUid)
+  return (node ? rendererNodesOf(node) : []).filter((r) => {
+    const props = getGenericProps(ctx, { sceneId, nodeId: r.id, nodeType: 'renderer' })
+    return props.ok && props.entries.find((e) => e.key === 'type_name')?.value === type
+  }).map((r) => r.id)
 }
+
+/**
+ * `unitcell [structures] [outline]`: fill the unit cell with the symmetry
+ * copies of crystal structures. ChimeraX opens the copies as new models;
+ * CueMol draws them with its symmetry renderer (`show_symmetry`, the cell
+ * filled), so they are not models a later command can name. `cells`,
+ * `offset` and the other packing settings are not followed.
+ */
+const unitcell = chxCommand({
+  words: ['unitcell'],
+  args: [
+    { name: 'structures', type: SpecArg, role: 'optional' },
+    { name: 'outline', type: BoolArg, role: 'keyword' },
+    ...UNITCELL_IGNORED.map((name) => ({ name, type: StringArg, role: 'keyword' as const, ignored: true })),
+  ],
+  mutates: true,
+  summary: 'Fill the unit cell with symmetry copies of crystal structures (drawn, not opened as models).',
+  async run(ctx, args, cc): Promise<CmdOutcome> {
+    warnIgnored(cc, 'unitcell', args, UNITCELL_IGNORED)
+    const found = objectsOf(ctx, cc.sceneId, args.structures)
+    if (!found.ok) return found
+    let done = 0
+    for (const o of found.objs.filter(isMolecule)) {
+      // Only structures with crystal information have a cell; the others are skipped, as in ChimeraX.
+      const res = await runOp(ctx, cc, 'show_symmetry', { objId: o.uid, extent: null, unitCell: args.outline === 'true' })
+      if (res.ok) done++
+    }
+    if (done === 0) return { ok: false, error: 'Error: unitcell: no structure with crystal information (a unit cell)' }
+    cc.warn('unitcell: the copies are drawn by a symmetry renderer, not opened as models')
+    return { ok: true }
+  },
+})
+
+/** `unitcell delete [structures] [outline]`: the copies `unitcell` drew (and the box with outline true). */
+const unitcellDelete = chxCommand({
+  words: ['unitcell', 'delete'],
+  args: [
+    { name: 'structures', type: SpecArg, role: 'optional' },
+    { name: 'outline', type: BoolArg, role: 'keyword' },
+  ],
+  mutates: true,
+  summary: 'Remove the symmetry copies unitcell drew (outline true also the box).',
+  async run(ctx, args, cc): Promise<CmdOutcome> {
+    const found = objectsOf(ctx, cc.sceneId, args.structures)
+    if (!found.ok) return found
+    for (const o of found.objs) {
+      const ids = [
+        ...renderersOfType(ctx, cc.sceneId, o.uid, '*symm'),
+        ...(args.outline === 'true' ? renderersOfType(ctx, cc.sceneId, o.uid, '*unitcell') : []),
+      ]
+      for (const id of ids) {
+        const res = await runOp(ctx, cc, 'delete_node', { nodeId: id, nodeType: 'renderer' })
+        if (!res.ok) return res
+      }
+    }
+    return { ok: true }
+  },
+})
 
 // --- preset ---
 
 /**
  * ChimeraX's `style (protein|nucleic|solvent) & @@draw_mode=0 stick` (the
- * presets' `nospheres`): the polymer and solvent atoms shown as spheres
- * become sticks.
+ * presets' `nospheres`): the polymer and solvent atoms drawn as spheres,
+ * shown or hidden, become sticks.
  */
 async function noSpheres(ctx: WorkerContext, cc: CmdContext): Promise<CmdOutcome> {
   for (const obj of numberedObjects(ctx, cc.sceneId).filter(isMolecule)) {
     const owned = await ensureOwned(ctx, cc, obj)
     if (!owned.ok) return owned
-    const r = atomRenderers(owned.ids)
-    const moved = intersect(readSel(ctx, cc.sceneId, r.sphere), '(protein or nucleic or water)')
-    const writes: [number, string][] = [
-      [r.stick, union(readSel(ctx, cc.sceneId, r.stick), moved)],
-      [r.sphere, minus(readSel(ctx, cc.sceneId, r.sphere), moved)],
-    ]
-    for (const [id, next] of writes) {
-      const w = await writeSel(ctx, cc, id, next)
-      if (!w.ok) return w
-    }
+    // Hidden atoms too: ChimeraX's `style` does not look at the display flag.
+    const target = atomIds(ctx, cc.sceneId, obj.uid, '(protein or nucleic or water)')
+    const before = loadDisplayState(ctx, cc.sceneId, obj, owned.ids)
+    const w = await commitDisplayState(ctx, cc, obj, owned.ids, before, restyle(before.state, target, 'stick', 'sphere'))
+    if (!w.ok) return w
   }
   return { ok: true }
 }
@@ -235,7 +326,19 @@ type PresetAction =
   | { run: (ctx: WorkerContext, cc: CmdContext) => Promise<CmdOutcome>; then?: string }
   | { refuse: string }
 
-const NO_NUCLEOTIDES = 'it needs the nucleotides command and helix tubes, which the console does not have'
+/**
+ * The cartoon part of the Cartoons/Nucleotides presets (`preset_mgr/builtin.py`
+ * `cardef`, with its abbreviations written out; `~worm` is left out, as the
+ * console draws no worms). The settings `cartoon style` does not take
+ * (arrows, sides, divisions) are warned about as they run.
+ */
+const CARTOON_PRESET = [
+  'show nucleic', 'hide protein | solvent | H', 'surface hidePatches',
+  'cartoon',
+  'cartoon style modeHelix default arrows true arrowsHelix false arrowScale 2 width 2 thickness 0.4 sides 12 divisions 20',
+  'cartoon style ~(nucleic | strand) xsection round',
+  'cartoon style (nucleic | strand) xsection rectangle',
+].join('; ')
 
 /** ChimeraX's builtin presets (`atomic` and `preset_mgr` bundles), by category, in order. */
 const PRESETS: Readonly<Record<string, Readonly<Record<string, PresetAction>>>> = {
@@ -247,9 +350,17 @@ const PRESETS: Readonly<Record<string, Readonly<Record<string, PresetAction>>>> 
     'Space-Filling (single color)': { run: initialStyle('large polymer') },
   },
   'Cartoons/Nucleotides': {
-    'ribbons/slabs': { refuse: NO_NUCLEOTIDES },
-    'cylinders/stubs': { refuse: NO_NUCLEOTIDES },
-    'licorice/ovals': { refuse: NO_NUCLEOTIDES },
+    'ribbons/slabs': { run: noSpheres, then: `${CARTOON_PRESET}; nucleotides tube/slab shape box` },
+    'cylinders/stubs': {
+      run: noSpheres,
+      then: `${CARTOON_PRESET}; cartoon style protein modeHelix tube radius 2 sides 24 thickness 0.6; `
+        + 'cartoon style nucleic xsection round width 1.6 thickness 1.6; nucleotides stubs',
+    },
+    'licorice/ovals': {
+      run: noSpheres,
+      then: `${CARTOON_PRESET}; cartoon style protein modeHelix default arrows false xsection round width 1 thickness 1; `
+        + 'cartoon style nucleic xsection round width 1.6 thickness 1.6; nucleotides tube/slab shape ellipsoid',
+    },
   },
   'Molecular Surfaces': {
     'ghostly white': { run: noSpheres, then: 'surface; color white target s; transparency 80 target s' },
@@ -302,7 +413,7 @@ const preset = chxCommand({
     { name: 'text2', type: RestOfLine, role: 'optional' },
   ],
   mutates: true,
-  summary: 'Apply one of ChimeraX\'s builtin presets (Initial Styles, Molecular Surfaces, Overall Look).',
+  summary: 'Apply one of ChimeraX\'s builtin presets (Initial Styles, Cartoons/Nucleotides, Molecular Surfaces, Overall Look).',
   async run(ctx, args, cc): Promise<CmdOutcome> {
     const found = findPreset(args.text1, args.text2)
     if ('error' in found) return { ok: false, error: found.error }
@@ -318,10 +429,11 @@ const preset = chxCommand({
 export const LOOK_COMMANDS: Record<string, ChxCommand> = {
   camera,
   lighting,
+  lightingModel,
   ribbon: ribbonAlias(['ribbon'], 'cartoon'),
   unribbon: ribbonAlias(['~ribbon'], 'cartoon hide'),
   preset,
-  unitcell: unitcellCopies(['unitcell']),
+  unitcell,
   unitcellOutline,
-  unitcellDelete: unitcellCopies(['unitcell', 'delete']),
+  unitcellDelete,
 }

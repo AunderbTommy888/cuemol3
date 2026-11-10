@@ -1,0 +1,32 @@
+// -*-Mode: C++;-*-
+//
+// A string value in the scene's app-data store, kept for undo/redo and not
+// saved: a generic key/value entry for state a client keeps per scene.
+//
+
+#ifndef QSYS_TRANSIENT_STR_DATA_QIF_INCLUDED
+#define QSYS_TRANSIENT_STR_DATA_QIF_INCLUDED
+
+runtime_class TransientStrData
+{
+  client_hdr "TransientStrData.hpp";
+  client_name qsys::TransientStrData;
+  dllexport QSYS_API;
+
+  scriptable;
+  smartptr;
+
+  /// UID of this object (undo/redo target)
+  integer getUID();
+
+  /// The value (meaningful only while has_value is true)
+  property string value => m_value;
+  default value = "";
+
+  /// False when the entry holds no value: a delete writes false, so the
+  /// entry itself stays for the undo history to reach
+  property boolean has_value => m_bHasValue;
+  default has_value = false;
+};
+
+#endif

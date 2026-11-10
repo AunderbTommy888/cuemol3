@@ -73,3 +73,31 @@ context menu の 3 つは、構文木の根の形を見て操作する (以前�
 - **Invert** (`invertSimplified`): `not (今)` を作って簡単化する。規則 2 により、2 回でもとの式に戻る。選択が空なら `*`。
 - **Toggle sidechain** (`toggleSidechain`): 根が `bysidech X` なら `X`、そうでなければ `bysidech (今)`。
 - **Around** (`rewriteAround`): 根が `around` (と、それを包む `byres`) なら中身を取り出して距離を付け直し、そうでなければ `(今) around N`。
+
+## 4. 原子集合を原子 ID の無い式に直す (`MolCoord.toAtomNameSel`)
+
+簡単化 (構文木の書き換え) とは別に、分子を見て「今選ばれている原子」を chain・残基番号 (挿入コードを含む)・原子名・alt
+の式に直す API がある (`src/modules/molstr/MolCoordNameSel.cpp`)。`aid` の式は、scene を保存して開き直すと原子 ID が
+振り直されて (`QdfMolWriter` は連番で書き、`QdfMolReader` は読み込み順に振る) 別の原子を指すので、保存後も同じ原子を
+描きたい selection に使う。今の利用者は ChX の原子の表示状態 ([ChX dialect](console-chimerax-dialect.md))。
+
+- **契約**: 変換した時点の分子で、元と同じ原子集合を選ぶ。保存・再読込の後も同じ原子を選ぶ。変換した後に足された原子が
+  式に当たるかどうかは問わない (追従させると次の圧縮ができず、式が長くなるため)。
+- **書き方**:
+  - 全原子なら `*`、無ければ `none`。chain の全原子なら `chain A`。
+  - それ以外の chain は、残基を番号順に見て、続いた残基のまとまり (run) にする。run の中で「選ばれた原子名の和」と
+    「選ばれていない原子名の和」が交わらない間は run を延ばし、`chain A and (resi 1:300 and not name H,HA,...)` のように
+    `name ...` と `not name ...` の短い方で書く。水素だけを隠した蛋白は chain ごとに 1 項になり、式の長さは原子数ではなく
+    run の数に比例する。何も選ばれていない残基は run を切る。
+  - run は番号順に続いた残基なので、`resi a:b` はちょうど run の残基を選ぶ (挿入コードのある残基も番号順に並ぶ。
+    `resi 12:13` は `12A` も含む)。
+  - 同じ名前で alt の違う原子の一部だけを選んでいる残基は、run に入れず `name CA and alt A` (alt の無い原子は
+    `not alt A,B`) で書く。
+  - 名前 (chain・原子名・alt) はすべて引用符で書く。引用符の無い名前は大文字小文字を区別せずに照合されるので、
+    `chain A` が chain `a` にも当たる (6g2j のように両方ある分子で集合が合わなくなる)。
+- **検証**: 作った式をその場で compile して評価し、元の集合と比べる。合わなければ範囲を使わず残基番号を並べて作り直し、
+  それでも合わなければ `""` を返す (呼び出し側は書き込みをやめる)。
+- 投げ縄・矩形選択の結果 (`applySelectionHits`) を ID に依存しない式にする用途にも使えるが、まだ使っていない。
+- テスト: `src/tests/modules/molstr/test_atom_name_sel.cpp` (等価性、chain ごとに 1 項、挿入コード・alt・一部だけ
+  選んだ残基・大文字小文字だけが違う chain、欠番のある分子の QDF 往復の後も同じ原子)。
+

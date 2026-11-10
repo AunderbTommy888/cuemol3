@@ -154,6 +154,10 @@ public:
   /// @throws qlib::IllegalArgumentException when `fmt` does not parse.
   bool setLabelFormat(int aid, const LString &fmt);
 
+  /// The atom ids that have a label, in label order, as a JSON array
+  /// (`[12,40]`). Labels whose atom is gone (aid < 0) are left out.
+  LString getLabelAtomIDsJSON() const;
+
   void setMaxLabel(int nmax) { m_nMax = nmax; }
   int getMaxLabel() const { return m_nMax; }
 

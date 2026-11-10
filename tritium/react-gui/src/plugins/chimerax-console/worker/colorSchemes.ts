@@ -14,6 +14,7 @@
 
 import { BUILTIN_COLORS } from './colorTables'
 import { readColor } from './colors'
+import { colorBrewerPalette } from './colorBrewer'
 
 /** `atomic/colors.py` `chain_colors`, by lower-case chain id. */
 const CHAIN_COLORS: Readonly<Record<string, readonly [number, number, number]>> = {
@@ -114,14 +115,46 @@ function tokenColor(text: string): Rgb | null {
  *
  * @returns the palette, or why the text is not one
  */
+/**
+ * A COLOURlovers palette by its number (`palette 130451`), fetched as
+ * ChimeraX does (`colorarg.py` `_colourlovers_fetch_by_id`); its colours
+ * evenly spaced.
+ */
+async function colourloversPalette(id: string): Promise<{ ok: true; palette: Palette } | { ok: false; error: string }> {
+  try {
+    const resp = await fetch(`https://www.colourlovers.com/api/palette/${id}?format=json`)
+    if (!resp.ok) return { ok: false, error: `could not fetch palette ${id} from COLOURlovers (HTTP ${resp.status})` }
+    const j = (await resp.json()) as { colors?: string[] }[]
+    const colors = j[0]?.colors
+    if (!colors || colors.length === 0) return { ok: false, error: `no palette ${id} at COLOURlovers` }
+    return { ok: true, palette: even(colors.map((c) => `#${c.toLowerCase()}`)) }
+  } catch (e) {
+    return { ok: false, error: `could not fetch palette ${id} from COLOURlovers (${e instanceof Error ? e.message : String(e)})` }
+  }
+}
+
+/**
+ * `readPalette`, and a number that names no palette fetched from COLOURlovers
+ * (ChimeraX `_fetch_colormap`); `^` first reverses it too.
+ */
+export async function readPaletteOrFetch(text: string): Promise<{ ok: true; palette: Palette } | { ok: false; error: string }> {
+  const read = readPalette(text)
+  const body = text.startsWith('^') ? text.slice(1) : text
+  if (read.ok || !/^\d+$/.test(body)) return read
+  const fetched = await colourloversPalette(body)
+  if (!fetched.ok || !text.startsWith('^')) return fetched
+  const s = fetched.palette.stops
+  return { ok: true, palette: { stops: s.map((x) => ({ at: s[0].at + s[s.length - 1].at - x.at, rgb: x.rgb })).reverse() } }
+}
+
 export function readPalette(text: string): { ok: true; palette: Palette } | { ok: false; error: string } {
   const reversed = text.startsWith('^')
   const body = reversed ? text.slice(1) : text
   let palette: Palette
   const parts = body.split(':')
   if (parts.length === 1) {
-    const named = BUILTIN_PALETTES[body.toLowerCase()]
-    if (!named) return { ok: false, error: `"${body}" is not a palette (${Object.keys(BUILTIN_PALETTES).join(', ')}, or c1:c2:...)` }
+    const named = BUILTIN_PALETTES[body.toLowerCase()] ?? colorBrewerPalette(body)
+    if (!named) return { ok: false, error: `"${body}" is not a palette (${Object.keys(BUILTIN_PALETTES).join(', ')}, a ColorBrewer name such as pastel2-4, or c1:c2:...)` }
     palette = even(named)
   } else {
     const stops: { at: number | null; rgb: Rgb }[] = []
@@ -259,3 +292,33 @@ export function paletteColors(p: Palette, n: number): string[] {
   return Array.from({ length: n }, (_, i) => paletteColor(p, n === 1 ? 0 : i / (n - 1)))
 }
 
+
+/**
+ * ChimeraX's nucleotide colours (`atomic/colors.py` `_ndb_colors`, the NDB
+ * colours desaturated), by the residue names that are each base
+ * (`Sequence.nucleic3to1` for the common names; PSU is pseudouridine).
+ */
+const NUCLEOTIDE_COLORS: readonly [string, string][] = [
+  ['A,DA', '#ff4040'],
+  ['T,DT', '#4040ff'],
+  ['G,DG', '#40ff40'],
+  ['C,DC', '#ffff40'],
+  ['I,DI', '#006400'],
+  ['PSU,P', '#d3d3d3'],
+  ['U,DU', '#40ffff'],
+]
+
+/** Any other nucleotide's colour (`nucleotide_colors`: 128 grey). */
+const OTHER_NUCLEOTIDE = '#808080'
+
+/**
+ * Paint entries colouring the nucleotides of `sel` by base, in painting
+ * order (a later entry wins): grey for every nucleotide, then each base.
+ */
+export function nucleotideEntries(sel = '*'): [string, string][] {
+  const within = (x: string) => (sel === '*' ? x : `(${sel}) and ${x}`)
+  return [
+    [within('nucleic'), OTHER_NUCLEOTIDE],
+    ...NUCLEOTIDE_COLORS.map(([names, hex]): [string, string] => [within(`nucleic and resn ${names}`), hex]),
+  ]
+}

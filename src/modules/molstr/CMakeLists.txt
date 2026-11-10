@@ -43,6 +43,7 @@ MolCoord.cpp
 AnimMol.cpp
 CoordTexSupport.cpp
 MolCoordGeomImpl.cpp
+MolCoordNameSel.cpp
 AtomIterator.cpp
 PDBFileReader.cpp
 PDBFileWriter.cpp

@@ -12,6 +12,7 @@ import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 // Read-only helpers: listing the named selections is no operation of its own (op-catalog.md 3.1).
 import { getSelDefs } from '@renderer/worker/server/services/select/getSelDefs'
 import { getStyleSetContents } from '@renderer/worker/server/services/style/styleSetEdit'
+import { chxNames } from './chxNames'
 
 /** One named selection and the style set that keeps it. */
 export interface NamedSelection {
@@ -45,12 +46,16 @@ export function namedSelections(ctx: WorkerContext, sceneId: number): NamedSelec
   return out
 }
 
-/** The names a specification may use as selectors: the scene's named selections and the global ones. */
+/**
+ * The names a specification may use as selectors: the console's own names
+ * (`chxNames.ts`) and the scene's and global CueMol named selections.
+ */
 export function selectionNames(ctx: WorkerContext, sceneId: number): Set<string> {
+  const own = [...chxNames(ctx, sceneId).keys()]
   try {
     const defs = getSelDefs(ctx, { sceneId })
-    return new Set([...defs.scene, ...defs.global])
+    return new Set([...own, ...defs.scene, ...defs.global])
   } catch {
-    return new Set()
+    return new Set(own)
   }
 }

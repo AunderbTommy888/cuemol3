@@ -19,6 +19,7 @@
  * the `*` `?` `[...]` wildcards are read here and translated by the emitter,
  * which also refuses (with a caret) the attributes CueMol has no counterpart
  * for. Sub-models (`#1.2`) are refused here: CueMol objects are not nested.
+ * `#!1` (model 1 without its sub-models) is therefore the same as `#1`.
  */
 
 /** A specification that cannot be read, or uses a part not supported yet. */
@@ -198,7 +199,12 @@ class Reader {
       if (!this.termStarts()) this.fail('a specification is expected after "~"')
       return { kind: 'not', term: this.term() }
     }
-    if (c === '#' || c === '/' || c === ':' || c === '@') return this.zoneAfter(this.hier())
+    if (c === '#' || c === '/' || c === ':' || c === '@') {
+      // `hier+`: a model part right after another starts a new item, and the items are a union (`#1/k#2/o`).
+      let node = this.hier()
+      while (this.peek() === '#' && this.termStarts()) node = { kind: 'or', left: node, right: this.hier() }
+      return this.zoneAfter(node)
+    }
     const word = SELECTOR.exec(this.rest())
     if (word && this.isSelector(word[0])) {
       const pos = this.pos
@@ -258,9 +264,9 @@ class Reader {
     let models: ModelRange[] | null = null
     let modelTests: AttrTest[] | null = null
     if (this.peek() === '#' && !this.atZone()) {
-      if (this.peek(2) === '#!') this.unsupported('"#!"')
       if (this.peek(2) !== '##') {
-        this.pos++
+        // `#!N`: model N without its sub-models, which a CueMol object never has.
+        this.pos += this.peek(2) === '#!' ? 2 : 1
         models = this.modelList()
         if (this.peek() === '.' && /^\.[\d*]/.test(this.rest())) this.unsupported('a sub-model')
       }

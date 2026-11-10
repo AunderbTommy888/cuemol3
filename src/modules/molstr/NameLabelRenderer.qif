@@ -78,6 +78,9 @@ runtime_class NameLabelRenderer extends Renderer
 
   // label the atom with a format ("" = the renderer's format), or change it
   boolean setLabel(integer aid, string format) => setLabelFormat;
+
+  // the atom ids that have a label, as a JSON array
+  string getLabelAtomIDsJSON();
 };
 
 #endif

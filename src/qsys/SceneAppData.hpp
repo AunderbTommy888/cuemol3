@@ -63,6 +63,10 @@ namespace qsys {
     /// owning scene (null when the scene is gone or not attached)
     ScenePtr getScene() const;
 
+    /// Whether the entry is written to the scene file (false: kept in
+    /// memory only, e.g. state kept for the undo history)
+    virtual bool isPersistent() const { return true; }
+
     /// Root UID for the undo/redo (PropEditInfo) target resolution
     qlib::uid_t getRootUID() const override;
 

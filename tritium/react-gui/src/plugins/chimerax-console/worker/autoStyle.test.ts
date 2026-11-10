@@ -5,7 +5,8 @@
  * Pinned: ChimeraX's size thresholds, the short peptide (a polymer of 10
  * residues or fewer) drawn as sticks rather than as a cartoon, and the
  * small-polymer selections -- the cartoon on the polymer, sticks on the
- * residues near a ligand, spheres on its metals.
+ * residues near a ligand, spheres on its metals -- with the draw mode of
+ * every atom, shown or not (the hidden ones keep it until shown).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,8 +17,10 @@ const { state } = vi.hoisted(() => ({
   state: {
     /** The polymer residues of the molecule. */
     residues: 0,
-    /** The selections written, by renderer name. */
+    /** The selections written, by renderer name (atoms: what the new state shows). */
     written: new Map<string, string>(),
+    /** The draw mode of every atom the new state was given. */
+    modes: {} as Record<string, string>,
   },
 }))
 
@@ -34,7 +37,17 @@ vi.mock('./display', async (importOriginal) => ({
     for (let i = 0; i < state.residues; i++) visit({ chainName: 'A', residIndex: String(i + 1), residName: 'ALA', name: 'CA' })
   },
 }))
+vi.mock('./displayState', () => ({
+  loadDisplayState: () => ({}),
+  styledState: (_ctx: unknown, _s: number, _uid: number, shown: Record<string, string>, modes: Record<string, string>) => {
+    for (const k of ['stick', 'ball', 'sphere']) state.written.set(`chx:${k}`, shown[k])
+    state.modes = modes
+    return {}
+  },
+  commitDisplayState: async () => ({ ok: true }),
+}))
 vi.mock('./commands/colorCommands', () => ({ paintTarget: async () => ({ ok: true }), elementEntries: () => [] }))
+vi.mock('./commands/displayCommands', () => ({ setBaseMode: async () => ({ ok: true }) }))
 
 import { applyAutoStyle, autoStyleOf, LIGAND, METAL, SMALL_SHOWN } from './autoStyle'
 
@@ -58,11 +71,14 @@ describe('auto style', () => {
     state.residues = 10
     await applyAutoStyle(ctx, cc, obj)
     expect(Object.fromEntries(state.written)).toMatchObject({ 'chx:stick': '*', 'chx:cartoon': 'none' })
+    expect(state.modes).toEqual({ stick: '*', ball: 'none', sphere: 'none' })
 
     state.residues = 11
     await applyAutoStyle(ctx, cc, obj)
     expect(state.written.get('chx:cartoon')).toBe('protein')
     expect(state.written.get('chx:stick')).toContain(`byres ((${LIGAND}) expand 3.6)`)
     expect(state.written.get('chx:sphere')).toBe(`(${SMALL_SHOWN}) and (${METAL} or ligand and elem F,Cl,Br,I)`)
+    // The hidden protein atoms are sticks too (shown again as sticks); metals and ions spheres.
+    expect(state.modes.stick).toBe(`(*) and not ((${METAL} or ligand and elem F,Cl,Br,I))`)
   })
 })

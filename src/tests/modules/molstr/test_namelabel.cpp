@@ -163,3 +163,18 @@ TEST_F(NameLabelTest, LabelEditsAreUndoable)
     ASSERT_TRUE(labels->setLabelFormat(n, "{resn}"));
     EXPECT_FALSE(m_scene->isUndoable());
 }
+
+// getLabelAtomIDsJSON lists the labelled atoms in label order (the ChX console
+// reads it to relabel only the labels there are).
+TEST_F(NameLabelTest, LabelAtomIDsJSON)
+{
+    const int n = m_mol->getAtom("A", 1, "N")->getID();
+    const int ca = m_mol->getAtom("A", 2, "CA")->getID();
+    NameLabelRenderer *labels = newLabels();
+    EXPECT_EQ(labels->getLabelAtomIDsJSON(), LString("[]"));
+    ASSERT_TRUE(labels->addLabelByID(ca));
+    ASSERT_TRUE(labels->setLabelFormat(n, "{resn}"));
+    EXPECT_EQ(labels->getLabelAtomIDsJSON(), LString::format("[%d,%d]", ca, n));
+    ASSERT_TRUE(labels->removeLabelByID(ca));
+    EXPECT_EQ(labels->getLabelAtomIDsJSON(), LString::format("[%d]", n));
+}

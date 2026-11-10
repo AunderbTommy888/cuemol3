@@ -381,6 +381,22 @@ bool NameLabelRenderer::setLabelFormat(int aid, const LString &fmtstr)
   return true;
 }
 
+LString NameLabelRenderer::getLabelAtomIDsJSON() const
+{
+  LString out = "[";
+  bool first = true;
+  BOOST_FOREACH(const NameLabel &nlab, *m_pdata) {
+    if (nlab.aid < 0)
+      continue;
+    if (!first)
+      out += ",";
+    out += LString::format("%d", nlab.aid);
+    first = false;
+  }
+  out += "]";
+  return out;
+}
+
 bool NameLabelRenderer::addLabelByIDImpl(int aid, const LString &label)
 {
   MolCoordPtr pobj = getClientMol();
