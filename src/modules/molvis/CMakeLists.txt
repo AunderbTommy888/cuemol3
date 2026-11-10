@@ -77,6 +77,9 @@ IF (BUILD_OPENGL_SYSDEP)
     ${GLEW_INCLUDE_DIRS}
     ${OPENGL_INCLUDE_DIR}
   )
+ENDIF ()
+# The shaders are also used by tritium in the CLI configuration
+IF (BUILD_OPENGL_SYSDEP OR INSTALL_GLSL_SHADERS)
   # GLSL shader files
   SET(GLSL_SHADER_FILES
     sphere_frag.glsl

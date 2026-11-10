@@ -78,48 +78,9 @@ SET(GLSL_SHADER_FILES
   silh_frag.glsl
 )
 
-SET(SHADER_SOURCES 
-  ogl_core/trig_vert.glsl
-  ogl_core/trig_frag.glsl
-  ogl_core/trigedge_vert.glsl
-  ogl_core/trigedge_frag.glsl
-  ogl_core/pixdraw_vert.glsl
-  ogl_core/pixdraw_frag.glsl
-  ogl_core/linew_vert.glsl
-  ogl_core/linew2_vert.glsl
-  ogl_core/linew2idx_vert.glsl
-  ogl_core/linevalidx_vert.glsl
-  ogl_core/linew_frag.glsl
-  ogl_core/trig_pick_vert.glsl
-  ogl_core/trig_pick_frag.glsl
-  ogl_core/linew2_pick_vert.glsl
-  ogl_core/linew_pick_frag.glsl
-  ogl_core/linew2idx_pick_vert.glsl
-  ogl_core/linevalidx_pick_vert.glsl
-  ogl_core/postproc_vert.glsl
-  ogl_core/depthvis_frag.glsl
-  ogl_core/ao_composite_frag.glsl
-  ogl_core/gtao_frag.glsl
-  ogl_core/ao_denoise_frag.glsl
-  ogl_core/fxaa_frag.glsl
-  ogl_core/smaa_edges_frag.glsl
-  ogl_core/smaa_weights_frag.glsl
-  ogl_core/smaa_blend_frag.glsl
-  ogl_core/jitter_compose_frag.glsl
-  ogl_core/hover_mask_frag.glsl
-  ogl_core/hover_blur_frag.glsl
-  ogl_core/hover_hl_frag.glsl
-)
-SET(SHADER_DEPS
-  ogl_core/lighting_inc.glsl
-  ogl_core/fog_inc.glsl
-  ogl_core/matrices_inc.glsl
-  ogl_core/linew_inc.glsl
-  ogl_core/lib_atoms.glsl
-  ogl_core/pick_inc.glsl
-)
-set_target_properties(sysdep PROPERTIES SHADER_SOURCES "${SHADER_SOURCES}")
-GLSL_PREPROC(sysdep "${SHADER_DEPS}")
+include(${CMAKE_CURRENT_SOURCE_DIR}/ogl_core_shaders.cmake)
+set_target_properties(sysdep PROPERTIES SHADER_SOURCES "${OGL_CORE_SHADER_SOURCES}")
+GLSL_PREPROC(sysdep "${OGL_CORE_SHADER_DEPS}")
 
 #####################
 

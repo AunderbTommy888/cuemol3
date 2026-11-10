@@ -81,6 +81,10 @@ message(STATUS "GLEW_FOUND: ${GLEW_FOUND} ${GLEW_LIBRARIES}")
 # stopping in sysdep. Configure with -DENABLE_X11_SYSDEP=ON to build it
 # anyway (for that porting work).
 option(ENABLE_X11_SYSDEP "Build the unported X11 OpenGL sysdep backend" OFF)
+# The tritium Electron renderer reads the preprocessed GLSL shaders at run
+# time whether or not sysdep is built, so the CLI configuration installs
+# them too.
+option(INSTALL_GLSL_SHADERS "Install the preprocessed GLSL shaders (used by tritium)" ON)
 
 if (OPENGL_FOUND AND GLEW_FOUND)
   if (WIN32 OR APPLE OR ENABLE_X11_SYSDEP)
@@ -221,6 +225,13 @@ if (NOT BUILD_MINIMUM_MODULES)
 
   if (BUILD_OPENGL_SYSDEP)
     add_subdirectory(sysdep)
+  elseif (INSTALL_GLSL_SHADERS)
+    # sysdep is not built, but tritium still needs its ogl_core shaders.
+    include(${CMAKE_CURRENT_SOURCE_DIR}/sysdep/ogl_core_shaders.cmake)
+    add_custom_target(ogl_core_glsl)
+    set_target_properties(ogl_core_glsl PROPERTIES
+      SHADER_SOURCES "${OGL_CORE_SHADER_SOURCES}")
+    GLSL_PREPROC(ogl_core_glsl "${OGL_CORE_SHADER_DEPS}")
   endif ()
   
   add_subdirectory(modules/molstr)
@@ -307,9 +318,21 @@ target_include_directories(
 )
 target_link_libraries(cuemol2 PRIVATE ${CUEMOL2_LINK_LIBRARIES})
 
+# Relocatable rpath so the loader finds the shared libs bundled next to
+# libcuemol2 (Boost, Python). macOS uses @loader_path (dyld), Linux uses
+# $ORIGIN (ld.so; it does not understand @loader_path); Windows has no rpath.
+if (APPLE)
+  set(CUEMOL2_INSTALL_RPATH
+    "@loader_path;@loader_path/../lib/python/lib;@loader_path/../Resources/python/lib")
+elseif (UNIX)
+  set(CUEMOL2_INSTALL_RPATH "$ORIGIN;$ORIGIN/../lib/python/lib")
+else ()
+  set(CUEMOL2_INSTALL_RPATH "")
+endif ()
+
 set_target_properties(cuemol2 PROPERTIES
   BUILD_RPATH "${Python3_LIBRARY_DIRS}"
-  INSTALL_RPATH "@loader_path;@loader_path/../lib/python/lib;@loader_path/../Resources/python/lib"
+  INSTALL_RPATH "${CUEMOL2_INSTALL_RPATH}"
 )
 
 list(APPEND CUEMOL2_DEFS "LIBCUEMOL_EXPORTS=1")

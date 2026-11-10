@@ -176,10 +176,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     // exports.Set(Napi::String::New(env, "getClassName"),
     //             Napi::Function::New(env, node_jsbr::getClassName));
 
-#if defined(__APPLE__) || defined(_WIN32)
     exports.Set(Napi::String::New(env, "bindPeer"),
                 Napi::Function::New(env, node_jsbr::bindPeer));
-#endif
 
     exports.Set(Napi::String::New(env, "copyFromTypedArray"),
                 Napi::Function::New(env, node_jsbr::copyFromTypedArray));

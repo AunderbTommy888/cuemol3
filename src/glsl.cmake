@@ -71,6 +71,12 @@ function(GLSL_PREPROC _target SHADER_DEPENDENCIES)
         list(APPEND PREPROCESSOR_FLAGS -P)  # Don't output #line directives
         list(APPEND PREPROCESSOR_FLAGS -C)  # Preserve comments
         list(APPEND PREPROCESSOR_FLAGS -w)  # Suppress warnings
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            # GNU cpp on glibc pre-includes stdc-predef.h, whose licence
+            # comment -C would copy into every shader, and predefines
+            # "linux" / "unix". Neither happens with clang on macOS.
+            list(APPEND PREPROCESSOR_FLAGS -undef -ffreestanding)
+        endif()
         
         # Add include directories
         foreach(INCLUDE_DIR ${SHADER_INCLUDE_DIRS})

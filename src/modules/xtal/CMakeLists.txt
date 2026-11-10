@@ -85,8 +85,8 @@ MCWRAPGEN_MODULE(XTAL_SRCS ${XTAL_MODLDR_SRC} ${XTAL_MCWG_QIFS})
 add_library(xtal STATIC ${XTAL_SRCS} ${MCWG_HEADERS})
 
 ###################
-# GLSL shader files
-IF (BUILD_OPENGL_SYSDEP)
+# GLSL shader files (also used by tritium in the CLI configuration)
+IF (BUILD_OPENGL_SYSDEP OR INSTALL_GLSL_SHADERS)
   SET(GLSL_SHADER_FILES
     mapmesh_vertex.glsl
     mapmesh_frag.glsl
