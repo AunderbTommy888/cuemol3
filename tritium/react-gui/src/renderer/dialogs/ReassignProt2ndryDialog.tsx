@@ -19,6 +19,7 @@ import { Field, FieldSection, NumericField, SegmentField, SelectField, SwitchFie
 import { DialogShell } from './DialogShell'
 import { MolPicker } from './MolPicker'
 import { MolSelList, pushHistory } from '@renderer/h3-kit/MolSelList'
+import { createDialogPrefs, isBool, isNum, isOneOf, isStr } from '@renderer/utils/createDialogPrefs'
 
 export interface ReassignProt2ndryDialogResult {
     ok: boolean
@@ -40,6 +41,44 @@ const MODE_OPTIONS: { label: string; value: Mode }[] = [
     { label: 'Assign', value: 'assign' },
 ]
 
+interface RecalcParams {
+    ignBulge: boolean
+    helixGapFill: boolean
+    helixAngle: number
+}
+
+interface Prot2ndryPrefs extends RecalcParams {
+    mode: Mode
+    selStr: string
+    secType: string
+}
+
+/**
+ * Remembered across sessions (UXP `prot2ndry-tool` kept mode, sectype,
+ * ign bulge and `tgtsel`; the helix gap fill pair is a tritium addition).
+ * The selection is kept with the mode so a restored Assign never targets the
+ * whole molecule by accident.
+ */
+const prefs = createDialogPrefs<Prot2ndryPrefs>({
+    key: 'cuemol2.ui.histories.prot2ndry_tool',
+    defaults: {
+        mode: 'recalc',
+        selStr: '',
+        secType: '0',
+        ignBulge: false,
+        helixGapFill: false,
+        helixAngle: 120,
+    },
+    fields: {
+        mode: isOneOf(MODE_OPTIONS.map((o) => o.value)),
+        selStr: isStr,
+        secType: isOneOf(['0', '1', '2', '3', '4']),
+        ignBulge: isBool,
+        helixGapFill: isBool,
+        helixAngle: isNum(0, 180),
+    },
+})
+
 export function ReassignProt2ndryDialog({
     visible, sceneId, onConfirm, onCancel,
 }: Props): React.JSX.Element {
@@ -53,22 +92,29 @@ export function ReassignProt2ndryDialog({
     const [selStr, setSelStr] = useState('')
     const [secType, setSecType] = useState('0')
 
+    // Defaults puts back the recalculation parameters only, not the target.
+    const applyParams = (p: RecalcParams): void => {
+        setIgnBulge(p.ignBulge)
+        setHelixGapFill(p.helixGapFill)
+        setHelixAngle(p.helixAngle)
+    }
+
     const recalcDisabled = mode !== 'recalc'
     const assignDisabled = mode !== 'assign'
 
-    // Commit handler + submitting/errorMsg state + reset-on-open. objId is
-    // intentionally NOT reset (last-picked persists in-session).
+    // Commit handler + submitting/errorMsg state + reset-on-open, which starts
+    // from the remembered options. objId is intentionally NOT reset
+    // (last-picked persists in-session).
     const { submitting, errorMsg, run: handleOk } =
         useMolEditCommit({
             cm,
             visible,
             onReset: () => {
-                setMode('recalc')
-                setIgnBulge(false)
-                setHelixGapFill(false)
-                setHelixAngle(120)
-                setSelStr('')
-                setSecType('0')
+                const p = prefs.load()
+                setMode(p.mode)
+                setSelStr(p.selStr)
+                setSecType(p.secType)
+                applyParams(p)
             },
             buildCommit: () => {
                 if (objId === undefined) return null
@@ -88,6 +134,7 @@ export function ReassignProt2ndryDialog({
                     ),
                     onSuccess: () => {
                         if (mode === 'assign' && selStr.trim() !== '') pushHistory(selStr.trim())
+                        prefs.save({ mode, selStr, secType, ignBulge, helixGapFill, helixAngle })
                         onConfirm({ ok: true })
                     },
                     fallbackError: 'Failed to reassign secondary structure',
@@ -103,6 +150,7 @@ export function ReassignProt2ndryDialog({
             onCancel={onCancel}
             onOk={handleOk}
             okDisabled={objId === undefined}
+            onDefaults={() => applyParams(prefs.defaults)}
             submitting={submitting}
             errorMsg={errorMsg}
         >

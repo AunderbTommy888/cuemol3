@@ -9,8 +9,9 @@
 import type { Object as CueMolObject } from '@cuemol/core/src/wrappers/Object';
 import type { Renderer } from '@cuemol/core/src/wrappers/Renderer';
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext';
-import type { RendererOptions } from '@renderer/worker/shared/fileOpenTypes';
+import type { MapCenterPolicy, RendererOptions } from '@renderer/worker/shared/fileOpenTypes';
 import { setupRenderer } from './setupRenderer';
+import { applyMapCenterPolicy } from '@renderer/worker/server/services/map/emDefaults';
 import { withUndoTxn } from '../withUndoTxn';
 import { recordCreateRenderer } from '@renderer/worker/server/actions/serviceOps';
 import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneResolver';
@@ -22,6 +23,16 @@ export interface CreateRendererOnObjectArgs {
     /** Optional group name -- when set, the new renderer's `group` is
      *  assigned right after creation (UXP `setupRendByObjID` 2nd arg). */
     groupName?: string;
+    /**
+     * View policy to apply to a DensityMap after the renderer is made (the
+     * dialog's map center choice, as file open applies it). Absent leaves
+     * the view and the map center alone, which is what a headless
+     * `create_renderer` without the argument does. Kept apart from
+     * `rendOpts.mapCenterPolicy`, which the shared options type always fills.
+     * Not applied to a preset: its result is a RendGroup, whose `center` is
+     * read-only, so Set map center could not reach the map renderer.
+     */
+    mapCenterPolicy?: MapCenterPolicy;
 }
 
 export interface CreateRendererOnObjectResult {
@@ -66,11 +77,19 @@ export function createRendererOnObject(
                     catch (e) { console.warn('rend.group assign failed:', e); }
                 }
             }
+            // applyMapCenterPolicy returns null for anything but a DensityMap,
+            // so only an applied policy is recorded.
+            const appliedPolicy =
+                args.mapCenterPolicy && !args.rendOpts.presetName &&
+                applyMapCenterPolicy(ctx, scene, obj, rend, args.mapCenterPolicy)
+                    ? args.mapCenterPolicy
+                    : undefined;
             newRendId = (rend as unknown as { uid: number }).uid ?? -1;
             try { newName = rend.name ?? ''; } catch { newName = ''; }
             recordCreateRenderer(ctx, scene.uid, args.objId, { ...args.rendOpts, rendererName: newName || args.rendOpts.rendererName }, {
                 rendId: newRendId,
                 groupName: args.rendOpts.presetName ? undefined : args.groupName,
+                mapCenterPolicy: appliedPolicy,
             });
         },
     );

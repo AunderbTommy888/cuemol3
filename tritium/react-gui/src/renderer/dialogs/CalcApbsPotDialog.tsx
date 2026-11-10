@@ -38,6 +38,7 @@ import { DialogShell } from './DialogShell'
 import { MolPicker } from './MolPicker'
 import { MolSelList, pushHistory } from '@renderer/h3-kit/MolSelList'
 import { useStaleGuard } from '@renderer/hooks/react/useStaleGuard'
+import { createDialogPrefs, isBool, isNum, isOneOf, isStr } from '@renderer/utils/createDialogPrefs'
 import {
     PDB2PQR_FORCE_FIELDS,
     type ApbsChargeMethod,
@@ -63,6 +64,53 @@ const DEFAULT_GRID_SPACING = 1.0
 const DEFAULT_WATER_DIELEC = 78.54
 const DEFAULT_PROT_DIELEC = 2.0
 
+interface ApbsParams {
+    chargeMethod: ApbsChargeMethod
+    useHydrogen: boolean
+    useNpbe: boolean
+    temperature: number
+    gridSpacing: number
+    waterDielec: number
+    protDielec: number
+}
+
+interface ApbsPrefs extends ApbsParams {
+    useSel: boolean
+    selStr: string
+}
+
+/**
+ * Remembered across sessions on a successful run. The selection is kept with
+ * the switch (UXP `tgtsel` / `selchk`). The force field is not: it starts
+ * from the Settings default (`apbsConfig.pdb2pqrFF`) on every open, and
+ * remembering it here would give it two sources. Ranges are the fields' own.
+ */
+const prefs = createDialogPrefs<ApbsPrefs>({
+    key: 'cuemol2.ui.histories.apbs_calcpot',
+    defaults: {
+        useSel: false,
+        selStr: '',
+        chargeMethod: 'pdb2pqr',
+        useHydrogen: false,
+        useNpbe: false,
+        temperature: DEFAULT_TEMPERATURE,
+        gridSpacing: DEFAULT_GRID_SPACING,
+        waterDielec: DEFAULT_WATER_DIELEC,
+        protDielec: DEFAULT_PROT_DIELEC,
+    },
+    fields: {
+        useSel: isBool,
+        selStr: isStr,
+        chargeMethod: isOneOf(['pdb2pqr', 'internal']),
+        useHydrogen: isBool,
+        useNpbe: isBool,
+        temperature: isNum(0.1, 1000),
+        gridSpacing: isNum(0.1, 10),
+        waterDielec: isNum(0.1, 200),
+        protDielec: isNum(0.1, 200),
+    },
+})
+
 export function CalcApbsPotDialog({
     visible, sceneId, onConfirm, onCancel,
 }: Props): React.JSX.Element {
@@ -86,27 +134,39 @@ export function CalcApbsPotDialog({
         cm,
         onComplete: (r) => {
             if (useSel && selStr.trim() !== '') pushHistory(selStr.trim())
+            // Saved on success only. The inputs and Defaults are disabled while
+            // the job runs, so this state is what the job was started with.
+            prefs.save({
+                useSel, selStr, chargeMethod, useHydrogen, useNpbe,
+                temperature, gridSpacing, waterDielec, protDielec,
+            })
             onConfirm({ ok: true, newObjId: r.newObjId, newObjName: r.newObjName })
         },
     })
     const running = isApbsJobActive(job)
 
-    // Reset transient state on open (last-picked molecule persists, like
-    // MakeMolSurfDialog). Reads the current default force field once at open;
+    // Defaults puts back the calculation parameters only, not the target.
+    const applyParams = (p: ApbsParams): void => {
+        setChargeMethod(p.chargeMethod)
+        setUseHydrogen(p.useHydrogen)
+        setUseNpbe(p.useNpbe)
+        setTemperature(p.temperature)
+        setGridSpacing(p.gridSpacing)
+        setWaterDielec(p.waterDielec)
+        setProtDielec(p.protDielec)
+    }
+
+    // Start each open from the remembered options (last-picked molecule
+    // persists in-session, like MakeMolSurfDialog). Reads the current default force field once at open;
     // deliberately keyed on `visible` only so later edits are not clobbered.
     useEffect(() => {
         if (!visible) return
         reset()
-        setUseSel(false)
-        setSelStr('')
-        setChargeMethod('pdb2pqr')
+        const p = prefs.load()
+        setUseSel(p.useSel)
+        setSelStr(p.selStr)
         setForceField((apbsConfig.pdb2pqrFF as Pdb2pqrForceField) ?? 'charmm')
-        setUseHydrogen(false)
-        setUseNpbe(false)
-        setTemperature(DEFAULT_TEMPERATURE)
-        setGridSpacing(DEFAULT_GRID_SPACING)
-        setWaterDielec(DEFAULT_WATER_DIELEC)
-        setProtDielec(DEFAULT_PROT_DIELEC)
+        applyParams(p)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible])
 
@@ -170,6 +230,8 @@ export function CalcApbsPotDialog({
             title="APBS electrostatic potential"
             width="xl"
             onCancel={onCancel}
+            onDefaults={() => applyParams(prefs.defaults)}
+            defaultsDisabled={running}
             footerActions={
                 <>
                     <Button onClick={onCancel} disabled={running}>

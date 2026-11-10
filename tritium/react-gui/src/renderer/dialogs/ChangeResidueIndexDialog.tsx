@@ -25,6 +25,17 @@ import { DialogShell } from './DialogShell'
 import { MolPicker } from './MolPicker'
 import { MolSelList, pushHistory } from '@renderer/h3-kit/MolSelList'
 import { resolveResIndexInput, type ResIndexMode } from './resIndexInput'
+import { createDialogPrefs, isBool, isStr } from '@renderer/utils/createDialogPrefs'
+
+/**
+ * The Renumber switch (UXP `chkbox_renum` persist) and the last selection
+ * string, remembered across sessions.
+ */
+const prefs = createDialogPrefs<{ renumber: boolean; selStr: string }>({
+    key: 'cuemol2.ui.histories.chg_resindex',
+    defaults: { renumber: false, selStr: '' },
+    fields: { renumber: isBool, selStr: isStr },
+})
 
 export interface ChangeResidueIndexDialogResult {
     ok: boolean
@@ -70,10 +81,11 @@ export function ChangeResidueIndexDialog({
             cm,
             visible,
             onReset: () => {
-                setSelStr('')
+                const p = prefs.load()
+                setSelStr(p.selStr)
                 setMode('shift')
                 setValueStr('1')
-                setRenumber(false)
+                setRenumber(p.renumber)
                 setPendingCommit(null)
             },
             buildCommit: () => {
@@ -90,6 +102,7 @@ export function ChangeResidueIndexDialog({
                     }),
                     onSuccess: () => {
                         if (selStr.trim() !== '') pushHistory(selStr.trim())
+                        prefs.save({ renumber, selStr })
                         onConfirm({ ok: true })
                     },
                     fallbackError: 'Failed to change residue index',

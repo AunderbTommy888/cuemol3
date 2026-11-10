@@ -205,6 +205,9 @@ export function useSceneTreeRendererOps(
                 objId: targetObjId,
                 rendOpts,
                 groupName,
+                // The New Renderer dialog's map center choice; a no-op for
+                // anything but a DensityMap.
+                mapCenterPolicy: rendOpts.mapCenterPolicy,
             })
             return res?.ok === true
         },

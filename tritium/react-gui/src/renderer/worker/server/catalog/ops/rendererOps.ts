@@ -116,7 +116,7 @@ export const createRenderer = defineOp({
     mapCenterPolicy: optional(
       enumOf(
         ['auto', 'setMapCenter', 'moveViewCenter'],
-        'For a map renderer: setMapCenter draws it around the view centre, moveViewCenter moves the view to the map. Null or auto picks by the map kind.',
+        'For a map renderer: setMapCenter draws it around the view centre, moveViewCenter moves the view to the map, auto picks by the map kind. Null leaves the view and the map centre as they are.',
       ),
     ),
   },
@@ -152,6 +152,8 @@ export const createRenderer = defineOp({
         args.centerView ?? false,
         args.mapCenterPolicy ?? 'auto',
       ) as never,
+      // Applied only when given; null keeps the view and the map centre.
+      mapCenterPolicy: args.mapCenterPolicy ?? undefined,
     })
     if (!result.ok) return { ok: false, error: 'The renderer could not be created.' }
     return { ok: true, data: { rendererId: result.newRendId, name: result.newName } }

@@ -90,18 +90,17 @@ export function MolSuperposeDialog({
 
     // On each open: restore history (algorithm / checkboxes) and compute the
     // initial molecule selection -- last-used uids when still present, else
-    // ref=first / mov=second (UXP `onLoad` default). Selection strings start
-    // empty; the user picks from the MolSelList history dropdown. This effect
+    // ref=first / mov=second (UXP `onLoad` default) -- and the last-used
+    // selection strings. This effect
     // owns its own field resets (and the async !guard.isCurrent(token)-flag fetch), so the
     // commit hook below is given no onReset -- it only clears submitting /
     // errorMsg on open.
     const guard = useStaleGuard()
     useEffect(() => {
         if (!visible) return
-        setRefSel('')
-        setMovSel('')
-
         const hist = loadMolSuperposeHistory()
+        setRefSel(hist.refSel)
+        setMovSel(hist.movSel)
         setAlgo(hist.algo)
         setPivot(hist.pivot)
         setAutoRecenter(hist.autoRecenter)
@@ -159,7 +158,9 @@ export function MolSuperposeDialog({
                     onSuccess: () => {
                         if (refSel.trim() !== '') pushHistory(refSel.trim())
                         if (movSel.trim() !== '') pushHistory(movSel.trim())
-                        saveMolSuperposeHistory({ refObjId, movObjId, algo, pivot, autoRecenter, useprop })
+                        saveMolSuperposeHistory({
+                            refObjId, movObjId, refSel, movSel, algo, pivot, autoRecenter, useprop,
+                        })
                         onConfirm({ ok: true })
                     },
                     fallbackError: 'Superposition failed',

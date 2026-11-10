@@ -20,6 +20,17 @@ import { Field, FieldSection, SwitchField } from '@renderer/h3-kit/form'
 import { DialogShell } from './DialogShell'
 import { MolPicker } from './MolPicker'
 import { MolSelList, pushHistory } from '@renderer/h3-kit/MolSelList'
+import { createDialogPrefs, isBool, isStr } from '@renderer/utils/createDialogPrefs'
+
+/**
+ * The Copy switch (UXP `chkbox_copy` persist) and the last selection string,
+ * remembered across sessions.
+ */
+const prefs = createDialogPrefs<{ copy: boolean; selStr: string }>({
+    key: 'cuemol2.ui.histories.mol_merge',
+    defaults: { copy: true, selStr: '' },
+    fields: { copy: isBool, selStr: isStr },
+})
 
 export interface MergeMolDialogResult {
     ok: boolean
@@ -48,16 +59,17 @@ export function MergeMolDialog({
         fromObjId !== undefined && fromObjId === toObjId
 
     // Commit handler + submitting/errorMsg state + reset-on-open. The molecule
-    // ids are intentionally NOT reset (last-picked persists); `copy` resets to
-    // true. The same-molecule case is already gated by a disabled OK button, so
+    // ids are intentionally NOT reset (last-picked persists); `copy` and the
+    // selection start from the last confirmed values. The same-molecule case is already gated by a disabled OK button, so
     // buildCommit simply returns null for it.
     const { submitting, errorMsg, run: handleOk } =
         useMolEditCommit({
             cm,
             visible,
             onReset: () => {
-                setSelStr('')
-                setCopy(true)
+                const p = prefs.load()
+                setSelStr(p.selStr)
+                setCopy(p.copy)
             },
             buildCommit: () => {
                 if (fromObjId === undefined || toObjId === undefined) return null
@@ -72,6 +84,7 @@ export function MergeMolDialog({
                     }),
                     onSuccess: () => {
                         if (selStr.trim() !== '') pushHistory(selStr.trim())
+                        prefs.save({ copy, selStr })
                         onConfirm({ ok: true })
                     },
                     fallbackError: 'Failed to merge molecule',

@@ -22,6 +22,7 @@ import { Field, FieldSection, NumericField, SwitchField, TextField } from '@rend
 import { DialogShell } from './DialogShell'
 import { MolPicker } from './MolPicker'
 import { MolSelList, pushHistory } from '@renderer/h3-kit/MolSelList'
+import { createDialogPrefs, isBool, isNum, isStr } from '@renderer/utils/createDialogPrefs'
 
 export interface InteractionAnalysisDialogResult {
     ok: boolean
@@ -43,6 +44,45 @@ const DEFAULT_MAX_DIST = 3.5
 const DEFAULT_MAX_LABELS = 30
 const DEFAULT_REND_NAME = 'measure'
 
+interface InteractionPrefs {
+    selStr: string
+    useSel2: boolean
+    selStr2: string
+    minDist: number
+    maxDist: number
+    maxLabels: number
+    hbondOnly: boolean
+}
+
+/**
+ * The selections and search parameters, remembered across sessions (UXP
+ * persisted only `chk_hbond`; the rest is a tritium addition). The ranges are
+ * the ones the numeric fields enforce. The second selection string is kept
+ * together with its "use selection" switch; the second-molecule switch is
+ * not, since its molecule is only remembered within the session.
+ */
+const prefs = createDialogPrefs<InteractionPrefs>({
+    key: 'cuemol2.ui.histories.intr_tool',
+    defaults: {
+        selStr: '',
+        useSel2: false,
+        selStr2: '',
+        minDist: DEFAULT_MIN_DIST,
+        maxDist: DEFAULT_MAX_DIST,
+        maxLabels: DEFAULT_MAX_LABELS,
+        hbondOnly: false,
+    },
+    fields: {
+        selStr: isStr,
+        useSel2: isBool,
+        selStr2: isStr,
+        minDist: isNum(0, 20),
+        maxDist: isNum(0, 20),
+        maxLabels: isNum(1, 1000),
+        hbondOnly: isBool,
+    },
+})
+
 export function InteractionAnalysisDialog({
     visible, sceneId, onConfirm, onCancel,
 }: Props): React.JSX.Element {
@@ -62,6 +102,14 @@ export function InteractionAnalysisDialog({
 
     const distInvalid = minDist >= maxDist
 
+    // Search parameters only: the Defaults button leaves the selections alone.
+    const applyParams = (p: InteractionPrefs): void => {
+        setMinDist(p.minDist)
+        setMaxDist(p.maxDist)
+        setMaxLabels(p.maxLabels)
+        setHbondOnly(p.hbondOnly)
+    }
+
     // Commit handler + submitting/errorMsg state + reset-on-open. Molecule ids
     // are intentionally NOT reset (last-picked persists in-session).
     const { submitting, errorMsg, run: handleOk } =
@@ -69,14 +117,12 @@ export function InteractionAnalysisDialog({
             cm,
             visible,
             onReset: () => {
-                setSelStr('')
+                const p = prefs.load()
+                setSelStr(p.selStr)
                 setUseMol2(false)
-                setUseSel2(false)
-                setSelStr2('')
-                setMinDist(DEFAULT_MIN_DIST)
-                setMaxDist(DEFAULT_MAX_DIST)
-                setMaxLabels(DEFAULT_MAX_LABELS)
-                setHbondOnly(false)
+                setUseSel2(p.useSel2)
+                setSelStr2(p.selStr2)
+                applyParams(p)
                 setRendName(DEFAULT_REND_NAME)
             },
             buildCommit: () => {
@@ -101,6 +147,9 @@ export function InteractionAnalysisDialog({
                         if ((useMol2 || useSel2) && selStr2.trim() !== '') {
                             pushHistory(selStr2.trim())
                         }
+                        prefs.save({
+                            selStr, useSel2, selStr2, minDist, maxDist, maxLabels, hbondOnly,
+                        })
                         onConfirm({ ok: true, count: res.count })
                     },
                     fallbackError: 'Failed to analyze interactions',
@@ -123,6 +172,7 @@ export function InteractionAnalysisDialog({
             onCancel={onCancel}
             onOk={handleOk}
             okDisabled={okDisabled}
+            onDefaults={() => applyParams(prefs.defaults)}
             submitting={submitting}
             errorMsg={errorMsg}
         >

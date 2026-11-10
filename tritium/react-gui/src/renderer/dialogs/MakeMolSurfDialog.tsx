@@ -29,6 +29,7 @@ import { MolSelList, pushHistory } from '@renderer/h3-kit/MolSelList'
 import { DEFAULT_DENSITY, DENSITY_MAX, DENSITY_MIN } from './molSurfDensity'
 import { asBackend, BACKEND_OPTIONS, DEFAULT_BACKEND, MolSurfBackend } from './molSurfBackend'
 import { useStaleGuard } from '@renderer/hooks/react/useStaleGuard'
+import { createDialogPrefs, isBool, isNum, isOneOf, isStr } from '@renderer/utils/createDialogPrefs'
 
 export interface MakeMolSurfDialogResult {
     ok: boolean
@@ -48,6 +49,38 @@ interface Props {
 // dialog.
 const DEFAULT_PROBE_RADIUS = 1.4
 
+interface MakeMolSurfPrefs {
+    useSel: boolean
+    selStr: string
+    probeRadius: number
+    density: number
+    backend: MolSurfBackend
+}
+
+/**
+ * Remembered across sessions. The selection is kept with the Use selection
+ * switch (UXP `tgtsel` / `selchk`) so a restored switch never runs on an
+ * empty selection; it is the field's own text, not the payload, so turning
+ * the switch off does not lose it. The ranges are the sliders' own.
+ */
+const prefs = createDialogPrefs<MakeMolSurfPrefs>({
+    key: 'cuemol2.ui.histories.makesurf',
+    defaults: {
+        useSel: false,
+        selStr: '',
+        probeRadius: DEFAULT_PROBE_RADIUS,
+        density: DEFAULT_DENSITY,
+        backend: DEFAULT_BACKEND,
+    },
+    fields: {
+        useSel: isBool,
+        selStr: isStr,
+        probeRadius: isNum(0.1, 10),
+        density: isNum(DENSITY_MIN, DENSITY_MAX),
+        backend: isOneOf(BACKEND_OPTIONS.map((o) => o.value)),
+    },
+})
+
 export function MakeMolSurfDialog({
     visible, sceneId, onConfirm, onCancel,
 }: Props): React.JSX.Element {
@@ -62,6 +95,13 @@ export function MakeMolSurfDialog({
     const [density, setDensity] = useState<number>(DEFAULT_DENSITY)
     const [backend, setBackend] = useState<MolSurfBackend>(DEFAULT_BACKEND)
 
+    // Defaults puts back the surface parameters only, not the target.
+    const applyParams = (p: MakeMolSurfPrefs): void => {
+        setProbeRadius(p.probeRadius)
+        setDensity(p.density)
+        setBackend(p.backend)
+    }
+
     // Commit handler + submitting/errorMsg state + reset-on-open. The molecule
     // id is intentionally NOT reset (last-picked persists); the surface name is
     // owned by the prefill effect below, so neither is cleared here.
@@ -70,10 +110,10 @@ export function MakeMolSurfDialog({
             cm,
             visible,
             onReset: () => {
-                setUseSel(false)
-                setSelStr('')
-                setDensity(DEFAULT_DENSITY)
-                setProbeRadius(DEFAULT_PROBE_RADIUS)
+                const p = prefs.load()
+                setUseSel(p.useSel)
+                setSelStr(p.selStr)
+                applyParams(p)
             },
             buildCommit: () => {
                 if (objId === undefined) return null
@@ -90,6 +130,7 @@ export function MakeMolSurfDialog({
                     }),
                     onSuccess: () => {
                         if (effSelStr.trim() !== '') pushHistory(effSelStr.trim())
+                        prefs.save({ useSel, selStr, probeRadius, density, backend })
                         onConfirm({ ok: true })
                     },
                     fallbackError: 'Failed to generate molecular surface',
@@ -127,6 +168,7 @@ export function MakeMolSurfDialog({
             onCancel={onCancel}
             onOk={handleOk}
             okDisabled={objId === undefined}
+            onDefaults={() => applyParams(prefs.defaults)}
             submitting={submitting}
             errorMsg={errorMsg}
         >
