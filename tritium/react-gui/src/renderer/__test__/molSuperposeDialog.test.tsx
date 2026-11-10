@@ -136,7 +136,7 @@ describe('MolSuperposeDialog commit + history wire', () => {
         handle.unmount()
     })
 
-    it('on {ok:true} persists the 6-field molSuperposeHistory record', async () => {
+    it('on {ok:true} persists the 8-field molSuperposeHistory record', async () => {
         routeInvoke(() => ({ ok: true }))
         const handle = mount()
         await flushPromises()
@@ -148,6 +148,8 @@ describe('MolSuperposeDialog commit + history wire', () => {
         expect(raw && JSON.parse(raw)).toEqual({
             refObjId: 10,
             movObjId: 20,
+            refSel: '',
+            movSel: '',
             algo: 'USalign',
             pivot: 'auto',
             autoRecenter: true,
@@ -157,6 +159,8 @@ describe('MolSuperposeDialog commit + history wire', () => {
         expect(loadMolSuperposeHistory()).toEqual({
             refObjId: 10,
             movObjId: 20,
+            refSel: '',
+            movSel: '',
             algo: 'USalign',
             pivot: 'auto',
             autoRecenter: true,
@@ -181,10 +185,13 @@ describe('MolSuperposeDialog commit + history wire', () => {
         handle.unmount()
     })
 
-    it('on open the algorithm is restored from saved history', async () => {
+    it('on open the selections and algorithm are restored from saved history', async () => {
         globalThis.localStorage.setItem(
             STORAGE_KEY,
-            JSON.stringify({ refObjId: 10, movObjId: 20, algo: 'SSM', pivot: 'P', autoRecenter: false, useprop: true }),
+            JSON.stringify({
+                refObjId: 10, movObjId: 20, refSel: 'chain A', movSel: 'chain B',
+                algo: 'SSM', pivot: 'P', autoRecenter: false, useprop: true,
+            }),
         )
         routeInvoke(() => ({ ok: true }))
         const handle = mount()
@@ -193,8 +200,10 @@ describe('MolSuperposeDialog commit + history wire', () => {
         await act(async () => { okButton().click() })
         await flushPromises()
 
-        // Restored algo / checkbox state flows into the commit payload.
+        // Restored selections / algo / checkbox state flow into the commit payload.
         const payload = commitCalls()[0][1] as Record<string, unknown>
+        expect(payload.refSel).toBe('chain A')
+        expect(payload.movSel).toBe('chain B')
         expect(payload.algo).toBe('SSM')
         expect(payload.pivot).toBe('P')
         expect(payload.autoRecenter).toBe(false)

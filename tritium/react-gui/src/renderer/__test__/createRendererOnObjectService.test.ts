@@ -9,7 +9,14 @@ vi.mock('@renderer/worker/server/services/rend/setupRenderer', () => ({
     setupRenderer: vi.fn(),
 }))
 
+// applyMapCenterPolicy reads a real DensityMap; the test only pins when it is called.
+vi.mock('@renderer/worker/server/services/map/emDefaults', () => ({
+    applyMapCenterPolicy: vi.fn(() => ({})),
+}))
+
 import { services } from '@renderer/worker/server/services/rend/rend.service'
+import { applyMapCenterPolicy } from '@renderer/worker/server/services/map/emDefaults'
+const applyPolicyMock = applyMapCenterPolicy as unknown as ReturnType<typeof vi.fn>
 import { setupRenderer } from '@renderer/worker/server/services/rend/setupRenderer'
 const setupMock = setupRenderer as unknown as ReturnType<typeof vi.fn>
 
@@ -55,6 +62,7 @@ function defaultMockRend(opts: RendererOptions) {
 describe('createRendererOnObject.service', () => {
     beforeEach(() => {
         setupMock.mockReset()
+        applyPolicyMock.mockClear()
         setupMock.mockImplementation((_ctx, _mol, opts: RendererOptions) =>
             defaultMockRend(opts),
         )
@@ -68,6 +76,23 @@ describe('createRendererOnObject.service', () => {
         expect(res).toEqual({ ok: true, newRendId: 444, newName: 'cartoon1' })
         expect(f.startUndoTxn).toHaveBeenCalledWith('Create new cartoon renderer')
         expect(f.commitUndoTxn).toHaveBeenCalledTimes(1)
+    })
+
+    it('applies the map center policy only when one is passed, never for a preset', () => {
+        const f = buildFixture()
+        services.createRendererOnObject(f.ctx, { sceneId: 1, objId: 10, rendOpts: baseOpts })
+        expect(applyPolicyMock).not.toHaveBeenCalled()
+
+        services.createRendererOnObject(f.ctx, {
+            sceneId: 1, objId: 10, rendOpts: { ...baseOpts, presetName: 'P' }, mapCenterPolicy: 'setMapCenter',
+        })
+        expect(applyPolicyMock).not.toHaveBeenCalled()
+
+        services.createRendererOnObject(f.ctx, {
+            sceneId: 1, objId: 10, rendOpts: baseOpts, mapCenterPolicy: 'setMapCenter',
+        })
+        expect(applyPolicyMock).toHaveBeenCalledTimes(1)
+        expect(applyPolicyMock.mock.calls[0][4]).toBe('setMapCenter')
     })
 
     it('assigns rend.group when groupName is provided', () => {

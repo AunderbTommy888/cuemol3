@@ -4,13 +4,17 @@
  * `RendererOptionsPane` (the file-open option dialog and the "New Renderer"
  * dialog).
  *
- * Two UXP-parity behaviours live here so neither dialog has to reimplement
+ * Three UXP-parity behaviours live here so neither dialog has to reimplement
  * them:
  *
  *   1. Renderer-type history -- the initially selected type is restored from
  *      per-objClassName localStorage history (`rendTypeHistory`), and
  *      `commitHistory()` writes the chosen type back on confirm.
- *   2. Default renderer name follow -- while the renderer name is still the
+ *   2. View options memory -- `centerView` and `mapCenterPolicy` start from
+ *      the values last confirmed in the same host dialog (UXP kept the
+ *      `center` checkbox per host document through xulstore), and
+ *      `commitHistory()` stores them.
+ *   3. Default renderer name follow -- while the renderer name is still the
  *      auto-generated default, changing the renderer type re-derives a
  *      scene-wide unique name via the worker `proposeUniqName` service.
  *      Once the user edits the name, the follow stops (UXP mRendNameDefault).
@@ -31,12 +35,39 @@ import {
 import { useCueMol } from '@renderer/hooks/cuemol/useCueMol';
 import { initialRendererType, presetNamePrefix } from '@renderer/worker/shared/fileOpenDefaults';
 import type { PresetTypeEntry, RendererOptions } from './types';
+import type { MapCenterPolicy } from '@renderer/worker/shared/fileOpenTypes';
+import { createDialogPrefs, isBool, isOneOf } from '@renderer/utils/createDialogPrefs';
 import { getDefaultRendType, setDefaultRendType } from './rendTypeHistory';
 import { pushHistory } from '@renderer/h3-kit/MolSelList';
+
+/** Which dialog embeds the pane; each remembers its view options apart. */
+export type RendererOptionsHost = 'fileOpen' | 'newRenderer';
+
+interface ViewPrefs {
+    centerView: boolean;
+    mapCenterPolicy: MapCenterPolicy;
+}
+
+const MAP_CENTER_POLICIES: readonly MapCenterPolicy[] = ['auto', 'setMapCenter', 'moveViewCenter'];
+
+function viewPrefs(host: RendererOptionsHost) {
+    return createDialogPrefs<ViewPrefs>({
+        key: `cuemol2.ui.histories.renderer_options.${host}`,
+        defaults: { centerView: true, mapCenterPolicy: 'auto' },
+        fields: { centerView: isBool, mapCenterPolicy: isOneOf(MAP_CENTER_POLICIES) },
+    });
+}
+
+const VIEW_PREFS: Record<RendererOptionsHost, ReturnType<typeof viewPrefs>> = {
+    fileOpen: viewPrefs('fileOpen'),
+    newRenderer: viewPrefs('newRenderer'),
+};
 
 export interface UseRendererOptionsArgs {
     /** Dialog visibility -- a false->true transition resets the state. */
     visible: boolean;
+    /** The embedding dialog; selects the remembered view options. */
+    prefsHost: RendererOptionsHost;
     sceneId: number;
     /** C++ object class name; the renderer-type history key. '' disables history. */
     objClassName: string;
@@ -69,8 +100,9 @@ export interface UseRendererOptionsResult {
 export function useRendererOptions(
     args: UseRendererOptionsArgs,
 ): UseRendererOptionsResult {
-    const { visible, sceneId, objClassName, rendererTypes, presetTypes,
+    const { visible, prefsHost, sceneId, objClassName, rendererTypes, presetTypes,
         objectName, initialRendererName, initialSelection } = args;
+    const prefs = VIEW_PREFS[prefsHost];
     const { cm } = useCueMol();
 
     const presets = useMemo(() => presetTypes ?? [], [presetTypes]);
@@ -105,6 +137,7 @@ export function useRendererOptions(
             ? `${presetNamePrefix(pName)}1`
             : initialRendererName ??
               (initialPick.rendererType ? `${initialPick.rendererType}1` : '');
+        const view = prefs.load();
         return {
             objectName,
             rendererType: initialPick.rendererType,
@@ -112,11 +145,11 @@ export function useRendererOptions(
             // A non-empty current selection starts the checkbox on, targeting it.
             selectionEnabled: seedSel !== '',
             selection: seedSel !== '' ? seedSel : '*',
-            centerView: true,
-            mapCenterPolicy: 'auto',
+            centerView: view.centerView,
+            mapCenterPolicy: view.mapCenterPolicy,
             presetName: pName,
         };
-    }, [objectName, initialPick, initialRendererName, initialSelection]);
+    }, [objectName, initialPick, initialRendererName, initialSelection, prefs]);
 
     const [options, setOptions] = useState<RendererOptions>(buildOptions);
 
@@ -187,6 +220,9 @@ export function useRendererOptions(
         // removed later) simply fails the membership check on the next open
         // and falls back to the first plain type.
         setDefaultRendType(objClassName, options.presetName ?? options.rendererType);
+        // Both view options are stored every time: the one the object kind
+        // does not show still holds its restored value.
+        prefs.save({ centerView: options.centerView, mapCenterPolicy: options.mapCenterPolicy });
         // The selection the new renderer targets is a used selection; both
         // hosts (file open and New Renderer) record it through this one path.
         if (options.selectionEnabled && options.selection) pushHistory(options.selection);
@@ -196,6 +232,9 @@ export function useRendererOptions(
         options.rendererType,
         options.selectionEnabled,
         options.selection,
+        options.centerView,
+        options.mapCenterPolicy,
+        prefs,
     ]);
 
     return { options, setOptions, onRendererNameUserEdit, commitHistory };

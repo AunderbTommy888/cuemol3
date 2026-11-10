@@ -23,6 +23,14 @@ import { DialogShell } from './DialogShell'
 import { MolPicker } from './MolPicker'
 import { MolSelList, pushHistory } from '@renderer/h3-kit/MolSelList'
 import { resolveChainNameInput } from './chainNameInput'
+import { createDialogPrefs, isStr } from '@renderer/utils/createDialogPrefs'
+
+/** The last selection string, remembered across sessions. */
+const prefs = createDialogPrefs<{ selStr: string }>({
+    key: 'cuemol2.ui.histories.chg_chainid',
+    defaults: { selStr: '' },
+    fields: { selStr: isStr },
+})
 
 export interface ChangeChainIdDialogResult {
     ok: boolean
@@ -69,7 +77,7 @@ export function ChangeChainIdDialog({
             cm,
             visible,
             onReset: () => {
-                setSelStr('')
+                setSelStr(prefs.load().selStr)
                 setChainName('')
                 setPendingCommit(null)
             },
@@ -85,6 +93,7 @@ export function ChangeChainIdDialog({
                     }),
                     onSuccess: () => {
                         if (selStr.trim() !== '') pushHistory(selStr.trim())
+                        prefs.save({ selStr })
                         onConfirm({ ok: true })
                     },
                     fallbackError: 'Failed to change chain ID',

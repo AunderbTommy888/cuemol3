@@ -66,6 +66,7 @@ export function NewRendererDialog({
     const { options, setOptions, onRendererNameUserEdit, commitHistory } =
         useRendererOptions({
             visible,
+            prefsHost: 'newRenderer',
             sceneId,
             objClassName,
             rendererTypes,

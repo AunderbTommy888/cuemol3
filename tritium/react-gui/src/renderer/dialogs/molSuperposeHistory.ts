@@ -3,15 +3,15 @@
  * @description localStorage-backed history for the Molecular superposition
  * dialog. Mirrors UXP `ssm_sup.js` preference persistence
  * (`cuemol2.ui.histories.mol_superpose_*`): the last-used reference / moving
- * molecule uids, the chosen algorithm and US-align pivot, and the two checkbox states are saved
- * on a successful superposition and restored when the dialog reopens.
+ * molecule uids and selection strings, the chosen algorithm and US-align
+ * pivot, and the two checkbox states are saved on a successful superposition
+ * and restored when the dialog reopens.
  *
- * Selection-string history is NOT stored here -- it is delegated to the
- * shared MolSelList `selHistory` store so it stays consistent with every
- * other selection input.
+ * The selection-string dropdown history is separate: it is the shared
+ * MolSelList `selHistory` store, common to every selection input.
  */
 
-import { loadJSON, saveJSON } from '@renderer/utils/localStorageJSON';
+import { createDialogPrefs, isBool, isOneOf, isOptNum, isStr } from '@renderer/utils/createDialogPrefs';
 import {
     DEFAULT_SUPERPOSE_ALGO,
     USALIGN_PIVOTS,
@@ -23,6 +23,8 @@ export const STORAGE_KEY = 'cuemol2.ui.histories.mol_superpose';
 export interface MolSuperposeHistory {
     refObjId?: number;
     movObjId?: number;
+    refSel: string;
+    movSel: string;
     algo: SuperposeAlgo;
     pivot: string;
     autoRecenter: boolean;
@@ -30,35 +32,35 @@ export interface MolSuperposeHistory {
 }
 
 export const DEFAULT_HISTORY: MolSuperposeHistory = {
+    refSel: '',
+    movSel: '',
     algo: DEFAULT_SUPERPOSE_ALGO,
     pivot: 'auto',
     autoRecenter: true,
     useprop: false,
 };
 
-function asHistory(raw: unknown): MolSuperposeHistory | null {
-    if (typeof raw !== 'object' || raw === null) return null;
-    const o = raw as Record<string, unknown>;
-    const algo: SuperposeAlgo =
-        o.algo === 'SSM' || o.algo === 'LSQ' || o.algo === 'USalign' ? o.algo : DEFAULT_HISTORY.algo;
-    const pivot =
-        typeof o.pivot === 'string' && (USALIGN_PIVOTS as readonly string[]).includes(o.pivot)
-            ? o.pivot
-            : DEFAULT_HISTORY.pivot;
-    return {
-        refObjId: typeof o.refObjId === 'number' ? o.refObjId : undefined,
-        movObjId: typeof o.movObjId === 'number' ? o.movObjId : undefined,
-        algo,
-        pivot,
-        autoRecenter: typeof o.autoRecenter === 'boolean' ? o.autoRecenter : DEFAULT_HISTORY.autoRecenter,
-        useprop: typeof o.useprop === 'boolean' ? o.useprop : DEFAULT_HISTORY.useprop,
-    };
-}
+const SUPERPOSE_ALGOS: readonly SuperposeAlgo[] = ['USalign', 'SSM', 'LSQ'];
+
+const prefs = createDialogPrefs<MolSuperposeHistory>({
+    key: STORAGE_KEY,
+    defaults: DEFAULT_HISTORY,
+    fields: {
+        refObjId: isOptNum,
+        movObjId: isOptNum,
+        refSel: isStr,
+        movSel: isStr,
+        algo: isOneOf(SUPERPOSE_ALGOS),
+        pivot: isOneOf(USALIGN_PIVOTS),
+        autoRecenter: isBool,
+        useprop: isBool,
+    },
+});
 
 export function loadMolSuperposeHistory(): MolSuperposeHistory {
-    return loadJSON(STORAGE_KEY, asHistory, DEFAULT_HISTORY);
+    return prefs.load();
 }
 
 export function saveMolSuperposeHistory(hist: MolSuperposeHistory): void {
-    saveJSON(STORAGE_KEY, hist);
+    prefs.save(hist);
 }

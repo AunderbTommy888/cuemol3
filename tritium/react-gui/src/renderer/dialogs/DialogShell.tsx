@@ -79,6 +79,18 @@ export interface DialogShellProps {
      */
     footerActions?: React.ReactNode
     /**
+     * Draws a Defaults button on the left of the footer, for a dialog that
+     * remembers its parameters across sessions: the handler puts them back
+     * to the built-in values (storing happens on confirm, as usual). The
+     * button is disabled while `submitting` or `defaultsDisabled`.
+     */
+    onDefaults?: () => void
+    /**
+     * Extra disable for the Defaults button, for a dialog whose busy state is
+     * not `submitting` (a job dialog with its own footer actions).
+     */
+    defaultsDisabled?: boolean
+    /**
      * Leaves the footer out altogether, for a dialog with no action at all --
      * a short step that closes itself (the update's unpack progress). An
      * empty `footerActions` would still draw the footer band.
@@ -132,6 +144,8 @@ export function DialogShell({
     errorMsg = null,
     children,
     footerActions,
+    onDefaults,
+    defaultsDisabled = false,
     noFooter = false,
     extra,
     canEscapeKeyClose = true,
@@ -180,7 +194,13 @@ export function DialogShell({
                         </>
                     )
                 }
-            />}
+            >
+                {onDefaults && (
+                    <Button onClick={onDefaults} disabled={submitting || defaultsDisabled}>
+                        Defaults
+                    </Button>
+                )}
+            </DialogFooter>}
             {extra}
         </Dialog>
     )

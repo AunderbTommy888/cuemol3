@@ -247,6 +247,11 @@ architecture, it belongs here.
   副作用で、OS 差は Linux/Wayland と Windows の起動直後レースのみ)、`.qsc` を対象外にした
   理由、シーン生成を option dialog の後ろへ動かしてキャンセル時の空タブを解消した経緯、
   バッチを 1 シーンに固定する uid の持ち回り、起動レース対策の awaitable getter。
+- [ダイアログ option の記憶 (セッションを跨ぐ既定値)](dialog-option-persistence.md) (日本語) --
+  ダイアログで最後に確定した option と選択式を localStorage (`cuemol2.ui.histories.<dialog>`) に
+  記憶し、再起動後も復元する。項目ごとに check を持つヘルパー `createDialogPrefs`、保存する時点
+  (成功時 / job 完了時 / OK 確定時)、計算パラメータだけを戻す Defaults ボタン、file open と New
+  Renderer の記憶の分離、New Renderer の map center 適用と preset の制限。
 - [ObjProxyBridge `_objSlot` ownership and lifetime](objslot-ownership.md) --
   the worker-side object bridge's slot ownership rules and when a slot may be
   released, from the renderer/worker refactoring work.

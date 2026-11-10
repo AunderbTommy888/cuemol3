@@ -25,6 +25,7 @@ import {
     toPixels,
     type PngUnit,
 } from './exportPngSize'
+import { createDialogPrefs, isBool, isOneOf } from '@renderer/utils/createDialogPrefs'
 
 export interface ExportPngOptionsResult {
     width: number
@@ -49,6 +50,28 @@ const UNIT_OPTIONS: { value: PngUnit; label: string }[] = [
     { value: 'in', label: 'inch' },
 ]
 
+interface ExportPngPrefs {
+    dpi: number
+    unit: PngUnit
+    retainAspect: boolean
+    alpha: boolean
+}
+
+/**
+ * Remembered across sessions on OK. The pixel size is not: it is seeded from
+ * the view size on every open.
+ */
+const prefs = createDialogPrefs<ExportPngPrefs>({
+    key: 'cuemol2.ui.histories.exportpng_opt',
+    defaults: { dpi: 150, unit: 'px', retainAspect: true, alpha: false },
+    fields: {
+        dpi: isOneOf(DPI_OPTIONS),
+        unit: isOneOf(UNIT_OPTIONS.map((u) => u.value)),
+        retainAspect: isBool,
+        alpha: isBool,
+    },
+})
+
 export function ExportPngOptionsDialog({
     visible, initialWidth, initialHeight, onConfirm, onCancel,
 }: Props): React.JSX.Element {
@@ -71,10 +94,11 @@ export function ExportPngOptionsDialog({
         if (!visible) return
         setPxW(initialWidth)
         setPxH(initialHeight)
-        setDpi(150)
-        setUnit('px')
-        setRetainAspect(true)
-        setAlpha(false)
+        const p = prefs.load()
+        setDpi(p.dpi)
+        setUnit(p.unit)
+        setRetainAspect(p.retainAspect)
+        setAlpha(p.alpha)
     }, [visible, initialWidth, initialHeight])
 
     const widthDisplay = roundForUnit(fromPixels(pxW, unit, dpi), unit)
@@ -101,8 +125,10 @@ export function ExportPngOptionsDialog({
 
     const handleOk = useCallback(() => {
         if (pxW <= 0 || pxH <= 0) return
+        // Stored on OK: the export itself runs after the dialog closes.
+        prefs.save({ dpi, unit, retainAspect, alpha })
         onConfirm({ width: pxW, height: pxH, alpha, dpi })
-    }, [pxW, pxH, alpha, dpi, onConfirm])
+    }, [pxW, pxH, alpha, dpi, unit, retainAspect, onConfirm])
 
     const stepForUnit = unit === 'px' ? 1 : 0.1
 

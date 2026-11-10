@@ -126,6 +126,7 @@ export const FileOpenOptionDialog: React.FC<FileOpenOptionDialogProps> = ({
   const { options: rendererOptions, setOptions: setRendererOptions,
     onRendererNameUserEdit, commitHistory } = useRendererOptions({
     visible,
+    prefsHost: 'fileOpen',
     sceneId,
     objClassName: objType,
     rendererTypes,

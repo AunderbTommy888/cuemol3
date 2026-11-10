@@ -20,7 +20,7 @@
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
 import type { SceneNodeEntry } from '@renderer/worker/server/catalog/refs'
 import { recordedPath, recordedPaths, recordedPropPath, sceneNodes } from '@renderer/worker/server/catalog/refs'
-import type { FileOpenOptions, FormatOptions } from '@renderer/worker/shared/fileOpenTypes'
+import type { FileOpenOptions, FormatOptions, MapCenterPolicy } from '@renderer/worker/shared/fileOpenTypes'
 import { insideOp, noteEntry, txnOpen } from './actionLog'
 
 /** The node kinds the property ops address (a group is a renderer to them). */
@@ -172,7 +172,7 @@ export function recordCreateRenderer(
   sceneId: number,
   objId: number,
   opts: RendererChoice,
-  created: { rendId: number; groupName?: string },
+  created: { rendId: number; groupName?: string; mapCenterPolicy?: MapCenterPolicy },
 ): void {
   const centerView = opts.centerView === true ? true : null
   if (opts.presetName) {
@@ -189,6 +189,9 @@ export function recordCreateRenderer(
       name: opts.rendererName || null,
       selection: opts.selectionEnabled ? opts.selection : null,
       centerView,
+      // Written only when the map center policy was applied, so replay
+      // applies it again; molecules record as before.
+      ...(created.mapCenterPolicy ? { mapCenterPolicy: created.mapCenterPolicy } : {}),
     },
     ['objId'],
   )
