@@ -1874,7 +1874,7 @@ exports[`renderer Properties page > nucl / default 1`] = `
     "rows": [
       "Show tube [switch] {resettable} value="on"",
       "Connect base pair [switch] {resettable} value="on"",
-      "Base type [select] {resettable} options=[basepair|detail1|detail2|simple1] selected=basepair",
+      "Base type [select] {resettable} options=[none|basepair|detail1|detail2|simple1] selected=basepair",
       "Detail [select] {resettable} options=[2|3|4|8|16|32] selected=3",
       "Base size [drag-numeric] {resettable}",
       "Base thick [drag-numeric] {resettable}",
@@ -1882,7 +1882,7 @@ exports[`renderer Properties page > nucl / default 1`] = `
     "writes": [
       "Show tube -> set show_tube=false",
       "Connect base pair -> set show_basepair=false",
-      "Base type -> set base_type="detail1"",
+      "Base type -> setMany [{"key":"base_type","valueType":"enum","value":"basepair"},{"key":"base_size","valueType":"real","value":0}]",
       "Detail -> set base_detail=2",
       "Base size -> setMany [{"key":"base_size","valueType":"real","value":0.6},{"key":"base_thick","valueType":"real","value":0.6}]",
       "Base thick -> (nothing)",
@@ -1977,7 +1977,7 @@ exports[`renderer Properties page > nucl / tube-off 1`] = `
     "rows": [
       "Show tube [switch] {modified,resettable} value="on"",
       "Connect base pair [switch] {resettable} value="on"",
-      "Base type [select] {resettable} options=[basepair|detail1|detail2|simple1] selected=basepair",
+      "Base type [select] {resettable} options=[none|basepair|detail1|detail2|simple1] selected=basepair",
       "Detail [select] {resettable} options=[2|3|4|8|16|32] selected=3",
       "Base size [drag-numeric] {resettable}",
       "Base thick [drag-numeric] {resettable}",
@@ -1985,7 +1985,7 @@ exports[`renderer Properties page > nucl / tube-off 1`] = `
     "writes": [
       "Show tube -> set show_tube=true",
       "Connect base pair -> set show_basepair=false",
-      "Base type -> set base_type="detail1"",
+      "Base type -> setMany [{"key":"base_type","valueType":"enum","value":"basepair"},{"key":"base_size","valueType":"real","value":0}]",
       "Detail -> set base_detail=2",
       "Base size -> setMany [{"key":"base_size","valueType":"real","value":0.6},{"key":"base_thick","valueType":"real","value":0.6}]",
       "Base thick -> (nothing)",

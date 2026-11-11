@@ -398,15 +398,12 @@ TEST_F(TubeGpuMeshTest, CartoonElementsRebuiltOnSecondaryAndProps)
 INSTANTIATE_TEST_SUITE_P(TubeLike, TubeGpuMeshTest,
                          ::testing::Values("tube", "ribbon", "cartoon", "cartoon-ribhelix"));
 
-// The nucleic-acid renderer records its base sticks in the same traversal:
-// they are rewritten in place with the tube and ring mesh.
-TEST(NARendererGpuMeshTest, AtomsMovedUpdatesSticksInPlace)
+// Load the tRNA test structure ready for the nucleic-acid renderer. No
+// topology files in the tests: link the consecutive residues and set the base
+// types by residue name.
+static MolCoordPtr loadLinkedRNA(qsys::ScenePtr pScene)
 {
-    qsys::ScenePtr pScene = qsys::SceneManager::getInstance()->createScene();
     MolCoordPtr pMol = loadPDB("1ehz_rna.pdb", pScene, "rna");
-
-    // No topology files in the tests: link the consecutive residues and set
-    // the base types by residue name
     for (int i = 1; i <= 76; ++i) {
         molstr::MolResiduePtr pRes = pMol->getResidue("A", molstr::ResidIndex(i));
         if (pRes.isnull()) continue;
@@ -415,6 +412,15 @@ TEST(NARendererGpuMeshTest, AtomsMovedUpdatesSticksInPlace)
         molstr::MolResiduePtr pNext = pMol->getResidue("A", molstr::ResidIndex(i + 1));
         if (!pNext.isnull()) pRes->setLinkNext(pNext);
     }
+    return pMol;
+}
+
+// The nucleic-acid renderer records its base sticks in the same traversal:
+// they are rewritten in place with the tube and ring mesh.
+TEST(NARendererGpuMeshTest, AtomsMovedUpdatesSticksInPlace)
+{
+    qsys::ScenePtr pScene = qsys::SceneManager::getInstance()->createScene();
+    MolCoordPtr pMol = loadLinkedRNA(pScene);
 
     MockDisplayContext dc;
     auto newNA = [&]() {
@@ -455,6 +461,37 @@ TEST(NARendererGpuMeshTest, AtomsMovedUpdatesSticksInPlace)
     const qlib::uid_t uid = pScene->getUID();
     pRend = qsys::RendererPtr();
     pFresh = qsys::RendererPtr();
+    pMol = MolCoordPtr();
+    pScene = qsys::ScenePtr();
+    qsys::SceneManager::getInstance()->destroyScene(uid);
+}
+
+// A zero base size (the GUI's "None" base type) records no base sticks, so
+// zero-radius impostors never reach the shaders; the tube is still drawn,
+// and a positive size brings the sticks back.
+TEST(NARendererGpuMeshTest, ZeroBaseSizeRecordsNoSticks)
+{
+    qsys::ScenePtr pScene = qsys::SceneManager::getInstance()->createScene();
+    MolCoordPtr pMol = loadLinkedRNA(pScene);
+
+    MockDisplayContext dc;
+    qsys::RendererPtr pRend = pMol->createRenderer("nucl");
+    auto *pNA = dynamic_cast<molvis::NARenderer *>(pRend.get());
+    pNA->setPivAtomName("P");
+    pNA->setBaseType(molvis::NARenderer::NAREND_BP);
+    pNA->setBaseSize(0.0);
+
+    EXPECT_GT(drawnMesh(pRend, dc).geom.size(), 0u);
+    EXPECT_TRUE(pNA->getSpheres().empty());
+    EXPECT_TRUE(pNA->getCylinders().empty());
+
+    pNA->setBaseSize(0.5);
+    drawnMesh(pRend, dc);
+    EXPECT_FALSE(pNA->getCylinders().empty());
+
+    const qlib::uid_t uid = pScene->getUID();
+    pNA = nullptr;
+    pRend = qsys::RendererPtr();
     pMol = MolCoordPtr();
     pScene = qsys::ScenePtr();
     qsys::SceneManager::getInstance()->destroyScene(uid);

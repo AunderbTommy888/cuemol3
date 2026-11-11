@@ -509,6 +509,11 @@ void NARenderer::rendResidDetail1(DisplayContext *pdl, MolResiduePtr pRes)
 void NARenderer::stickSphere(const Vector4D &pos, double rad,
                              const ColorPtr &col, int name)
 {
+  // A zero-radius base (base_size 0, the GUI's "None" base type) draws
+  // nothing; the impostor shaders divide by the radius and widen it by the
+  // edge width, so it must not reach them at all.
+  if (rad == 0.0)
+    return;
   if (m_pDirectDC!=NULL) {
     m_pDirectDC->loadName(name);
     m_pDirectDC->color(col);
@@ -521,6 +526,9 @@ void NARenderer::stickSphere(const Vector4D &pos, double rad,
 void NARenderer::stickCyl(const Vector4D &pos1, const Vector4D &pos2, double rad,
                           const ColorPtr &col, int name)
 {
+  // See stickSphere(): a zero-radius stick draws nothing.
+  if (rad == 0.0)
+    return;
   if (m_pDirectDC!=NULL) {
     m_pDirectDC->loadName(name);
     m_pDirectDC->color(col);

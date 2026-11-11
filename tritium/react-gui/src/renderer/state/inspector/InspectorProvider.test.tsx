@@ -133,6 +133,19 @@ describe('InspectorProvider', () => {
     expect(cm.invokeService).toHaveBeenCalledWith('resetGenericProps', {
       sceneId: 1, nodeId: 5, nodeType: 'renderer', propNames: ['alpha', 'visible'],
     })
+    // A batch mixing sets and resets goes out as one setGenericProps (one undo
+    // step); a reset carries no value.
+    await act(() => h.actions.setMany([
+      { key: 'base_type', valueType: 'enum', value: 'detail1' },
+      { op: 'reset', key: 'base_size' },
+    ]))
+    expect(cm.invokeService).toHaveBeenCalledWith('setGenericProps', {
+      sceneId: 1, nodeId: 5, nodeType: 'renderer',
+      writes: [
+        { propName: 'base_type', op: 'set', valueType: 'enum', value: 'detail1' },
+        { propName: 'base_size', op: 'reset', valueType: '' },
+      ],
+    })
     cm.invokeService.mockClear()
     await act(() => h.actions.resetMany([]))
     await act(() => h.actions.setMany([]))

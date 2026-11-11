@@ -64,12 +64,14 @@ export type InspectorTarget =
 /** A property-bridge target (a scene-tree node or the View). */
 export type NodeTarget = Extract<InspectorTarget, { kind: 'node' }>
 
-/** One generic property write. */
-export interface PropWrite {
-  key: string
-  valueType: string
-  value: string | number | boolean
-}
+/**
+ * One generic property write in an atomic batch: a set (`op` omitted or
+ * `'set'`) carries the value; a reset restores the C++ default (and its
+ * default flag) and needs none.
+ */
+export type PropWrite =
+  | { op?: 'set'; key: string; valueType: string; value: string | number | boolean }
+  | { op: 'reset'; key: string }
 
 export interface InspectorState {
   /** Persisted open flag; the pane is shown only while a target exists too. */
@@ -388,14 +390,15 @@ export function InspectorProvider({ children }: { children: React.ReactNode }): 
               sceneId: t.sceneId,
               nodeId: t.nodeId,
               nodeType: t.nodeType,
-              writes: writes.map((w) => ({
-                propName: w.key,
-                op: 'set' as const,
-                valueType: w.valueType,
-                value: w.value,
-              })),
+              writes: writes.map((w) =>
+                w.op === 'reset'
+                  ? { propName: w.key, op: 'reset' as const, valueType: '' }
+                  : { propName: w.key, op: 'set' as const, valueType: w.valueType, value: w.value },
+              ),
             })
-            if (res?.ok) for (const w of writes) recordSelWrite(w.valueType, w.value)
+            if (res?.ok) {
+              for (const w of writes) if (w.op !== 'reset') recordSelWrite(w.valueType, w.value)
+            }
             return res
           },
           true,
