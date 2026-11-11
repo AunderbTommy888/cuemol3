@@ -40,6 +40,7 @@ import { makeSel } from './makeSel';
 import { makeColor } from './makeColor';
 import { ensureWritableSceneSet } from '@renderer/worker/server/services/select/saveSelDef';
 import { listSceneObjects } from '@renderer/worker/server/services/scene/listSceneObjects';
+import { isMoleculeClass } from '@renderer/worker/shared/objectClasses';
 
 const log = console;
 
@@ -105,7 +106,7 @@ function currentTheme(ctx: WorkerContext, sceneUid: number): string[] {
  */
 function paletteColorOf(ctx: WorkerContext, sceneUid: number, molUid: number, theme: string[]): string {
     const mols = listSceneObjects(ctx, { sceneId: sceneUid }).objects
-        .filter((o) => o.className === 'MolCoord' || o.className.endsWith('Mol'))
+        .filter((o) => isMoleculeClass(o.className))
         .map((o) => o.uid)
         .sort((x, y) => x - y);
     const index = Math.max(0, mols.indexOf(molUid));

@@ -23,6 +23,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Field, SelectField } from './form'
 import type { AsyncCueMol } from '@renderer/worker/client/AsyncCueMol'
 import type { SceneObjectEntry } from '@renderer/worker/server/services/scene/listSceneObjects'
+import { isMoleculeClass } from '@renderer/worker/shared/objectClasses'
 import { SEM_OBJECT, SEM_SCENE, SEM_ANY } from '@renderer/event'
 import { useCueMolEventListener } from '@renderer/hooks/cuemol/useCueMolEventListener'
 
@@ -34,9 +35,15 @@ export type ObjectFilter = (item: SceneObjectEntry) => boolean
  * to compose their own -- these are just the recurring cases.
  */
 export const objectFilters = {
-    /** MolCoord and its conventional subclasses (e.g. PDBMol, QdfMol). */
-    molCoord: (it: SceneObjectEntry): boolean =>
-        it.className === 'MolCoord' || it.className.endsWith('Mol'),
+    /** MolCoord and its subclasses (PDBMol, MorphMol, Trajectory, ...). */
+    molCoord: (it: SceneObjectEntry): boolean => isMoleculeClass(it.className),
+    /**
+     * A molecule whose atoms may be added or removed, or which a tool may
+     * transform as a whole: not a Trajectory, whose frames are tied to a fixed
+     * topology (superpose, morph, atom deletion, merge).
+     */
+    molCoordNotTraj: (it: SceneObjectEntry): boolean =>
+        isMoleculeClass(it.className) && it.className !== 'Trajectory',
     /** DensityMap and subclasses. */
     densityMap: (it: SceneObjectEntry): boolean =>
         it.className === 'DensityMap' || it.className.endsWith('DensityMap'),

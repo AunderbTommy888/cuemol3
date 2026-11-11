@@ -73,6 +73,18 @@ describe('deleteMolAtoms', () => {
         expect(deleteAtomsFn).toHaveBeenCalledWith(mol, { __sel: true })
     })
 
+    it('refuses a Trajectory (its frames assume a fixed set of atoms) without deleting', () => {
+        const scene = makeUndoScene(100)
+        scene.getObject = vi.fn(() => ({ getClassName: () => 'Trajectory' }))
+        const deleteAtomsFn = vi.fn(() => true)
+        const ctx = makeCtx({ scene, molAnlMgr: { deleteAtoms: deleteAtomsFn } })
+
+        const res = deleteMolAtoms(ctx, { sceneId: 100, objId: 42, selStr: 'chain A' })
+
+        expect(res).toMatchObject({ ok: false, code: 'unsupported' })
+        expect(deleteAtomsFn).not.toHaveBeenCalled()
+    })
+
     it('returns ok=false without touching MolAnlManager when the selection fails to compile', () => {
         ;(makeSel as unknown as ReturnType<typeof vi.fn>).mockReturnValueOnce(null)
         const scene = makeUndoScene(100)

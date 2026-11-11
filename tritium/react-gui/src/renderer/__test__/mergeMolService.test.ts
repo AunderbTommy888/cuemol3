@@ -105,6 +105,18 @@ describe('mergeMol', () => {
         expect(deleteAtoms).toHaveBeenCalledWith(fromMol, SEL)
     })
 
+    it('refuses a Trajectory as either source or destination, copy or move', () => {
+        const traj = { getClassName: () => 'Trajectory' }
+        const mol = { getClassName: () => 'MolCoord' }
+        const copyAtoms = vi.fn(() => true)
+        for (const [objects, copy] of [[{ 1: traj, 2: mol }, true], [{ 1: mol, 2: traj }, false]] as const) {
+            const { ctx } = makeCtx({ objects, molAnlMgr: { copyAtoms, deleteAtoms: vi.fn() } })
+            const res = mergeMol(ctx, { sceneId: 100, fromObjId: 1, toObjId: 2, selStr: '*', copy })
+            expect(res).toMatchObject({ ok: false, code: 'unsupported' })
+        }
+        expect(copyAtoms).not.toHaveBeenCalled()
+    })
+
     it('rejects merging a molecule into itself', () => {
         const { ctx } = makeCtx({
             objects: { 1: { __m: true } },

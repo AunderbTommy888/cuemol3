@@ -34,20 +34,7 @@ import { getSceneOrNull, getViewSceneOrNull } from '@renderer/worker/server/serv
 import { undoTxnResult } from '../withUndoTxn';
 import { recordOp } from '@renderer/worker/server/actions/serviceOps';
 import { ok, fail, type Result } from '@renderer/worker/shared/result';
-
-const MOL_CLASSES = new Set(['MolCoord', 'PDBMol', 'MmCifMol']);
-
-/**
- * Duck-type probe for "looks like a MolCoord" without hard-coding
- * the (small) set of subclasses. Mirrors UXP
- * `cuemol.implIface(elem.type, "MolCoord")` indirectly. Used by
- * `getSymmetryPanelInfo` to populate the `isMol` flag the panel
- * consumes for button-enablement.
- */
-function classIsMolLike(className: string): boolean {
-    if (MOL_CLASSES.has(className)) return true;
-    return className.endsWith('Mol');
-}
+import { isMoleculeClass } from '@renderer/worker/shared/objectClasses';
 
 // --- getSymmetryPanelInfo ---
 
@@ -108,7 +95,8 @@ export function getSymmetryPanelInfo(
     if (!obj) return EMPTY_INFO;
 
     const className = (obj as unknown as { getClassName?: () => string }).getClassName?.() ?? '';
-    const isMol = classIsMolLike(className);
+    // UXP `cuemol.implIface(elem.type, "MolCoord")`; drives button enablement.
+    const isMol = isMoleculeClass(className);
 
     const xi = readCrystalInfo(obj);
     if (!xi) {

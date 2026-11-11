@@ -18,6 +18,7 @@ import { resolveMolTool } from '@renderer/worker/server/services/molops/molAnlTo
 import { undoTxnResult } from '../withUndoTxn';
 import { recordOp } from '@renderer/worker/server/actions/serviceOps';
 import { ok, fail, type Result } from '@renderer/worker/shared/result';
+import { refuseTrajectory } from '@renderer/worker/server/services/helpers/refuseTrajectory';
 
 export interface DeleteMolAtomsArgs {
     sceneId: number;
@@ -36,6 +37,8 @@ export function deleteMolAtoms(
     const t = resolveMolTool(ctx, args.sceneId, args.objId, args.selStr);
     if ('ok' in t) return t;
     const { scene, mol, sel, mgr } = t;
+    const traj = refuseTrajectory(mol, 'deleting atoms');
+    if (traj) return traj;
 
     // deleteAtoms returns a boolean success flag: false -> rollback (no commit).
     return undoTxnResult(scene, 'Delete atoms', () => {

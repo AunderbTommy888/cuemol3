@@ -19,6 +19,7 @@ import { useMolEditCommit } from '@renderer/hooks/cuemol/useMolEditCommit'
 import { Field, FieldSection, SwitchField } from '@renderer/h3-kit/form'
 import { DialogShell } from './DialogShell'
 import { MolPicker } from './MolPicker'
+import { objectFilters } from '@renderer/h3-kit/ObjectSelect'
 import { MolSelList, pushHistory } from '@renderer/h3-kit/MolSelList'
 import { createDialogPrefs, isBool, isStr } from '@renderer/utils/createDialogPrefs'
 
@@ -112,6 +113,7 @@ export function MergeMolDialog({
                             cm={cm}
                             sceneId={sceneId}
                             label="From molecule"
+                            filter={objectFilters.molCoordNotTraj}
                             selectedId={fromObjId}
                             onChange={setFromObjId}
                         />
@@ -129,6 +131,7 @@ export function MergeMolDialog({
                             cm={cm}
                             sceneId={sceneId}
                             label="To molecule"
+                            filter={objectFilters.molCoordNotTraj}
                             selectedId={toObjId}
                             onChange={setToObjId}
                         />

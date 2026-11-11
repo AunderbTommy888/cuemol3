@@ -18,6 +18,7 @@ import type { Scene } from '@cuemol/core/src/wrappers/Scene';
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext';
 import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneResolver';
 import type { ColoringTargetKind, MultiGradSource } from './types';
+import { isMoleculeClass } from '@renderer/worker/shared/objectClasses';
 
 /**
  * Resolve a coloring target (object or renderer) to a single wrapper that
@@ -96,7 +97,7 @@ export function findFirstMolCoordName(scene: Scene): string {
             const obj = parsed[i] as { type?: string; name?: string };
             const cls = obj?.type;
             if (typeof cls !== 'string') continue;
-            if (cls === 'MolCoord' || cls.endsWith('Mol')) {
+            if (isMoleculeClass(cls)) {
                 if (typeof obj.name === 'string') return obj.name;
             }
         }

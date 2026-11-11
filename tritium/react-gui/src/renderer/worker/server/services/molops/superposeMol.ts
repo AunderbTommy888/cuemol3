@@ -29,6 +29,7 @@ import { makeSel } from '@renderer/worker/server/services/helpers/makeSel';
 import { withUndoTxn } from '../withUndoTxn';
 import { recordOp } from '@renderer/worker/server/actions/serviceOps';
 import type { SuperposeAlgo } from '@renderer/worker/shared/superposeTypes';
+import { refuseTrajectory } from '@renderer/worker/server/services/helpers/refuseTrajectory';
 
 export type { SuperposeAlgo } from '@renderer/worker/shared/superposeTypes';
 
@@ -86,6 +87,8 @@ export function superposeMol(
     if (!refMol) return { ok: false, error: 'reference molecule not found' };
     const movMol = scene.getObject(args.movObjId) as CueMolObject | null;
     if (!movMol) return { ok: false, error: 'moving molecule not found' };
+    const traj = refuseTrajectory(refMol, 'superpose') ?? refuseTrajectory(movMol, 'superpose');
+    if (traj) return traj;
 
     const refSel = makeSel(ctx, args.refSel, scene.uid);
     if (!refSel) return { ok: false, error: 'invalid reference selection' };

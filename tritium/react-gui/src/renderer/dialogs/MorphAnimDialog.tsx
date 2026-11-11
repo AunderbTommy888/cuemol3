@@ -39,8 +39,12 @@ const PDB_FILTERS = [
     { name: 'All Files', extensions: ['*'] },
 ];
 
-/** MolCoord / MorphMol -- the objects the tool can target (UXP filter). */
-const targetFilter = (it: SceneObjectEntry): boolean => objectFilters.molCoord(it);
+/**
+ * MolCoord / MorphMol -- the objects the tool can target (UXP filter). A
+ * Trajectory is left out: morphing between its frames and other structures
+ * has no clear meaning.
+ */
+const targetFilter = (it: SceneObjectEntry): boolean => objectFilters.molCoordNotTraj(it);
 
 export function MorphAnimDialog({ visible, sceneId, onClose }: Props): React.JSX.Element {
     const { cm } = useCueMol();
@@ -189,7 +193,7 @@ export function MorphAnimDialog({ visible, sceneId, onClose }: Props): React.JSX
     /** MolCoord sources for "Add mol..." -- plain MolCoords only (UXP). */
     const addMolFilter = useCallback(
         (it: SceneObjectEntry): boolean =>
-            objectFilters.molCoord(it) && it.className !== 'MorphMol',
+            objectFilters.molCoordNotTraj(it) && it.className !== 'MorphMol',
         [],
     );
 
