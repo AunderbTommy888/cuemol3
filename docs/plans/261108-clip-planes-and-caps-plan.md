@@ -12,7 +12,7 @@ ChimeraX の `clip` (near / far / front / back の 4 枚の面、model ごとの
 - 薄く切り出してモデルを見る (Coot 風の表示) は、今の slab でも近いことができるが、奥側は fog で薄めるだけで切らない。
 
 関連:
-- [261108-chx-figure-commands-verification-plan.md](261108-chx-figure-commands-verification-plan.md): 図作りのコーパスで
+- 図作りのコーパスの検証 (リポジトリの外の `/Users/user1/proj64/chx-compare/figcorpus/`): 図作りのコーパスで
   `clip` は「未対応」として ERROR になっている (trimmings の `symclip`、`centersel`、`cootmode_white`、`caps_on` /
   `caps_off`)。
 - [console-chimerax-dialect](../architecture/console-chimerax-dialect.md): 実装したら `clip` と `surface cap` の行を足す。

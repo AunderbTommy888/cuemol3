@@ -9,7 +9,7 @@
 を先に確かめ、ユーザーの判断を得てから実装する。それまでは ChX の `surface dust` は今のまま (未対応) とする。
 
 関連:
-- [261108-chx-figure-commands-verification-plan.md](261108-chx-figure-commands-verification-plan.md): 図作りの
+- 図作りのコーパスの検証 (リポジトリの外の `/Users/user1/proj64/chx-compare/figcorpus/`): 図作りの
   コーパス 32 本のうち 5 本が `surface dust` を使う。段階 B では `surf dust #1 size 20` が
   「`dust` はキーワードではない」というエラーになった。
 - [cryo-em-map-mode](../architecture/cryo-em-map-mode.md): EM の地図の全域表示と LoD (この機能が主に効く場面)。

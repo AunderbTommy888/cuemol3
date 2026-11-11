@@ -9,7 +9,7 @@ service が足りなければ、TS の service として足す。C++ の変更�
 確かめてから別に扱う。
 
 関連:
-- [261108-chx-figure-commands-verification-plan.md](261108-chx-figure-commands-verification-plan.md): 段階 B で、
+- 図作りのコーパスの検証 (リポジトリの外の `/Users/user1/proj64/chx-compare/figcorpus/`): 段階 B で、
   gallery の `card.cxc` (`open 4v6x`、`surf`) がこのために 5 分を超えても終わらなかった。
 - [console-chimerax-dialect](../architecture/console-chimerax-dialect.md) §6 (`surface`): 今の仕様。直したら書き換える。
 - 実装: `tritium/react-gui/src/plugins/chimerax-console/worker/surface.ts` (`showSurfaces`、`makeSurface`、
