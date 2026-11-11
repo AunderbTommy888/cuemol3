@@ -37,6 +37,11 @@
 | [261108-hbonds-geometric-detection-plan.md](261108-hbonds-geometric-detection-plan.md) | 水素結合の検出を ChimeraX の `hbonds` (Mills & Dean の距離と角度の基準) を参考に改善する: libcuemol2 の検出 (原子型の供与体・受容体の印を使う)、`analyze_interactions` の判定の方法、ChX の `hbonds` / `~hbonds`、GUI の Interaction Analysis | **未実装** |
 | [261103-chimerax-console-plan.md](261103-chimerax-console-plan.md) | ChX console (console の ChimeraX dialect) の残り: lighting・windowsize・clip (CueMol 側の機能追加が先に要る)、backbone を隠す規則と非表示の原子の style 保持 (表示状態を別に持つ必要がある)、`fit_view` op | **未実装** (既存機能で作れるコマンドは実装済み。`../architecture/console-chimerax-dialect.md`) |
 | [261017-tube-raycast-memo-plan.md](261017-tube-raycast-memo-plan.md) | tube / cartoon の GPU raycast (impostor) の設計メモ: dev201608 の rctube の経緯、掃引パラメータの 1D 求根 + 断面 SDF 案、文献調査 | **検討メモ**。着手前に CPU で試作して安定性を確かめる |
+| [261108-chx-figure-commands-verification-plan.md](261108-chx-figure-commands-verification-plan.md) | 図とプレゼン用の ChX の script (公式以外の 32 本) について、`save` の時点の画像を ChimeraX と CueMol で撮って比べ、差を分類して survey plan の一覧に渡す (段階 C) | **未実装** (比較の仕組みを再開したときに行う。コーパスと再生の結果は `/Users/user1/proj64/chx-compare/figcorpus/`) |
+| [261108-chx-surface-per-chain-speed-plan.md](261108-chx-surface-per-chain-speed-plan.md) | ChX の `surface` が chain ごとに流す処理を軽くする (色は chain ごとに 1 色、作った直後の `showsel` の空書きをやめる) | **未実装** (plugin で完結) |
+| [261108-map-surface-dust-plan.md](261108-map-surface-dust-plan.md) | 地図の等値面の小さな破片を隠す (`MapSurfRenderer` の `dust_size` / `dust_metric`、ChX の `surface dust`) | **未実装 / 着手の条件あり** (libcuemol2 の変更。GUI での有用性を確かめてから) |
+| [261108-clip-planes-and-caps-plan.md](261108-clip-planes-and-caps-plan.md) | ChimeraX と同等の clipping plane (near / far / front / back、renderer ごとの切り替え) と、切った表面の断面の蓋。シェーダーの `discard`、CPU で作る蓋、外部レンダラー (umbreon の front / back) | **未実装 / 着手の条件あり** (libcuemol2 の変更) |
+| [261108-large-scale-ambient-shadow-plan.md](261108-large-scale-ambient-shadow-plan.md) | GTAO が苦手な大きな凹凸の立体感を補う: 粗い multishadow を AO のパスで引き、GTAO の半径より近い遮蔽物を外して遠距離だけを受け持つ。同じ地図から柔らかい方向のある影も出す | **未実装** |
 
 ## 実装済み (旧ルールで残っているもの)
 
