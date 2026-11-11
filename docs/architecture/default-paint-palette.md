@@ -43,8 +43,8 @@ Okabe-Ito。
 
 ## 色の決め方
 
-- scene の中で n 番目の分子 (MolCoord と `*Mol` の object を uid 順、つまり読み込み順に
-  数える) が、テーマの n 番目の色を主色にする。色数を超えたら先頭に戻る。同じ分子に
+- scene の中で n 番目の分子 (`isMoleculeClass` に当たる object を uid 順、つまり読み込み順に
+  数える。`Trajectory` も含む。[molecule-object-class.md](molecule-object-class.md)) が、テーマの n 番目の色を主色にする。色数を超えたら先頭に戻る。同じ分子に
   Default を付け直しても同じ色になる。
 - 各構造の色は主色に NamedColor の修飾子を付けたもの (`DEFAULT_PAINT_ENTRIES`):
 

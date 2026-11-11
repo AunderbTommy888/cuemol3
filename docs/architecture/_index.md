@@ -147,6 +147,9 @@ architecture, it belongs here.
   scriptable API のみで組み立てる `loadTrajectory` service、renderer cancel = 全 transaction
   キャンセルに合わせた 2 段 deferred-load フロー、`DIALOG_PICK_PATH` の複数選択拡張、
   `OpenMdTrajDialog` の構成とスコープ (gro のみ / 再生 UI 別タスク)。migration ではない。
+- [分子の object の判定と Trajectory](molecule-object-class.md) (日本語) -- `isMoleculeClass` で
+  `Trajectory` を分子に含める規則と使う場所、原子の数を変える操作と superpose / morph で `Trajectory` を断る
+  (UI の `molCoordNotTraj` と service の `refuseTrajectory`)。
 - [原子の削除と merge の undo / redo (libcuemol2)](mol-atom-edit-undo.md) (日本語) --
   `deleteAtoms` / `copyAtoms` の undo / redo が記録するもの (数値 ID・原子の複製・残基の property)、
   selection を評価し直さないこと、座標の undo などが ID で原子を指すため元の ID に戻すこと
