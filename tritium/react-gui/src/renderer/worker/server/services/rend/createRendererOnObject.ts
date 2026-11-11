@@ -64,6 +64,7 @@ export function createRendererOnObject(
                 ctx,
                 obj as unknown as Record<string, unknown>,
                 args.rendOpts,
+                false,
             ) as Renderer | null;
             if (!rend) return;
             if (args.groupName) {

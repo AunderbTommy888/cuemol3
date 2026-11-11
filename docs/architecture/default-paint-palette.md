@@ -9,7 +9,11 @@ Okabe-Ito。
 実装: `tritium/react-gui/src/renderer/worker/server/services/helpers/defPaintColoring.ts`
 (`createDefPaintColoring`)。呼び出し元は 2 つ:
 
-- 分子を新しく読み込んだとき (`molPostProc`)
+- 分子を新しく作ったとき (`molPostProc`)。`setupRenderer` の `newObj` が true の経路だけ: ファイルを開く、
+  fetch、対称分子の作成、MD trajectory の読み込み。既存の分子に renderer を足すとき (New Renderer ダイアログ、
+  `create_renderer` / `create_preset_renderer` の op。どれも `createRendererOnObject` を通る) は false で、
+  `mol.coloring` を変えない。既存の renderer は `$molcol` でこの coloring から色を引くので、置き換えると
+  ユーザーが編集した paint などが黙って消える (UXP も New Renderer では `result.new_obj = false`)。
 - coloring パネル / renderer メニューの Paint coloring -> Default (`applyColoring.ts` の `paint-type-paint`)
 
 ## テーマ

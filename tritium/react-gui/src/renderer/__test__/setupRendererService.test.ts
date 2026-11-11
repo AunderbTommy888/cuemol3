@@ -72,7 +72,7 @@ describe('setupRenderer — direct API (no NewRendererCommand)', () => {
 
     it('uses mol.createRenderer(type), never asks cmdMgr for new_renderer', () => {
         const { ctx, mol, getCmd } = makeFixture({ className: 'MolCoord' })
-        setupRenderer(ctx, mol as unknown, baseOpts)
+        setupRenderer(ctx, mol as unknown, baseOpts, true)
         expect(mol.createRenderer).toHaveBeenCalledWith('simple')
         expect(getCmd).not.toHaveBeenCalled()
     })
@@ -80,21 +80,27 @@ describe('setupRenderer — direct API (no NewRendererCommand)', () => {
     it('returns null and skips downstream work when createRenderer returns null', () => {
         const { ctx, mol } = makeFixture({ className: 'MolCoord' })
         mol.createRenderer.mockReturnValueOnce(null)
-        const result = setupRenderer(ctx, mol as unknown, baseOpts)
+        const result = setupRenderer(ctx, mol as unknown, baseOpts, true)
         expect(result).toBeNull()
         expect(molPostProc).not.toHaveBeenCalled()
     })
 
     it('sets renderer name, applies default style, then runs molPostProc (in that order)', () => {
         const { ctx, mol, log } = makeFixture({ className: 'MolCoord' })
-        setupRenderer(ctx, mol as unknown, baseOpts)
+        setupRenderer(ctx, mol as unknown, baseOpts, false)
         // createRenderer first, then name, then applyStyles. molPostProc runs after.
         expect(log).toEqual([
             'mol.createRenderer(simple)',
             'rend.name=simple1',
             'rend.applyStyles(DefaultStyle)',
         ])
+        // newObj reaches molPostProc as given: false (a renderer added to an
+        // existing molecule) must not reset mol.coloring, true (a new molecule)
+        // must still give it the default paint coloring.
         expect(molPostProc).toHaveBeenCalledTimes(1)
+        expect(vi.mocked(molPostProc).mock.calls[0][2]).toBe(false)
+        setupRenderer(ctx, mol as unknown, baseOpts, true)
+        expect(vi.mocked(molPostProc).mock.calls[1][2]).toBe(true)
     })
 
     // The default style of a map renderer depends on the map kind (the
@@ -102,7 +108,7 @@ describe('setupRenderer — direct API (no NewRendererCommand)', () => {
     it('passes the map kind of a DensityMap to the default-style lookup', () => {
         const { ctx, mol } = makeFixture({ className: 'DensityMap' })
         mol.map_type_resolved = 'em'
-        setupRenderer(ctx, mol as unknown, { ...baseOpts, rendererType: 'isosurf', rendererName: 'iso1' })
+        setupRenderer(ctx, mol as unknown, { ...baseOpts, rendererType: 'isosurf', rendererName: 'iso1' }, true)
         expect(getDefaultStyleName).toHaveBeenCalledWith('isosurf', 'em')
     })
 
@@ -111,7 +117,7 @@ describe('setupRenderer — direct API (no NewRendererCommand)', () => {
     // set, so a renderer of one chain frames that chain, not the molecule.
     it('centerView=true fits every view to the renderer after its selection is set', () => {
         const { ctx, mol, rend } = makeFixture({ className: 'MolCoord', viewIds: [10, 11] })
-        setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: true, selectionEnabled: true, selection: 'chain A' })
+        setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: true, selectionEnabled: true, selection: 'chain A' }, true)
         const r = rend()
         expect(vi.mocked(focusOnNode).mock.calls.map(([, a]) => a)).toEqual([10, 11].map((viewId) => ({
             sceneId: 100, viewId, nodeId: r.uid, nodeType: 'renderer', record: false,
@@ -122,7 +128,7 @@ describe('setupRenderer — direct API (no NewRendererCommand)', () => {
 
     it('centerView=false does not touch the views', () => {
         const { ctx, mol } = makeFixture({ className: 'MolCoord', viewIds: [10] })
-        setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: false })
+        setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: false }, true)
         expect(focusOnNode).not.toHaveBeenCalled()
     })
 
@@ -133,7 +139,7 @@ describe('setupRenderer — direct API (no NewRendererCommand)', () => {
     it('never recenters on a volume object, even with centerView=true', () => {
         for (const className of ['DensityMap', 'ElePotMap']) {
             const { ctx, mol } = makeFixture({ className, viewIds: [10] })
-            setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: true })
+            setupRenderer(ctx, mol as unknown, { ...baseOpts, centerView: true }, true)
             expect(focusOnNode, className).not.toHaveBeenCalled()
         }
     })
@@ -142,14 +148,14 @@ describe('setupRenderer — direct API (no NewRendererCommand)', () => {
 
     it('selectionEnabled=false skips sel even when selection is non-default', () => {
         const { ctx, mol, rend } = makeFixture({ className: 'MolCoord' })
-        setupRenderer(ctx, mol as unknown, { ...baseOpts, selectionEnabled: false, selection: 'protein' })
+        setupRenderer(ctx, mol as unknown, { ...baseOpts, selectionEnabled: false, selection: 'protein' }, true)
         expect(makeSel).not.toHaveBeenCalled()
         expect(rend().sets.sel).not.toHaveBeenCalled()
     })
 
     it('selectionEnabled=true with concrete selection assigns sel via makeSel', () => {
         const { ctx, mol, rend } = makeFixture({ className: 'MolCoord' })
-        setupRenderer(ctx, mol as unknown, { ...baseOpts, selectionEnabled: true, selection: 'protein' })
+        setupRenderer(ctx, mol as unknown, { ...baseOpts, selectionEnabled: true, selection: 'protein' }, true)
         expect(makeSel).toHaveBeenCalledTimes(1)
         expect(rend().sets.sel).toHaveBeenCalledTimes(1)
         expect(rend().sets.sel).toHaveBeenCalledWith({ __sel: true })
@@ -157,14 +163,14 @@ describe('setupRenderer — direct API (no NewRendererCommand)', () => {
 
     it('selectionEnabled=true with selection="*" still skips sel (full-molecule shorthand)', () => {
         const { ctx, mol, rend } = makeFixture({ className: 'MolCoord' })
-        setupRenderer(ctx, mol as unknown, { ...baseOpts, selectionEnabled: true, selection: '*' })
+        setupRenderer(ctx, mol as unknown, { ...baseOpts, selectionEnabled: true, selection: '*' }, true)
         expect(makeSel).not.toHaveBeenCalled()
         expect(rend().sets.sel).not.toHaveBeenCalled()
     })
 
     it('NON_MOL class skips sel + molPostProc even when selectionEnabled=true', () => {
         const { ctx, mol, rend } = makeFixture({ className: 'DensityMap' })
-        setupRenderer(ctx, mol as unknown, { ...baseOpts, selectionEnabled: true, selection: 'protein' })
+        setupRenderer(ctx, mol as unknown, { ...baseOpts, selectionEnabled: true, selection: 'protein' }, true)
         expect(makeSel).not.toHaveBeenCalled()
         expect(rend().sets.sel).not.toHaveBeenCalled()
         expect(molPostProc).not.toHaveBeenCalled()
@@ -184,7 +190,7 @@ describe('setupRenderer — preset renderer group (presetName set)', () => {
 
     it('creates via createPresetRenderer(preset, name, name); no createRenderer / name / applyStyles / getCmd', () => {
         const f = makeFixture({ className: 'MolCoord' })
-        const result = setupRenderer(f.ctx, f.mol as unknown, presetOpts)
+        const result = setupRenderer(f.ctx, f.mol as unknown, presetOpts, true)
         expect(f.mol.createPresetRenderer).toHaveBeenCalledWith(
             'Default1RendPreset', 'default1_1', 'default1_1',
         )
@@ -201,21 +207,24 @@ describe('setupRenderer — preset renderer group (presetName set)', () => {
         const f = makeFixture({ className: 'MolCoord' })
         setupRenderer(f.ctx, f.mol as unknown, {
             ...presetOpts, selectionEnabled: true, selection: 'protein',
-        })
+        }, false)
+        // A preset added to an existing molecule keeps mol.coloring: the preset
+        // branch has its own molPostProc call, so it is pinned separately.
         expect(molPostProc).toHaveBeenCalledTimes(1)
+        expect(vi.mocked(molPostProc).mock.calls[0][2]).toBe(false)
         expect(makeSel).not.toHaveBeenCalled()
         expect(f.rend().sets.sel).not.toHaveBeenCalled()
     })
 
     it('skips molPostProc for a NON_MOL class', () => {
         const f = makeFixture({ className: 'DensityMap' })
-        setupRenderer(f.ctx, f.mol as unknown, presetOpts)
+        setupRenderer(f.ctx, f.mol as unknown, presetOpts, true)
         expect(molPostProc).not.toHaveBeenCalled()
     })
 
     it('centerView=true fits the views to the preset group', () => {
         const f = makeFixture({ className: 'MolCoord', viewIds: [10] })
-        setupRenderer(f.ctx, f.mol as unknown, { ...presetOpts, centerView: true })
+        setupRenderer(f.ctx, f.mol as unknown, { ...presetOpts, centerView: true }, true)
         expect(focusOnNode).toHaveBeenCalledWith(f.ctx, expect.objectContaining({ viewId: 10, nodeId: f.rend().uid, record: false }))
     })
 
@@ -224,7 +233,7 @@ describe('setupRenderer — preset renderer group (presetName set)', () => {
         f.mol.createPresetRenderer.mockImplementationOnce(() => {
             throw new Error('Unknown renderer preset')
         })
-        const result = setupRenderer(f.ctx, f.mol as unknown, presetOpts)
+        const result = setupRenderer(f.ctx, f.mol as unknown, presetOpts, true)
         expect(result).toBeNull()
         expect(molPostProc).not.toHaveBeenCalled()
     })
@@ -249,7 +258,7 @@ describe('setupRenderer - disorder target seeding', () => {
         f.mol.attachRenderer(fakeRenderer({ type: 'ribbon', name: 'ribbon1' }))
         f.mol.attachRenderer(fakeRenderer({ type: 'cartoon', name: 'cartoon1' }))
 
-        setupRenderer(f.ctx, f.mol as unknown, disoOpts)
+        setupRenderer(f.ctx, f.mol as unknown, disoOpts, true)
 
         // 'simple' is not a main-chain type; 'ribbon' comes first among those.
         const diso = f.mol.renderers.find((r) => r.type_name === 'disorder')
@@ -260,7 +269,7 @@ describe('setupRenderer - disorder target seeding', () => {
         const f = makeFixture({ className: 'MolCoord' })
         f.mol.attachRenderer(fakeRenderer({ type: 'simple', name: 'simple1' }))
 
-        setupRenderer(f.ctx, f.mol as unknown, disoOpts)
+        setupRenderer(f.ctx, f.mol as unknown, disoOpts, true)
 
         const diso = f.mol.renderers.find((r) => r.type_name === 'disorder')
         expect((diso as unknown as { target?: string }).target).toBeUndefined()
@@ -270,7 +279,7 @@ describe('setupRenderer - disorder target seeding', () => {
         const f = makeFixture({ className: 'MolCoord' })
         f.mol.attachRenderer(fakeRenderer({ type: 'tube', name: 'tube1' }))
 
-        setupRenderer(f.ctx, f.mol as unknown, baseOpts)
+        setupRenderer(f.ctx, f.mol as unknown, baseOpts, true)
 
         const rend = f.mol.renderers.find((r) => r.type_name === 'simple')
         expect((rend as unknown as { target?: string }).target).toBeUndefined()

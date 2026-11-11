@@ -76,6 +76,8 @@ describe('createRendererOnObject.service', () => {
         expect(res).toEqual({ ok: true, newRendId: 444, newName: 'cartoon1' })
         expect(f.startUndoTxn).toHaveBeenCalledWith('Create new cartoon renderer')
         expect(f.commitUndoTxn).toHaveBeenCalledTimes(1)
+        // The object already exists: its coloring must not be reset (newObj=false).
+        expect(setupMock.mock.calls[0][3]).toBe(false)
     })
 
     it('applies the map center policy only when one is passed, never for a preset', () => {

@@ -140,7 +140,7 @@ export async function streamLoadFromUrl(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (obj as any).name = args.options.renderer.objectName;
         }
-        setupRenderer(ctx, obj, args.options.renderer);
+        setupRenderer(ctx, obj, args.options.renderer, true);
         // An AlphaFold model opens coloured by pLDDT (its B-factors), as in
         // ChimeraX. Part of the fetch: replaying fetch_entry colours it again.
         if (args.entry?.source === 'alphafold') applyColoringStyleToObject(scene, obj, PLDDT_COLORING_STYLE);

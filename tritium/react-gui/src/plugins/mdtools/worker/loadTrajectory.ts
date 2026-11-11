@@ -155,7 +155,7 @@ export function loadTrajectory(
         }
 
         // 4. Initial renderer (Trajectory is MolCoord-derived; reused as-is).
-        setupRenderer(ctx, traj, args.renderer);
+        setupRenderer(ctx, traj, args.renderer, true);
 
         return ok({ objId: traj.uid });
     });

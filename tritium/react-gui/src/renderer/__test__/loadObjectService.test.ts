@@ -116,7 +116,7 @@ describe('loadObject.service — reader-based path', () => {
             'commit',
         ])
         expect(applyReaderOptions).toHaveBeenCalledWith(expect.anything(), 'pdb', unknownFormat)
-        expect(setupRenderer).toHaveBeenCalledWith(ctx, obj, baseRendererOpts)
+        expect(setupRenderer).toHaveBeenCalledWith(ctx, obj, baseRendererOpts, true)
     })
 
     it('.gz path: sets reader.compress = "gzip"', () => {
