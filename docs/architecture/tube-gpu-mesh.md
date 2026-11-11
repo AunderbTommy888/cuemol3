@@ -269,5 +269,18 @@ prim の頂点配列 (`tubeGpuPrim()`) を比べる:
 - detail モードの原子と bond は NA 自身が描く (補助の `BallStickRenderer` は色と ring の計算だけに使う)。
   同色 bond と原子と ring 板の hit name は残基の pivot、2 色 bond の半分は各原子
 - stick は pick 対応の座標属性版 prim で描くので、GPU pick にも描かれる (`gpu-id-picking.md`)
+- 半径がちょうど 0 の stick (`base_size = 0`) は、`stickSphere()` / `stickCyl()` の先頭で何もせずに戻る (direct
+  の出力にも記録にも入らない)。impostor の shader は半径で割り (`sphere2_body_vert.glsl` の
+  `(a_radius + u_edge) / a_radius` など)、輪郭線の幅だけ広げるので、半径 0 でも何かが見えうるため。ring 板は別の経路
+  (`drawCollectedRings`) なので、detail モードで太さ 0 の「板だけ」の表示 (CueMol2 の qsc) はそのまま残る。
+  プロパティの意味は変えていない (負の値の扱いも従来どおり)。`setBaseSize()` は `invalidateDisplayCache()` を
+  呼ぶので、0 との行き来は作り直しになり、記録の数はずれない
+- inspector の Base type の **None** (`features/inspector/rows/NuclBaseTypeRow.tsx`) は、C++ の enum 値ではなく、今も
+  ある値の組 `base_type = basepair` + `base_size = 0` で表す (古い版でも同じ見た目で読める)。None と表示するのは
+  この組のときだけで、detail モードの太さ 0 はそのモードとして表示する。None から抜けると `base_size` /
+  `base_thick` を reset して既定の太さに戻す (None 前の太さは覚えない。style の既定の太さが正でなければ 0.5 を
+  set する)。どれも `setMany` の 1 batch (set と reset が混ざる) で送り、undo は 1 段。None の間は太さなどの行を
+  隠す (無効にするだけだと reset ボタンで None が解けるため)
 - テスト: `NARendererGpuMeshTest` (1ehz、detail1) が、atomsMoved の Update が tube・ring・stick を保ってフル再構築と
-  一致することを確認する
+  一致することを確認する。`ZeroBaseSizeRecordsNoSticks` が、太さ 0 では stick を記録せず tube は描き、正の太さで
+  stick が戻ることを確認する

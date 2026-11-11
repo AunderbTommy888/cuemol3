@@ -75,8 +75,8 @@ export const DerivedNumRow: React.FC<DerivedNumRowProps> = ({
       if (v === original) return
       const writes = computeWrites(v)
       if (writes.length === 0) return
-      if (writes.length === 1) {
-        const [w] = writes
+      const [w] = writes
+      if (writes.length === 1 && w.op !== 'reset') {
         onSet(w.key, w.valueType, w.value)
       } else {
         onSetMany?.(writes)
