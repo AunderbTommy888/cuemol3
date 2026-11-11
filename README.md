@@ -1,7 +1,7 @@
 [![Build and release](https://github.com/CueMol/cuemol3/actions/workflows/build2.yml/badge.svg)](https://github.com/CueMol/cuemol3/actions/workflows/build2.yml)
 [![Build (Linux)](https://github.com/CueMol/cuemol3/actions/workflows/build_linux.yml/badge.svg)](https://github.com/CueMol/cuemol3/actions/workflows/build_linux.yml)
 
-[CueMol](https://www.cuemol.org/) - Molecular Visualization Framework
+[CueMol](https://www.cuemol.org/en/) - Molecular Visualization Framework
 ====================================================================
 
 **CueMol** is a program for visualizing macromolecular structures
@@ -9,7 +9,7 @@
 models of macromolecules, together with their density maps, through a
 user-friendly interface, and to make figures of publication quality.
 
-Website: <https://www.cuemol.org/>
+Website: <https://www.cuemol.org/en/>
 
 CueMol reads, among others:
 
