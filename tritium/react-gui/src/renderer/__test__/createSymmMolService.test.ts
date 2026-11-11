@@ -154,7 +154,7 @@ describe('createSymmMol', () => {
         expect(newMol.copyAtoms).toHaveBeenCalledWith(srcMol, sel)
         expect(newMol.xformByMat).toHaveBeenCalledWith(matrix, sel)
         expect(scene.addObject).toHaveBeenCalledWith(newMol)
-        expect(setupRenderer).toHaveBeenCalledWith(ctx, newMol, RENDER_OPTS)
+        expect(setupRenderer).toHaveBeenCalledWith(ctx, newMol, RENDER_OPTS, true)
 
         // Pin the mutation order: copy -> transform -> register -> renderer.
         const orderOf = (fn: unknown) =>

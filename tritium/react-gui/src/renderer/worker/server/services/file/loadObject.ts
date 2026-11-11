@@ -122,7 +122,7 @@ export function loadObject(ctx: WorkerContext, args: LoadObjectArgs): LoadObject
 
         // The map kind also picks the renderer's default style (and with it
         // the cryo-EM contour level), see setupRenderer.
-        const rend = setupRenderer(ctx, obj, args.options.renderer);
+        const rend = setupRenderer(ctx, obj, args.options.renderer, true);
         if (rend) {
             // What the view does for a volume object (UXP's scalar-object
             // deck). Runs here rather than in setupRenderer because `auto`

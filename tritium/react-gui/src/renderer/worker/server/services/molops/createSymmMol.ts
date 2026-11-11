@@ -182,7 +182,7 @@ export function copyMolByMatrix(ctx: WorkerContext, args: CopyMolByMatrixArgs): 
             newMol.xformByMat(args.matrix, sel as unknown as MolSelection);
             scene.addObject(newMol as unknown as CueMolObject);
             newObjId = (newMol as unknown as { uid: number }).uid ?? -1;
-            if (!setupRenderer(ctx, newMol, args.rendOpts)) {
+            if (!setupRenderer(ctx, newMol, args.rendOpts, true)) {
                 throw new Error('renderer creation failed');
             }
         });

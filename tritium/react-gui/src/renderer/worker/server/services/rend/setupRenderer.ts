@@ -89,10 +89,24 @@ function seedDisorderTarget(mol: any, rend: Renderer, rendererType: string): voi
     }
 }
 
+/**
+ * Create the renderer (or preset renderer group) the options ask for on
+ * `mol`, with its default style, selection and molecule post-processing.
+ *
+ * @param mol - the object to create the renderer on
+ * @param rendOpts - the renderer options from the dialog or op
+ * @param newObj - true when `mol` was just created (file open, fetch, a new
+ *   molecule): only then does it get the default paint coloring. A renderer
+ *   added to an existing molecule keeps `mol.coloring`, which the existing
+ *   renderers paint from (`$molcol`); resetting it lost the user's colours
+ *   (UXP `result.new_obj`, false for New Renderer).
+ * @returns the new renderer, or null when it could not be created
+ */
 export function setupRenderer(
     ctx: WorkerContext,
     mol: any,
     rendOpts: RendererOptions,
+    newObj: boolean,
 ): Renderer | null {
     if (rendOpts.presetName) {
         // Preset renderer group (UXP doSetupRend /RendPreset$/ branch):
@@ -121,7 +135,7 @@ export function setupRenderer(
         // children's sel comes from the preset (the UI disables the
         // Selection field while a preset is picked).
         if (!NON_MOL_CLASSES.includes(mol.getClassName())) {
-            molPostProc(ctx, mol, true, safeRead(() => (mol.getScene() as Scene | null)?.uid) ?? 0);
+            molPostProc(ctx, mol, newObj, safeRead(() => (mol.getScene() as Scene | null)?.uid) ?? 0);
         }
         fitViewsIfRequested(ctx, mol, rend, rendOpts);
         return rend;
@@ -161,7 +175,7 @@ export function setupRenderer(
         // fail to resolve -- the renderer was then created with no selection at
         // all, showing every atom.
         const sceneUid = safeRead(() => (mol.getScene() as Scene | null)?.uid) ?? 0;
-        molPostProc(ctx, mol, true, sceneUid);
+        molPostProc(ctx, mol, newObj, sceneUid);
         seedDisorderTarget(mol, rend, rendOpts.rendererType);
 
         if (rendOpts.selectionEnabled && rendOpts.selection && rendOpts.selection !== '*') {
