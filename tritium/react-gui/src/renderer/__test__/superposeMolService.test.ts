@@ -118,6 +118,15 @@ describe('superposeMol — algorithm dispatch', () => {
 describe('superposeMol — selection gate', () => {
     beforeEach(() => vi.clearAllMocks())
 
+    it('refuses a Trajectory before any superpose call', () => {
+        const { ctx, scene, superposeLSQ1 } = makeFixture()
+        const traj = { getClassName: () => 'Trajectory' }
+        const getObject = scene.getObject
+        scene.getObject = (uid: number) => (uid === MOV_UID ? traj : getObject(uid))
+        expect(superposeMol(ctx, baseArgs)).toMatchObject({ ok: false, code: 'unsupported' })
+        expect(superposeLSQ1).not.toHaveBeenCalled()
+    })
+
     it('invalid reference selection aborts before any superpose call', () => {
         const { ctx, superposeSSM1, superposeLSQ1, scene } = makeFixture()
         ;(makeSel as ReturnType<typeof vi.fn>).mockImplementationOnce(() => null)

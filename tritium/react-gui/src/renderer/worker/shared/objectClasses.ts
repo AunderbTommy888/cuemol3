@@ -38,6 +38,19 @@ export function isMolObjectClass(className: string): boolean {
     return !NON_MOL_CLASSES.includes(className);
 }
 
+/**
+ * True for MolCoord and the classes derived from it: a name ending in "Mol"
+ * (PDBMol, MmCifMol, MorphMol, ...) and Trajectory, which derives from
+ * MolCoord through AnimMol but whose name does not say so.
+ *
+ * Unlike {@link isMolObjectClass}, this is strict: an unknown class is not a
+ * molecule. Use it where an object is counted or offered as a molecule (the
+ * default colour order, molecule pickers).
+ */
+export function isMoleculeClass(className: string): boolean {
+    return className === 'MolCoord' || className === 'Trajectory' || className.endsWith('Mol');
+}
+
 /** True for a volume object, whose view options are the map ones. */
 export function isScalarMapClass(className: string): boolean {
     return SCALAR_MAP_CLASSES.includes(className);

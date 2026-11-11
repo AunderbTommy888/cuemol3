@@ -22,6 +22,7 @@ import { useMolEditCommit } from '@renderer/hooks/cuemol/useMolEditCommit'
 import { FieldSection } from '@renderer/h3-kit/form'
 import { DialogShell } from './DialogShell'
 import { MolPicker } from './MolPicker'
+import { objectFilters } from '@renderer/h3-kit/ObjectSelect'
 import { MolSelList, pushHistory } from '@renderer/h3-kit/MolSelList'
 
 export interface DeleteMolDialogResult {
@@ -89,6 +90,7 @@ export function DeleteMolDialog({
                             cm={cm}
                             sceneId={sceneId}
                             label="Molecule"
+                            filter={objectFilters.molCoordNotTraj}
                             selectedId={objId}
                             onChange={setObjId}
                         />

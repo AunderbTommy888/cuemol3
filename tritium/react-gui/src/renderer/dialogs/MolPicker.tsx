@@ -14,7 +14,7 @@
 
 import React from 'react'
 import type { AsyncCueMol } from '@renderer/worker/client/AsyncCueMol'
-import { ObjectSelect, objectFilters } from '@renderer/h3-kit/ObjectSelect'
+import { ObjectSelect, objectFilters, type ObjectFilter } from '@renderer/h3-kit/ObjectSelect'
 
 export interface MolPickerProps {
     /** Worker facade used by the embedded `ObjectSelect` to list objects. */
@@ -27,6 +27,11 @@ export interface MolPickerProps {
     selectedId: number | undefined
     /** Called with the new uid on pick / auto-default. */
     onChange: (uid: number | undefined) => void
+    /**
+     * Narrower molecule filter, e.g. `objectFilters.molCoordNotTraj` for a
+     * tool that adds or removes atoms. Defaults to `objectFilters.molCoord`.
+     */
+    filter?: ObjectFilter
 }
 
 /**
@@ -35,14 +40,14 @@ export interface MolPickerProps {
  * `hideLabel`).
  */
 export function MolPicker({
-    cm, sceneId, label, selectedId, onChange,
+    cm, sceneId, label, selectedId, onChange, filter = objectFilters.molCoord,
 }: MolPickerProps): React.JSX.Element {
     return (
         <ObjectSelect
             cm={cm}
             sceneId={sceneId}
             label={label}
-            filter={objectFilters.molCoord}
+            filter={filter}
             selectedId={selectedId}
             onChange={onChange}
             emptyText="(no molecules)"

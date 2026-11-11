@@ -115,7 +115,7 @@ export function MolSuperposeDialog({
         cm.invokeService('listSceneObjects', { sceneId })
             .then((res) => {
                 if (!guard.isCurrent(token)) return
-                const mols = (res?.objects ?? []).filter(objectFilters.molCoord)
+                const mols = (res?.objects ?? []).filter(objectFilters.molCoordNotTraj)
                 const uids = mols.map((m: SceneObjectEntry) => m.uid)
                 const has = (id: number | undefined): boolean =>
                     id !== undefined && uids.includes(id)
@@ -211,6 +211,7 @@ export function MolSuperposeDialog({
                             cm={cm}
                             sceneId={sceneId}
                             label="Molecule"
+                            filter={objectFilters.molCoordNotTraj}
                             selectedId={refObjId}
                             onChange={setRefObjId}
                         />
@@ -228,6 +229,7 @@ export function MolSuperposeDialog({
                             cm={cm}
                             sceneId={sceneId}
                             label="Molecule"
+                            filter={objectFilters.molCoordNotTraj}
                             selectedId={movObjId}
                             onChange={setMovObjId}
                         />

@@ -120,13 +120,18 @@ describe('convertToMorphMol', () => {
         expect(scene.destroyObject).not.toHaveBeenCalled()
     })
 
-    it('refuses an object that is already a MorphMol', () => {
+    it('refuses an object that is already a MorphMol, and a Trajectory', () => {
         const { ctx, scene, srcMol } = makeConvertCtx()
         ;(srcMol.getClassName as ReturnType<typeof vi.fn>).mockReturnValue('MorphMol')
 
         const res = convertToMorphMol(ctx, { sceneId: 100, objId: 5 })
 
         expect(res.ok).toBe(false)
+        expect(scene.startUndoTxn).not.toHaveBeenCalled()
+
+        // A Trajectory is refused too: morphing it has no clear meaning.
+        ;(srcMol.getClassName as ReturnType<typeof vi.fn>).mockReturnValue('Trajectory')
+        expect(convertToMorphMol(ctx, { sceneId: 100, objId: 5 })).toMatchObject({ ok: false, code: 'unsupported' })
         expect(scene.startUndoTxn).not.toHaveBeenCalled()
     })
 })

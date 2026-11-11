@@ -12,6 +12,7 @@ import type { Renderer } from '@cuemol/core/src/wrappers/Renderer';
 import type { Scene } from '@cuemol/core/src/wrappers/Scene';
 import { safeRead } from '@renderer/worker/server/services/helpers/safeRead';
 import type { PropTargetType } from '@renderer/worker/shared/genericProps';
+import { isMoleculeClass } from '@renderer/worker/shared/objectClasses';
 
 /**
  * Scene.name is a read-only property -- its `.qif` declares
@@ -33,13 +34,6 @@ export function isSceneNameWrite(nodeType: PropTargetType, propName: string): bo
  * boundary molecule.
  */
 const MOL_NAME_PROPS = ['target', 'bndry_molname'];
-
-/** True for MolCoord and the subclasses the object lists treat as molecules. */
-function isMoleculeClass(className: string): boolean {
-    return (
-        className === 'MolCoord' || className === 'Trajectory' || className.endsWith('Mol')
-    );
-}
 
 /** `obj`'s uid when it is a molecule, else undefined. */
 function molUidOf(obj: unknown): number | undefined {

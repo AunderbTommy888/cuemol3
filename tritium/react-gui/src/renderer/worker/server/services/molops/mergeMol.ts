@@ -24,6 +24,7 @@ import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneRe
 import { makeSel } from '@renderer/worker/server/services/helpers/makeSel';
 import { withUndoTxn } from '../withUndoTxn';
 import { recordOp } from '@renderer/worker/server/actions/serviceOps';
+import { refuseTrajectory } from '@renderer/worker/server/services/helpers/refuseTrajectory';
 
 export interface MergeMolArgs {
     sceneId: number;
@@ -55,6 +56,12 @@ export function mergeMol(ctx: WorkerContext, args: MergeMolArgs): MergeMolResult
     if (!fromMol) return { ok: false, error: 'source molecule not found' };
     const toMol = scene.getObject(args.toObjId) as CueMolObject | null;
     if (!toMol) return { ok: false, error: 'destination molecule not found' };
+    // Merging adds atoms to the destination and a move removes them from the
+    // source. A copy out of a trajectory would only read its current frame,
+    // but there is little point to it, so a trajectory is refused either way.
+    const traj =
+        refuseTrajectory(toMol, 'merging') ?? refuseTrajectory(fromMol, 'merging');
+    if (traj) return traj;
 
     const sel = makeSel(ctx, args.selStr, scene.uid);
     if (!sel) return { ok: false, error: 'invalid selection' };

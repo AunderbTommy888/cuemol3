@@ -56,10 +56,11 @@ function painted(append: ReturnType<typeof vi.fn>): Record<string, string> {
 }
 
 beforeEach(() => {
-  // Four molecules, listed out of load order, and a map that is not one.
+  // Four molecules, listed out of load order, and a map that is not one. The
+  // second is a Trajectory: a MolCoord whose class name does not end in "Mol".
   objects.list = [
     { uid: 30, className: 'MolCoord' }, { uid: 10, className: 'MolCoord' },
-    { uid: 15, className: 'DensityMap' }, { uid: 20, className: 'MolCoord' },
+    { uid: 15, className: 'DensityMap' }, { uid: 20, className: 'Trajectory' },
     { uid: 40, className: 'MolCoord' },
   ]
 })

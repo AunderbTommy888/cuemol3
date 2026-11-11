@@ -32,6 +32,7 @@ import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneRe
 import { OBJREADER_CATEGORY } from '@renderer/worker/server/services/helpers/pickReaderName';
 import { withUndoTxn } from '../withUndoTxn';
 import { recordOp } from '@renderer/worker/server/actions/serviceOps';
+import { refuseTrajectory } from '@renderer/worker/server/services/helpers/refuseTrajectory';
 
 const log = console;
 
@@ -98,6 +99,8 @@ export function convertToMorphMol(
     if (getClassNameOf(mol) === 'MorphMol') {
         return { ok: false, error: 'object is already a MorphMol' };
     }
+    const traj = refuseTrajectory(mol, 'morphing');
+    if (traj) return traj;
 
     let morphObjId = -1;
     let morphObjName = '';
@@ -281,6 +284,8 @@ export function addMorphFrameFromMol(
     const { scene, morph } = rm;
     const src = scene.getObject(args.srcObjId) as CueMolObject | null;
     if (!src) return { ok: false, error: 'source molecule not found' };
+    const traj = refuseTrajectory(src, 'morphing');
+    if (traj) return traj;
     const before = beforeArg(ctx, args.sceneId, args.objId, args.insertIndex);
 
     try {
