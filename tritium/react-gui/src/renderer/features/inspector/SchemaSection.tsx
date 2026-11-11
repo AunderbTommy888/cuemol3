@@ -99,8 +99,9 @@ function multiWriter(
 ): SetFn {
   return (_key, _valueType, value) => {
     const writes = commit(ctx, Boolean(value))
-    if (writes.length === 1) onSet(writes[0].key, writes[0].valueType, writes[0].value)
-    else if (writes.length > 1) onSetMany?.(writes)
+    const [w] = writes
+    if (writes.length === 1 && w.op !== 'reset') onSet(w.key, w.valueType, w.value)
+    else if (writes.length > 0) onSetMany?.(writes)
   }
 }
 

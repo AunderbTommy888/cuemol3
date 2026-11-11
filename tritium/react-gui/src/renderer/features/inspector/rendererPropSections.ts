@@ -38,17 +38,20 @@ import type {
   GenericPropEntry,
   PropWriteOpts,
 } from '@renderer/worker/shared/genericProps';
+import type { PropWrite } from '@renderer/state/inspector';
 
 // ------------------------------------------------------------
 // Types
 // ------------------------------------------------------------
 
-/** One property write in a multi-write atomic commit. */
-export interface PropMultiWrite {
-  key: string;
-  valueType: string;
-  value: string | number | boolean;
-}
+/**
+ * One property write in a multi-write atomic commit: a set, or (`op:
+ * 'reset'`) a reset to the default. The same shape `setMany` takes.
+ */
+export type PropMultiWrite = PropWrite;
+
+/** A `PropMultiWrite` that sets a value (never a reset). */
+export type PropSetWrite = Extract<PropMultiWrite, { valueType: string }>;
 
 /** Props passed to every renderer property section body. */
 export interface RendererPropSectionProps {

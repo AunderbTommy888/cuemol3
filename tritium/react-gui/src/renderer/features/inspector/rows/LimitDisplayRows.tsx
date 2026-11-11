@@ -21,7 +21,7 @@ import { SelRow } from './SelRow'
 import { resetProps, type ResetFn, type SetFn } from './rowProps'
 import type { SceneObjectEntry } from '@renderer/worker/server/services/scene/listSceneObjects'
 import type { GenericPropEntry } from '@renderer/worker/shared/genericProps'
-import type { PropMultiWrite } from '@renderer/features/inspector/rendererPropSections'
+import type { PropSetWrite } from '@renderer/features/inspector/rendererPropSections'
 import type { CustomRowProps } from '@renderer/features/inspector/schema/types'
 import { useStaleGuard } from '@renderer/hooks/react/useStaleGuard'
 
@@ -125,7 +125,7 @@ export const LimitDisplayRows: React.FC<CustomRowProps> = ({
       if (!hasTarget && molNames.length > 0) onSet(bndryMol.key, bndryMol.type, molNames[0])
       return
     }
-    const writes: PropMultiWrite[] = [
+    const writes: PropSetWrite[] = [
       { key: bndryMol.key, valueType: bndryMol.type, value: '' },
     ]
     if (bndrySel) writes.push({ key: bndrySel.key, valueType: bndrySel.type, value: '' })

@@ -17,6 +17,7 @@
  */
 
 import { NUCL_TUBE_SECTIONS } from './tube'
+import { NuclBaseTypeRow, isBaseNone } from '@renderer/features/inspector/rows/NuclBaseTypeRow'
 import type { PropCtx, SchemaSectionDef } from './types'
 import type { PropMultiWrite } from '@renderer/features/inspector/rendererPropSections'
 
@@ -30,6 +31,13 @@ const SIZE_MIN = 0.1
 const num = (ctx: PropCtx, key: string): number => Number(ctx.value(key))
 
 /**
+ * The base rows are hidden, not disabled, while Base type is None: a disabled
+ * row still offers its reset button, and resetting the size would leave None
+ * behind the user's back.
+ */
+const basesShown = (ctx: PropCtx): boolean => !isBaseNone(ctx)
+
+/**
  * The base-rendering controls. Never gated by "Show tube" -- that flag lives
  * here and only disables the inherited tube pages.
  */
@@ -39,13 +47,14 @@ const NUCL_BASE_SECTION: SchemaSectionDef = {
   defaultExpanded: true,
   rows: [
     { kind: 'bool', key: 'show_tube', label: 'Show tube' },
-    { kind: 'bool', key: 'show_basepair', label: 'Connect base pair' },
-    { kind: 'enum', key: 'base_type', label: 'Base type' },
-    { kind: 'numEnum', keys: ['base_detail'], label: 'Detail', min: 2 },
+    { kind: 'bool', key: 'show_basepair', label: 'Connect base pair', visibleWhen: basesShown },
+    { kind: 'custom', key: 'base_type', Component: NuclBaseTypeRow },
+    { kind: 'numEnum', keys: ['base_detail'], label: 'Detail', min: 2, visibleWhen: basesShown },
     {
       kind: 'derivedNum',
       key: 'base_size',
       label: 'Base size',
+      visibleWhen: basesShown,
       needs: [],
       display: (ctx) => num(ctx, 'base_size'),
       // Scale the thickness with the size so the percentage the other row
@@ -77,6 +86,7 @@ const NUCL_BASE_SECTION: SchemaSectionDef = {
       kind: 'derivedNum',
       key: 'base_thick',
       label: 'Base thick',
+      visibleWhen: basesShown,
       needs: ['base_size'],
       display: (ctx) => {
         const size = num(ctx, 'base_size')
