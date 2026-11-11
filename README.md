@@ -9,6 +9,8 @@
 models of macromolecules, together with their density maps, through a
 user-friendly interface, and to make figures of publication quality.
 
+Website: <http://www.cuemol.org/>
+
 CueMol reads, among others:
 
 - molecular coordinates: PDB, mmCIF, SDF, GRO
