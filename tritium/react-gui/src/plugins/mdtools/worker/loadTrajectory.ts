@@ -31,20 +31,13 @@ import { setupRenderer } from '@renderer/worker/server/services/rend/setupRender
 import { undoTxnResult } from '@renderer/worker/server/services/withUndoTxn';
 import { OBJREADER_CATEGORY } from '@renderer/worker/server/services/helpers/pickReaderName';
 import { fail, ok, type Result } from '@renderer/worker/shared/result';
+import { appendTrajFile, unsupportedTrajFormat } from './trajBlocks';
 
 const log = console;
 
 // Topology reader nickname. Only GROMACS .gro is supported for now; AMBER
 // prmtop and NAMD psf are deferred (see ADR-md-trajectory-open-dialog).
 const TOPOLOGY_READER = 'gro';
-
-// Trajectory file extension -> block reader nickname. These are the mdtools
-// TrajBlockReader nicknames registered under the OBJREADER category.
-const TRAJ_READER_BY_EXT: Record<string, string> = {
-    dcd: 'dcdtraj',
-    xtc: 'xtctraj',
-    trr: 'trrtraj',
-};
 
 // Minimal native-object surfaces (all calls go through `as unknown as` casts).
 interface ObjReaderHandle {
@@ -53,11 +46,6 @@ interface ObjReaderHandle {
     read(): void;
     detach(): void;
     createDefaultObj(): unknown;
-}
-
-interface TrajBlockReaderHandle extends ObjReaderHandle {
-    targTrajUID: number;
-    nevery: number;
 }
 
 interface TrajObj {
@@ -82,13 +70,6 @@ export interface LoadTrajectoryArgs {
     renderer: RendererOptions;
 }
 
-/** Lower-cased final extension (without the dot). */
-function fileExt(filePath: string): string {
-    const base = filePath.split(/[\\/]/).pop() ?? filePath;
-    const dot = base.lastIndexOf('.');
-    return dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
-}
-
 /** `{ objId }` of the new Trajectory on success. */
 export type LoadTrajectoryResult = Result<{ objId: number }>;
 
@@ -104,6 +85,8 @@ export function loadTrajectory(
         log.warn('[worker] loadTrajectory: no trajectory files given');
         return fail('no trajectory files given', 'invalid-args');
     }
+    const unsupported = unsupportedTrajFormat(args.trajPaths);
+    if (unsupported) return fail(unsupported, 'unsupported');
 
     const scene = ctx.sceMgr.getScene(args.sceneId);
     if (!scene) {
@@ -137,21 +120,7 @@ export function loadTrajectory(
 
         // 3. Trajectory files -> TrajBlocks appended in order.
         for (const trajPath of args.trajPaths) {
-            const ext = fileExt(trajPath);
-            const nick = TRAJ_READER_BY_EXT[ext];
-            if (!nick) return fail(`unsupported trajectory format ".${ext}": ${trajPath}`, 'unsupported');
-            const reader = ctx.strMgr.createHandler(
-                nick, OBJREADER_CATEGORY,
-            ) as unknown as TrajBlockReaderHandle | null;
-            if (!reader) return fail(`trajectory reader "${nick}" not available`, 'unsupported');
-            reader.targTrajUID = traj.uid;
-            if (nevery > 1) reader.nevery = nevery;
-            const block = reader.createDefaultObj();
-            reader.attach(block);
-            reader.setPath(trajPath);
-            reader.read();
-            reader.detach();
-            traj.append(block);
+            appendTrajFile(ctx, traj, trajPath, nevery);
         }
 
         // 4. Initial renderer (Trajectory is MolCoord-derived; reused as-is).

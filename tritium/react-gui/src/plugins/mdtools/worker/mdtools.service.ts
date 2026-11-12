@@ -12,6 +12,7 @@
  * them disappears.
  */
 
+import { attachTrajectory, listAttachTargets } from './attachTrajectory';
 import { getTrajectoryRendererInfo } from './getTrajectoryRendererInfo';
 import { loadTrajectory } from './loadTrajectory';
 import {
@@ -30,8 +31,11 @@ export const services = {
     appendTrajectoryBlock,
     removeTrajectoryBlock,
     moveTrajectoryBlock,
+    listAttachTargets,
+    attachTrajectory,
 };
 
+export type * from './attachTrajectory';
 export type * from './getTrajectoryRendererInfo';
 export type * from './loadTrajectory';
 export type * from './trajectory';

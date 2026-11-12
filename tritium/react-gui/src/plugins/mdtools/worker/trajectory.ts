@@ -21,16 +21,9 @@
 
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext';
 import { withUndoTxn } from '@renderer/worker/server/services/withUndoTxn';
-import { OBJREADER_CATEGORY } from '@renderer/worker/server/services/helpers/pickReaderName';
+import { appendTrajFile, fileExt, TRAJ_READER_BY_EXT } from './trajBlocks';
 
 const log = console;
-
-// Trajectory file extension -> block reader nickname (mdtools TrajBlockReader).
-const TRAJ_READER_BY_EXT: Record<string, string> = {
-    dcd: 'dcdtraj',
-    xtc: 'xtctraj',
-    trr: 'trrtraj',
-};
 
 // Minimal native-object surfaces (all calls go through `as unknown as` casts).
 interface TrajBlockObj {
@@ -50,16 +43,6 @@ interface TrajObj {
     append(block: unknown): void;
     removeBlock(index: number): void;
     moveBlock(from: number, to: number): void;
-}
-
-interface TrajBlockReaderHandle {
-    targTrajUID: number;
-    nevery: number;
-    setPath(path: string): void;
-    attach(obj: unknown): void;
-    read(): void;
-    detach(): void;
-    createDefaultObj(): unknown;
 }
 
 interface SceneHandle {
@@ -172,13 +155,6 @@ function safeStr(fn: () => string, dflt = ''): string {
     }
 }
 
-/** Lower-cased final extension (without the dot). */
-function fileExt(filePath: string): string {
-    const base = filePath.split(/[\\/]/).pop() ?? filePath;
-    const dot = base.lastIndexOf('.');
-    return dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
-}
-
 /** Resolve the target scene object as a Trajectory handle (null if absent). */
 function resolveTraj(ctx: WorkerContext, sceneId: number, objId: number): TrajObj | null {
     const scene = ctx.sceMgr.getScene(sceneId);
@@ -256,18 +232,7 @@ export function appendTrajectoryBlock(
 
     try {
         return withUndoTxn(scene, 'Add trajectory block', () => {
-            const reader = ctx.strMgr.createHandler(
-                nick, OBJREADER_CATEGORY,
-            ) as unknown as TrajBlockReaderHandle | null;
-            if (!reader) throw new Error(`trajectory reader "${nick}" not available`);
-            reader.targTrajUID = traj.uid;
-            if (nevery > 1) reader.nevery = nevery;
-            const block = reader.createDefaultObj();
-            reader.attach(block);
-            reader.setPath(args.path);
-            reader.read();
-            reader.detach();
-            traj.append(block);
+            appendTrajFile(ctx, traj, args.path, nevery);
             return { ok: true, nframe: safeNum(() => traj.nframe, 0) };
         });
     } catch (e) {

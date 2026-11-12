@@ -28,6 +28,7 @@ import { AppIcon } from '@renderer/h3-kit/primitives';
 import { ButtonRow, FormButton } from '@renderer/h3-kit/form';
 import { ObjectSelect } from '@renderer/h3-kit/ObjectSelect';
 import type { ObjectFilter } from '@renderer/h3-kit/ObjectSelect';
+import { onTrajFocus, takeTrajFocus, type TrajFocusRequest } from './trajFocus';
 import type { BottomTabComponent } from '@renderer/plugin-host/api';
 import { IPC } from '@shared/ipcChannels';
 import { mdtoolsServices } from '../calls';
@@ -96,13 +97,34 @@ export const TrajectoryPanel: BottomTabComponent = ({ cm, activeSceneId }) => {
         }
     }, [blocks.length, selectedBlock]);
 
+    // A focus request (made after an attach) selects its trajectory and asks
+    // for one more fit, once the frame count has caught up with the attach.
+    const focusRef = useRef<TrajFocusRequest | null>(null);
+    useEffect(() => {
+        const take = (): void => {
+            const req = takeTrajFocus();
+            if (!req) return;
+            focusRef.current = req;
+            setObjId(req.objId);
+        };
+        take();
+        return onTrajFocus(take);
+    }, []);
+
     // Initial zoom = the Fit scale: when a target's frame count first becomes
     // known, fit the whole trajectory to the panel width (once per target, so a
-    // later manual zoom or an Add is not overridden).
+    // later manual zoom or an Add is not overridden), and again for a focus
+    // request.
     const fittedForRef = useRef<number | undefined>(undefined);
     useEffect(() => {
         if (objId === undefined || nframe <= 0) return;
-        if (fittedForRef.current === objId) return;
+        const req = focusRef.current;
+        if (req && req.objId === objId) {
+            if (nframe < req.nframe) return;
+            focusRef.current = null;
+        } else if (fittedForRef.current === objId) {
+            return;
+        }
         fittedForRef.current = objId;
         const avail = panelRef.current?.clientWidth ?? 0;
         setPxPerFrame(fitPxPerFrame(nframe, avail));

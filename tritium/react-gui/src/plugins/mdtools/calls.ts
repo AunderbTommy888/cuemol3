@@ -10,6 +10,12 @@
  */
 
 import { definePluginServices } from '@renderer/plugin-host/api'
+import type {
+  AttachTrajectoryArgs,
+  AttachTrajectoryResult,
+  ListAttachTargetsArgs,
+  ListAttachTargetsResult,
+} from './worker/attachTrajectory'
 import type { GetTrajectoryRendererInfoResult } from './worker/getTrajectoryRendererInfo'
 import type { LoadTrajectoryArgs, LoadTrajectoryResult } from './worker/loadTrajectory'
 import type {
@@ -40,6 +46,8 @@ export type MdtoolsCalls = {
   }
   removeTrajectoryBlock: { args: RemoveTrajectoryBlockArgs; result: TrajBlockEditResult }
   moveTrajectoryBlock: { args: MoveTrajectoryBlockArgs; result: TrajBlockEditResult }
+  listAttachTargets: { args: ListAttachTargetsArgs; result: ListAttachTargetsResult }
+  attachTrajectory: { args: AttachTrajectoryArgs; result: AttachTrajectoryResult }
 }
 
 export const MDTOOLS_KEYS = [
@@ -50,6 +58,8 @@ export const MDTOOLS_KEYS = [
   'appendTrajectoryBlock',
   'removeTrajectoryBlock',
   'moveTrajectoryBlock',
+  'listAttachTargets',
+  'attachTrajectory',
 ] as const satisfies readonly (keyof MdtoolsCalls)[]
 
 /** Typed caller for the services this plugin registers. */

@@ -166,7 +166,7 @@ describe('loadTrajectory — block-centric assembly', () => {
         expect(setupRenderer).not.toHaveBeenCalled()
     })
 
-    it('rolls back on an unsupported trajectory extension', () => {
+    it('refuses an unsupported trajectory extension without starting a txn', () => {
         const { ctx, scene } = makeFixture()
         const result = mdtoolsServices.loadTrajectory(ctx, {
             sceneId: 1, topologyPath: '/p/s.gro', trajPaths: ['/p/a.xyz'], renderer,
@@ -174,7 +174,7 @@ describe('loadTrajectory — block-centric assembly', () => {
         expect(result).toEqual(expect.objectContaining({
             ok: false, code: 'unsupported', error: expect.stringMatching(/unsupported trajectory format/),
         }))
-        expect(scene.rollbackUndoTxn).toHaveBeenCalled()
+        expect(scene.startUndoTxn).not.toHaveBeenCalled()
     })
 
     it('returns ok:false without starting a txn when no trajectory files are given', () => {
