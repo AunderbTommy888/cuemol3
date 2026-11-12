@@ -26,12 +26,18 @@ const log = console;
 const SCEREADER_CATEGORY = 3; // InOutHandler::IOH_CAT_SCEREADER
 
 /**
- * Extract the leaf (basename) of a path, handling both POSIX and Windows
- * separators. Mirrors UXP `util.getFileLeafName` (`nsIFile.leafName`), which
- * keeps the extension (e.g. "mystruct.qsc"). Same helper as saveScene.
+ * Scene name for a loaded file: the leaf of the path (POSIX or Windows
+ * separators) without its last extension, e.g. "/dir/mystruct.qsc" ->
+ * "mystruct". A leading dot alone is not an extension (".qsc" stays).
+ *
+ * UXP kept the extension (`util.getFileLeafName`). Dropping it lets a loaded
+ * "Untitled 1.qsc" collide with the default name "Untitled 1", so a new
+ * scene gets "Untitled 2" (proposeUniqName checks names already in use).
  */
-function basename(p: string): string {
-    return p.split(/[\\/]/).pop() ?? p;
+function sceneNameFromPath(p: string): string {
+    const leaf = p.split(/[\\/]/).pop() ?? p;
+    const dot = leaf.lastIndexOf('.');
+    return dot > 0 ? leaf.slice(0, dot) : leaf;
 }
 
 interface StreamHandlerInfo {
@@ -136,12 +142,12 @@ function readSceneFile(ctx: WorkerContext, scene: Scene, filePath: string): Resu
         reader.detach();
     }
 
-    // UXP parity (qsc-io.readSceneFile): after reading, set the scene name to
-    // the file's leaf name (with extension). The native LoadSceneCommand does
-    // not touch the name, so without this the scene keeps the placeholder
-    // "Untitled N" assigned at creation. setName fires a "name" PROPCHG event
+    // UXP parity (qsc-io.readSceneFile): after reading, set the scene name
+    // from the file name (without its extension; see sceneNameFromPath). The
+    // native LoadSceneCommand does not touch the name, so without this the
+    // scene keeps the placeholder "Untitled N" assigned at creation. setName fires a "name" PROPCHG event
     // that useMolViewTabTitleSync / scene tree already listen for.
-    scene.setName(basename(filePath));
+    scene.setName(sceneNameFromPath(filePath));
     return ok();
 }
 
