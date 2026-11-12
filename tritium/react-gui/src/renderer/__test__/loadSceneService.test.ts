@@ -132,7 +132,7 @@ describe('loadScene.service — direct API', () => {
             'attach(scene)',
             'read',
             'detach',
-            'setName(test.qsc)',
+            'setName(test)',
             'loadViewFromCam(10,__current)',
             'loadViewFromCam(11,__current)',
         ])
@@ -142,16 +142,16 @@ describe('loadScene.service — direct API', () => {
         expect(scene.rollbackUndoTxn).not.toHaveBeenCalled()
     })
 
-    it('sets scene name to the file leaf name WITH extension (UXP getFileLeafName parity)', () => {
+    it('sets scene name to the file leaf name without its extension', () => {
         // POSIX path with directories.
         const posix = makeFixture()
         loadScene(posix.ctx, { filePath: '/home/me/proteins/mystruct.qsc', sceneId: 1 })
-        expect(posix.scene.setName).toHaveBeenCalledWith('mystruct.qsc')
+        expect(posix.scene.setName).toHaveBeenCalledWith('mystruct')
 
         // Windows-style separators must also resolve to the leaf.
         const win = makeFixture()
         loadScene(win.ctx, { filePath: 'C:\\Users\\me\\mystruct.qsc', sceneId: 1 })
-        expect(win.scene.setName).toHaveBeenCalledWith('mystruct.qsc')
+        expect(win.scene.setName).toHaveBeenCalledWith('mystruct')
     })
 
     it('does NOT set the scene name when read throws (name stays the placeholder)', () => {
@@ -223,7 +223,7 @@ describe('openSceneFile.service', () => {
         const res = openSceneFile(ctx, { filePath: '/dir/test.qsc', dpr: 2 })
 
         expect(res).toEqual(expect.objectContaining({
-            ok: true, scene_uid: 1, view_uid: 500, scene_name: 'test.qsc', view_name: '0',
+            ok: true, scene_uid: 1, view_uid: 500, scene_name: 'test', view_name: '0',
         }))
         // Read first, view second, so nothing is showable until it loaded.
         expect(calls.indexOf('read')).toBeLessThan(calls.indexOf('createView(500)'))
