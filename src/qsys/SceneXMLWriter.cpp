@@ -271,7 +271,8 @@ void SceneXMLWriter::procDataChunks(qlib::LDom2OutStream &oos, qlib::LDom2Node *
 }
 
 qlib::LScrSp<qlib::LByteArray> SceneXMLWriter::toByteArray(const qlib::LScrSp<qlib::LScrObjBase> &pSObj,
-                                                           const LString &type_ovwr)
+                                                           const LString &type_ovwr,
+                                                           bool bDropSubSrc)
 {
   // Setup streams
   qlib::StrOutStream fos;
@@ -383,6 +384,11 @@ qlib::LScrSp<qlib::LByteArray> SceneXMLWriter::toByteArray(const qlib::LScrSp<ql
     AutoStyleCtxt style_ctxt(nSceneID);
     
     pSObj->writeTo2(pChNode);
+
+    if (bDropSubSrc && !pObj.isnull()) {
+      qlib::LDom2Node *pRopts = pChNode->findChild("ropts");
+      if (pRopts != NULL) pRopts->removeChild("subsrc");
+    }
     
     // process data chunks
     procDataChunks(oos, pChNode);

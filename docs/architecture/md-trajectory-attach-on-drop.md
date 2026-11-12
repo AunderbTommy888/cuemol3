@@ -1,11 +1,13 @@
 # MD trajectory: 落としたファイルを既存の分子に付ける (tritium / libcuemol2)
 
-trajectory のファイル (`.xtc` / `.dcd` / `.trr` / `.nc`) を window に落とすと、付け先の分子を選ぶダイアログが出て、
-その分子に trajectory を付ける。PyMOL で topology を開いた後に trajectory を `load` する操作に当たる。UXP には無い
+trajectory のファイル (`.xtc` / `.dcd` / `.trr` / `.nc`) や 1 frame の座標のファイル (AMBER restart `.rst7` /
+`.inpcrd` / `.restrt`、NAMD `.coor`) を window に落とすと、付け先の分子を選ぶダイアログが出て、その分子に付ける。PyMOL で topology を開いた後に trajectory を `load` する操作に当たる。UXP には無い
 新規機能なので、migration ではなくここに置く。
 
 - 普通の分子 (`MolCoord` など) を選ぶと、`Trajectory` に変換してから付ける。元の座標は frame 0 に残り、trajectory の
-  frame がその後ろに続く (PyMOL の drop / `load` の既定 `state=0` と同じ)。
+  frame がその後ろに続く (PyMOL の drop / `load` の既定 `state=0` と同じ)。座標の無い分子 (topology だけの `prmtop` /
+  PSF) は、落としたファイルの最初の frame から始まる。topology と座標のファイルの扱いは
+  [md-topology-coordinate-files.md](md-topology-coordinate-files.md)。
 - 既存の `Trajectory` を選ぶと、後ろに block として足す。
 - topology の形式は問わない。GROMACS が書き出した (水素も入り原子数が一致する) PDB に `.xtc`、`.gro` に `.dcd`、の
   ように組み合わせられる。座標の単位は block の reader が持つ (xtc / trr は nm -> Å、dcd はそのまま)。
@@ -22,7 +24,8 @@ UI は built-in plugin `mdtools` (既定オフ) の一部。File > Open MD Traje
 ## drop から plugin へ: `contributes.fileOpeners` (core)
 
 plugin の manifest は、扱う拡張子と command を `contributes.fileOpeners` で宣言する
-([contributions.md](tritium_plugin/contributions.md#fileopeners))。mdtools は `.xtc` / `.dcd` / `.trr` / `.nc` を
+([contributions.md](tritium_plugin/contributions.md#fileopeners))。mdtools は block の reader がある拡張子 (`.xtc` /
+`.dcd` / `.trr` / `.nc` / `.rst7` / `.inpcrd` / `.restrt` / `.coor`、`trajFormats.ts` の `TRAJ_DOT_EXTS`) を
 `plugin.mdtools.attachTrajectory` に割り当てている。
 
 drop の batch (`features/file-io/useOpenFilePaths.ts`) は次の順で処理する:
@@ -57,7 +60,13 @@ drop の batch (`features/file-io/useOpenFilePaths.ts`) は次の順で処理す
   - `modified` (編集された)。qsc で embed される分子で、`Trajectory` は編集される分子として扱わない。
   - 元のファイルが無い (`srctype` が空、`src` / `alt_src` が `datachunk:` か URL か存在しないパス)。frame 0 の block は
     元のファイルを参照するので作れない。
-- 選べる候補が 1 つならそれを選んでおく。普通の分子を選ぶと「trajectory に変換され、座標は最初の frame に残る」と示す。
+  - 座標のファイル (sub-stream `coord`) を指定して開いた分子で、そのファイルが無くなっている。
+- 座標の無い分子 (`hasNoCoords`、[md-topology-coordinate-files.md](md-topology-coordinate-files.md)) は行に
+  「no coordinates」と出る (選べる)。
+- 選べる候補が 1 つならそれを選んでおく。普通の分子を選ぶと「trajectory に変換され、座標は最初の frame に残る」と示す
+  (座標の無い分子では「下のファイルの最初から始まる」)。
+- ファイルは落とした順に並べるが、1 frame の座標のファイル (restart / `.coor`) を先に置く (frame 0 にするため。
+  `singleFrameFirst`)。
 - ファイルの順序付きリスト (Add / Remove / Up / Down) は OpenMdTrajDialog と共通の `TrajFileListSection`。間引き
   (nevery) は `SliderField` (`slider={false}`)。
 - 候補が無いときはダイアログの代わりに案内を出す:
@@ -76,9 +85,18 @@ drop の batch (`features/file-io/useOpenFilePaths.ts`) は次の順で処理す
    どれかがある普通の分子。拡張子に reader が無いファイルも txn の前に断る (`unsupportedTrajFormat`)。
 2. 普通の分子は `convertToMorphMol` と同じ骨格で変換する: `toXML2(mol, 'Trajectory')` -> `fromXML()`、名前を引き継ぎ、
    `destroyObject(old)` -> `addObject(new)`。`ui_order` は `nopersist` なので元の値を戻す (scene tree の位置を保つ)。
-3. 変換したときは、元の座標の block (`structframe`、次節) を最初に `append` する。
+3. 変換したときは、元の座標を frame 0 の block として最初に `append` する。分子の開き方で 3 通り:
+   - topology + 座標のファイル (`amberprm` / `psf` の sub-stream `coord`、`getSubSrcPath('coord')`): XML を
+     `toXML2NoSubSrc` で作って topology を main のファイルだけで読み直し、座標のファイルを 1 frame の block
+     (`amberprm` -> `amberrst`、`psf` -> `namdcoortraj`) として付ける。topology を単独で開いて座標のファイルと
+     trajectory を落としたときと同じ qsc になる。
+   - 座標の無い分子: frame 0 の block を作らない。
+   - それ以外: 元の構造ファイルの `structframe` block (次節)。
 4. 各ファイルを block として読み、順に `append` する (`trajBlocks.ts` の `appendTrajFile`。`loadTrajectory` と
-   `appendTrajectoryBlock` と共通)。
+   `appendTrajectoryBlock` と共通。1 frame の block の reader には間引きを掛けない)。
+5. 座標の無い分子に付けたら、commit の後に scene の全 view を付けた `Trajectory` に合わせる
+   (`focusAllViewsOnNode`、記録しない)。無表示から表示ありになるため。座標のある分子や既存の `Trajectory` では view を
+   動かさない。
 
 原子数が合わないなどの失敗は、native のチェック (reader の NATOM と `Trajectory::append`) が throw し、txn ごと戻る
 (変換も戻る)。成功すると `{ objId, nframe }` を返す。
@@ -165,7 +183,8 @@ object のページはクラス名で引く。以前は worker がクラス名�
 - `useOpenFilePaths.test.tsx`: opener が引き取ったファイルが、普通のファイルの後に batch の scene で command に渡ること、
   単独なら「新しい scene」の設定でも active scene が渡ること。
 - `plugins/mdtools/worker/attachTrajectory.test.ts`: 変換が 1 つの txn で、frame 0 の `structframe` が trajectory の前に
-  付くこと。読み込みの失敗で全体が戻ること。候補の原子数による絞り込みと、断る理由 (MorphMol を出さない、行列・編集・
+  付くこと。座標のファイルで開いた分子は `toXML2NoSubSrc` と座標のファイルの block、座標の無い分子は frame 0 の block
+  無しで commit の後に view を合わせること。読み込みの失敗で全体が戻ること。候補の原子数による絞り込みと、断る理由 (MorphMol を出さない、行列・編集・
   ファイル無し)。
 - `genericPropsService.test.ts`: object の型名がクラス名であること。
 - `test_trajio.cpp`: renderer の付いた object を足す -> Undo -> Redo で renderer が残ること

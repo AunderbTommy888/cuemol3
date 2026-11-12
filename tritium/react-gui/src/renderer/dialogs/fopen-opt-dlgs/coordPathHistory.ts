@@ -1,7 +1,7 @@
 /**
  * @file dialogs/fopen-opt-dlgs/coordPathHistory.ts
  * @description localStorage-backed "last used AMBER coordinate path" for the
- * AMBER prmtop file-open dialog. Analogous to psfPathHistory (NAMD), so
+ * AMBER prmtop file-open dialog. So
  * reopening the dialog defaults to the most recently chosen inpcrd / rst7 /
  * restrt file.
  *

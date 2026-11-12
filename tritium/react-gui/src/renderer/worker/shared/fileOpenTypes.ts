@@ -11,7 +11,7 @@
 
 // ---- Format kind ----
 
-export type FormatKind = 'pdb' | 'mmcif' | 'mtz' | 'ccp4map' | 'msms' | 'namdcoor' | 'amberprm' | 'unknown';
+export type FormatKind = 'pdb' | 'mmcif' | 'mtz' | 'ccp4map' | 'msms' | 'psf' | 'amberprm' | 'unknown';
 
 // ---- Per-format option types ----
 
@@ -58,8 +58,12 @@ export interface MsmsOptions {
   vertFilePath: string;
 }
 
-export interface NamdCoorOptions {
-  psfFilePath: string;
+export interface PsfOptions {
+  /**
+   * Optional NAMD binary coordinate file (.coor) attached as the reader's
+   * "coord" sub-stream. Empty -> topology-only load (atoms at zero).
+   */
+  coordFilePath: string;
 }
 
 export interface AmberPrmtopOptions {
@@ -125,7 +129,7 @@ export type FormatOptions =
   | { kind: 'mtz'; options: MtzOptions }
   | { kind: 'ccp4map'; options: Ccp4MapOptions }
   | { kind: 'msms'; options: MsmsOptions }
-  | { kind: 'namdcoor'; options: NamdCoorOptions }
+  | { kind: 'psf'; options: PsfOptions }
   | { kind: 'amberprm'; options: AmberPrmtopOptions }
   | { kind: 'unknown'; options: Record<string, never> };
 

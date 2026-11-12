@@ -24,7 +24,7 @@ import type {
     MtzOptions,
     Ccp4MapOptions,
     MsmsOptions,
-    NamdCoorOptions,
+    PsfOptions,
     AmberPrmtopOptions,
     RendererOptions,
     FormatOptions,
@@ -44,7 +44,7 @@ const READER_NICK_TO_KIND: Record<string, FormatKind> = {
   mtzmap: 'mtz',
   ccp4map: 'ccp4map',
   msms: 'msms',
-  namdcoor: 'namdcoor',
+  psf: 'psf',
   amberprm: 'amberprm',
 };
 
@@ -155,8 +155,9 @@ export function getDefaultMsmsOptions(): MsmsOptions {
   return { vertFilePath: '' };
 }
 
-export function getDefaultNamdCoorOptions(): NamdCoorOptions {
-  return { psfFilePath: '' };
+export function getDefaultPsfOptions(): PsfOptions {
+  // Coord sub-stream is optional; default empty (topology-only).
+  return { coordFilePath: '' };
 }
 
 export function getDefaultAmberPrmtopOptions(): AmberPrmtopOptions {
@@ -254,8 +255,8 @@ export function buildDefaultFormatOptions(kind: FormatKind): FormatOptions {
       return { kind: 'ccp4map', options: getDefaultCcp4MapOptions() };
     case 'msms':
       return { kind: 'msms', options: getDefaultMsmsOptions() };
-    case 'namdcoor':
-      return { kind: 'namdcoor', options: getDefaultNamdCoorOptions() };
+    case 'psf':
+      return { kind: 'psf', options: getDefaultPsfOptions() };
     case 'amberprm':
       return { kind: 'amberprm', options: getDefaultAmberPrmtopOptions() };
     default:

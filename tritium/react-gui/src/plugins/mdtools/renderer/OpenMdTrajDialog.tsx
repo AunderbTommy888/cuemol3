@@ -1,8 +1,9 @@
 /**
  * @file plugins/mdtools/renderer/OpenMdTrajDialog.tsx
  * @description "Open MD Trajectory" dialog -- step 1 of the two-step trajectory
- * open flow. It COLLECTS a topology file (GROMACS .gro) plus an ordered list of
- * trajectory files (.dcd/.xtc/.trr); it does NOT load anything. The command
+ * open flow. It COLLECTS a topology file (.gro, AMBER .prmtop / .parm7, PSF)
+ * plus an ordered list of coordinate / trajectory files (.dcd/.xtc/.trr/.nc,
+ * one-frame .rst7/.inpcrd/.restrt/.coor); it does NOT load anything. The command
  * runs the actual (deferred) load only after the follow-up renderer dialog is
  * confirmed, so cancelling either dialog loads nothing (matching the normal
  * load-object flow).
@@ -19,11 +20,12 @@ import { Field, FieldSection, ComboBoxField, SliderField, ButtonRow, FormButton 
 import { IPC } from '@shared/ipcChannels';
 import { getLastTopologyPath, setLastTopologyPath } from './trajPathHistory';
 import { TrajFileListSection } from './TrajFileListSection';
+import { TOPOLOGY_FILTERS } from '../trajFormats';
 
 export interface OpenMdTrajResult {
-    /** Topology file (GROMACS .gro). */
+    /** Topology file (.gro / .prmtop / .parm7 / .psf). */
     topologyPath: string;
-    /** Trajectory files (.dcd/.xtc/.trr) in frame-concatenation order. */
+    /** Coordinate / trajectory files in frame-concatenation order. */
     trajPaths: string[];
     /** Load every Nth frame (1 = every frame). */
     nevery: number;
@@ -34,11 +36,6 @@ interface Props {
     onConfirm: (result: OpenMdTrajResult) => void;
     onCancel: () => void;
 }
-
-const TOPOLOGY_FILTERS = [
-    { name: 'GROMACS topology (*.gro)', extensions: ['gro'] },
-    { name: 'All Files', extensions: ['*'] },
-];
 
 export function OpenMdTrajDialog({ visible, onConfirm, onCancel }: Props): React.JSX.Element {
     const [topologyPath, setTopologyPath] = useState('');
@@ -95,7 +92,7 @@ export function OpenMdTrajDialog({ visible, onConfirm, onCancel }: Props): React
                 three meaning-units (topology / files / sampling) read apart. */}
             <div className="omt-traj-sections">
             <FieldSection title="Topology">
-                <Field label="Topology file (.gro)">
+                <Field label="Topology file (.gro / .prmtop / .psf)">
                     <ComboBoxField
                         value={topologyPath}
                         onChange={setTopologyPath}

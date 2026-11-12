@@ -1,0 +1,25 @@
+// -*-Mode: C++;-*-
+//
+// AMBER ASCII restart read as a one-frame block: scripting interface
+//
+
+#ifndef AMBER_RST_TRAJ_READER_QIF_INCLUDED
+#define AMBER_RST_TRAJ_READER_QIF_INCLUDED
+
+#include <qsys/ObjReader.qif>
+
+runtime_class AmberRstTrajReader extends ObjReader
+{
+  client_hdr "AmberRstTrajReader.hpp";
+  client_name mdtools::AmberRstTrajReader;
+
+  scriptable;
+  smartptr;
+
+  property integer targTrajUID => redirect(getTargTrajUID, setTargTrajUID) (nopersist);
+
+  /// Atom count the file at the reader's path declares (header only), or -1.
+  integer getFileAtomCount();
+};
+
+#endif

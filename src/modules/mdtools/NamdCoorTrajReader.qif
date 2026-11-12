@@ -1,0 +1,25 @@
+// -*-Mode: C++;-*-
+//
+// NAMD binary coordinates read as a one-frame block: scripting interface
+//
+
+#ifndef NAMD_COOR_TRAJ_READER_QIF_INCLUDED
+#define NAMD_COOR_TRAJ_READER_QIF_INCLUDED
+
+#include <qsys/ObjReader.qif>
+
+runtime_class NamdCoorTrajReader extends ObjReader
+{
+  client_hdr "NamdCoorTrajReader.hpp";
+  client_name mdtools::NamdCoorTrajReader;
+
+  scriptable;
+  smartptr;
+
+  property integer targTrajUID => redirect(getTargTrajUID, setTargTrajUID) (nopersist);
+
+  /// Atom count the file at the reader's path declares (header only), or -1.
+  integer getFileAtomCount();
+};
+
+#endif

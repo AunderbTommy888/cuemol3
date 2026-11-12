@@ -133,6 +133,36 @@ function objectFitBox(ctx: WorkerContext, scene: Scene, obj: CueMolObject, view:
 }
 
 /**
+ * Fit every view of a scene to a scene-tree node (`focusOnNode` per view),
+ * without recording the op: for callers where the fit is part of a larger
+ * action (a new renderer, a trajectory attached to a molecule that had no
+ * coordinates). A view that fails to fit is logged and skipped.
+ */
+export function focusAllViewsOnNode(
+    ctx: WorkerContext,
+    scene: { uid: number; view_uids: string },
+    nodeId: number,
+    nodeType: SceneNodeType,
+): void {
+    // scene.view_uids: the C++ getViewTable() accessor is not wrapped to TS.
+    let uidStr = '';
+    try {
+        uidStr = scene.view_uids ?? '';
+    } catch {
+        return;
+    }
+    for (const tok of uidStr.split(',')) {
+        const viewId = Number(tok.trim());
+        if (tok.trim() === '' || !Number.isFinite(viewId)) continue;
+        try {
+            focusOnNode(ctx, { sceneId: scene.uid, viewId, nodeId, nodeType, record: false });
+        } catch (e) {
+            console.warn(`fitting view ${viewId} to node ${nodeId} failed:`, e);
+        }
+    }
+}
+
+/**
  * Zoom the view to fit a scene-tree node.
  *
  * A molecule fits its displayed atoms (`displayedSel`, all of them when

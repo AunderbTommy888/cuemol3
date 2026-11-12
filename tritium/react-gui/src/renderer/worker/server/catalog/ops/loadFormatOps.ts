@@ -207,16 +207,16 @@ export const loadMsms = defineOp({
   },
 })
 
-export const loadNamd = defineOp({
-  name: 'load_namd',
-  description: 'Open NAMD coordinates (.coor) with the structure (.psf) that names their atoms.',
-  params: { ...common('namdcoor'), psfFile: path('The .psf file.') },
+export const loadPsf = defineOp({
+  name: 'load_psf',
+  description: 'Open a CHARMM/NAMD topology (.psf), with a NAMD coordinate file (.coor) for its atoms.',
+  params: { ...common('psf'), coordFile: optional(path('The coordinate file. Null puts every atom at the origin.')) },
   mutates: true,
   expose: EXPOSE,
   group: 'files',
   run(ctx, args, oc) {
-    return loadAs(ctx, oc, args, 'namdcoor', 'a NAMD coordinate file', (f) =>
-      f.kind === 'namdcoor' ? { ...f, options: { ...f.options, psfFilePath: callerPath(args.psfFile) } } : f,
+    return loadAs(ctx, oc, args, 'psf', 'a PSF file', (f) =>
+      f.kind === 'psf' && args.coordFile !== null ? { ...f, options: { ...f.options, coordFilePath: callerPath(args.coordFile) } } : f,
     )
   },
 })
@@ -235,4 +235,4 @@ export const loadAmber = defineOp({
   },
 })
 
-export const LOAD_FORMAT_OPS = [loadPdb, loadMmcif, loadMtz, loadCcp4, loadMsms, loadNamd, loadAmber]
+export const LOAD_FORMAT_OPS = [loadPdb, loadMmcif, loadMtz, loadCcp4, loadMsms, loadPsf, loadAmber]

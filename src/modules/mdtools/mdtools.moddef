@@ -1,7 +1,7 @@
 // -*-Mode: C++;-*-
 //
 
-#include "NAMDCoorReader.qif"
+#include "PsfMolReader.qif"
 #include "GROFileReader.qif"
 #include "AmberPrmtopReader.qif"
 #include "TrajBlock.qif"
@@ -11,13 +11,15 @@
 #include "XtcTrajReader.qif"
 #include "AmberNetCDFReader.qif"
 #include "StructFrameReader.qif"
+#include "AmberRstTrajReader.qif"
+#include "NamdCoorTrajReader.qif"
 
 module mdtools
 {
   init mdtools::init();
   fini mdtools::fini();
 
-  NAMDCoorReader;
+  PsfMolReader;
   GROFileReader;
   AmberPrmtopReader;
   TrajBlock;
@@ -27,5 +29,7 @@ module mdtools
   XtcTrajReader;
   AmberNetCDFReader;
   StructFrameReader;
+  AmberRstTrajReader;
+  NamdCoorTrajReader;
 };
 

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <common.h>
-#include "mdtools/NAMDCoorReader.hpp"
+#include "mdtools/NamdCoorTrajReader.hpp"
 #include "qsys/ObjReader.hpp"
 #include <qlib/LTypes.hpp>
 #include <qlib/StringStream.hpp>
@@ -9,7 +9,7 @@
 #include <limits>
 #include <string>
 
-using mdtools::NAMDCoorReader;
+using mdtools::NamdCoorTrajReader;
 using qsys::ObjReader;
 using qlib::StrInStream;
 
@@ -46,61 +46,61 @@ int sniff(const ObjReader &reader, const std::string &payload)
 }  // namespace
 
 // ----------------------------------------------------------------------
-// NAMDCoorReader::canHandleContent
+// NamdCoorTrajReader::canHandleContent
 // ----------------------------------------------------------------------
 
-TEST(NAMDCoorReaderSniffTest, ValidNativeReturnsYes)
+TEST(NamdCoorTrajReaderSniffTest, ValidNativeReturnsYes)
 {
-    NAMDCoorReader reader;
+    NamdCoorTrajReader reader;
     EXPECT_EQ(sniff(reader, makeHeader(100, 1.0, -2.0, 3.0)),
               ObjReader::CONTENT_YES);
 }
 
-TEST(NAMDCoorReaderSniffTest, ValidSwappedReturnsYes)
+TEST(NamdCoorTrajReaderSniffTest, ValidSwappedReturnsYes)
 {
-    NAMDCoorReader reader;
+    NamdCoorTrajReader reader;
     EXPECT_EQ(sniff(reader, makeHeader(100, 1.0, -2.0, 3.0, /*swap=*/true)),
               ObjReader::CONTENT_YES);
 }
 
-TEST(NAMDCoorReaderSniffTest, EmptyReturnsUnknown)
+TEST(NamdCoorTrajReaderSniffTest, EmptyReturnsUnknown)
 {
-    NAMDCoorReader reader;
+    NamdCoorTrajReader reader;
     EXPECT_EQ(sniff(reader, std::string()), ObjReader::CONTENT_UNKNOWN);
 }
 
-TEST(NAMDCoorReaderSniffTest, ShortReturnsUnknown)
+TEST(NamdCoorTrajReaderSniffTest, ShortReturnsUnknown)
 {
-    NAMDCoorReader reader;
+    NamdCoorTrajReader reader;
     // 16 bytes -- shorter than the 28-byte header we need.
     EXPECT_EQ(sniff(reader, std::string(16, '\0')), ObjReader::CONTENT_UNKNOWN);
 }
 
-TEST(NAMDCoorReaderSniffTest, ZeroNatomsReturnsUnknown)
+TEST(NamdCoorTrajReaderSniffTest, ZeroNatomsReturnsUnknown)
 {
-    NAMDCoorReader reader;
+    NamdCoorTrajReader reader;
     EXPECT_EQ(sniff(reader, makeHeader(0, 0.0, 0.0, 0.0)),
               ObjReader::CONTENT_UNKNOWN);
 }
 
-TEST(NAMDCoorReaderSniffTest, HugeCoordReturnsUnknown)
+TEST(NamdCoorTrajReaderSniffTest, HugeCoordReturnsUnknown)
 {
-    NAMDCoorReader reader;
+    NamdCoorTrajReader reader;
     EXPECT_EQ(sniff(reader, makeHeader(100, 1.0e20, 0.0, 0.0)),
               ObjReader::CONTENT_UNKNOWN);
 }
 
-TEST(NAMDCoorReaderSniffTest, NaNCoordReturnsUnknown)
+TEST(NamdCoorTrajReaderSniffTest, NaNCoordReturnsUnknown)
 {
-    NAMDCoorReader reader;
+    NamdCoorTrajReader reader;
     const qfloat64 nan = std::numeric_limits<qfloat64>::quiet_NaN();
     EXPECT_EQ(sniff(reader, makeHeader(100, nan, 0.0, 0.0)),
               ObjReader::CONTENT_UNKNOWN);
 }
 
-TEST(NAMDCoorReaderSniffTest, Ccp4HeaderReturnsUnknown)
+TEST(NamdCoorTrajReaderSniffTest, Ccp4HeaderReturnsUnknown)
 {
-    NAMDCoorReader reader;
+    NamdCoorTrajReader reader;
     // CCP4/MRC header words NC, NR, NS, MODE, NCSTART... (240^3, mode 2).
     // As NAMD coor: natoms=240 and the xyz doubles are pairs of small
     // int32s, i.e. subnormal values -- not coordinates.
@@ -110,9 +110,9 @@ TEST(NAMDCoorReaderSniffTest, Ccp4HeaderReturnsUnknown)
     EXPECT_EQ(sniff(reader, payload), ObjReader::CONTENT_UNKNOWN);
 }
 
-TEST(NAMDCoorReaderSniffTest, PdbTextReturnsUnknown)
+TEST(NamdCoorTrajReaderSniffTest, PdbTextReturnsUnknown)
 {
-    NAMDCoorReader reader;
+    NamdCoorTrajReader reader;
     // PDB ASCII bytes interpreted as binary -> first int32 may be a
     // plausible value, but the float64 fields land on ASCII bytes and
     // come out as NaN / huge values, so sniff must reject.

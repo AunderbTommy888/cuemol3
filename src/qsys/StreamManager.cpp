@@ -620,6 +620,13 @@ qlib::LByteArrayPtr StreamManager::toXML2(const qlib::LScrObjBasePtr &pSObj,
   return rval;
 }
 
+qlib::LByteArrayPtr StreamManager::toXML2NoSubSrc(const qlib::LScrObjBasePtr &pSObj,
+                                                  const LString &type_ovwr)
+{
+  SceneXMLWriter writer;
+  return writer.toByteArray(pSObj, type_ovwr, true);
+}
+
 qlib::LByteArrayPtr StreamManager::rendGrpToXML(const qlib::LVarArray &objs, const LString &grpname)
 {
   const int nlen = objs.size();

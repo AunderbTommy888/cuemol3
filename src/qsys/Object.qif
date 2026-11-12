@@ -110,6 +110,10 @@ runtime_class Object
   /// Force embedding of this obj (to qsc file; this op cannot be undone)
   void forceEmbed();
 
+  /// Absolute path of the reader sub-stream (e.g. "coord") the object was
+  /// read with, or "" when it has none.
+  string getSubSrcPath(string key);
+
 };
 
 #endif

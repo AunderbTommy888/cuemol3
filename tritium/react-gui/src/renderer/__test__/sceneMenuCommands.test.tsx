@@ -28,6 +28,7 @@ vi.mock('@renderer/dialogs/StreamProgressDialogProvider', () => ({
 }))
 vi.mock('@renderer/dialogs/pdbIdHistory', () => ({ pushHistory: vi.fn() }))
 vi.mock('@renderer/commands/addRecent', () => ({ addRecent: vi.fn() }))
+vi.mock('@renderer/shell/notifications', () => ({ useNotify: () => ({ notify: vi.fn() }) }))
 vi.mock('@renderer/dialogs/NewRendererDialogProvider', () => ({
   useShowNewRendererDialog: () => vi.fn(),
 }))

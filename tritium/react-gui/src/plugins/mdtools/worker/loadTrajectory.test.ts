@@ -134,6 +134,17 @@ describe('loadTrajectory — block-centric assembly', () => {
         expect(calls).toContain('trrtraj.targTrajUID=42')
     })
 
+    it('picks the topology reader by extension; a one-frame block takes no stride', () => {
+        const { ctx, calls } = makeFixture()
+        mdtoolsServices.loadTrajectory(ctx, {
+            sceneId: 1, topologyPath: '/p/s.prmtop', trajPaths: ['/p/s.rst7', '/p/a.dcd'], nevery: 5, renderer,
+        })
+        expect(calls).toContain('amberprm.setPath(/p/s.prmtop)')
+        expect(calls).toContain('amberrst.setPath(/p/s.rst7)')
+        expect(calls).not.toContain('amberrst.nevery=5')
+        expect(calls).toContain('dcdtraj.nevery=5')
+    })
+
     it('applies nevery>1 as a stride on each trajectory reader', () => {
         const { ctx, calls } = makeFixture()
         mdtoolsServices.loadTrajectory(ctx, {

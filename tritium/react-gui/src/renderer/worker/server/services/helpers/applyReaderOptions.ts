@@ -3,7 +3,7 @@
  * @description Apply the file-open dialog's format-specific options onto a
  * freshly created ObjReader, before read(). This is the worker-side
  * equivalent of the UXP `fopen-*opt-page` `ondlgok` handlers
- * (uxp_gui/cuemol2/base/content/fopen-{pdb,mmcif,mtz,ccp4map,msms,namdcoor}opt-page),
+ * (uxp_gui/cuemol2/base/content/fopen-{pdb,mmcif,mtz,ccp4map,msms}opt-page),
  * which assign dialog values directly onto reader properties.
  *
  * Runs in the Web Worker thread (sync C++ wrappers, no await).
@@ -95,13 +95,14 @@ export function applyReaderOptions(
             if (o.vertFilePath) r.vertex_file = o.vertFilePath;
             return;
         }
-        case 'namdcoor': {
-            if (format.kind !== 'namdcoor') return;
+        case 'psf': {
+            if (format.kind !== 'psf') return;
             const o = format.options;
-            // PSF topology is a sub-stream keyed 'topo' (NAMDCoorReader
-            // createInStream("topo")); UXP wires it via setSubPath.
-            if (o.psfFilePath && typeof r.setSubPath === 'function') {
-                r.setSubPath('topo', o.psfFilePath);
+            // NAMD coordinates (.coor) are an optional sub-stream keyed
+            // 'coord' (PsfMolReader createInStream("coord")), the same as
+            // AMBER's. Empty -> topology-only load.
+            if (o.coordFilePath && typeof r.setSubPath === 'function') {
+                r.setSubPath('coord', o.coordFilePath);
             }
             return;
         }

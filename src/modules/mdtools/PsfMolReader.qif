@@ -1,0 +1,21 @@
+// -*-Mode: C++;-*-
+//
+// PSF topology reader scripting interface
+//
+
+#ifndef PSF_MOL_READER_QIF_INCLUDED
+#define PSF_MOL_READER_QIF_INCLUDED
+
+#include <qsys/ObjReader.qif>
+
+runtime_class PsfMolReader extends ObjReader
+{
+  client_hdr "PsfMolReader.hpp";
+  client_name mdtools::PsfMolReader;
+
+  scriptable;
+  smartptr;
+
+};
+
+#endif
