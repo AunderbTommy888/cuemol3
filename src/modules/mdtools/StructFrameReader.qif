@@ -1,0 +1,28 @@
+// -*-Mode: C++;-*-
+//
+// Structure file read as a one-frame trajectory block: scripting interface
+//
+
+#ifndef STRUCT_FRAME_READER_QIF_INCLUDED
+#define STRUCT_FRAME_READER_QIF_INCLUDED
+
+#include <qsys/ObjReader.qif>
+
+runtime_class StructFrameReader extends ObjReader
+{
+  client_hdr "StructFrameReader.hpp";
+  client_name mdtools::StructFrameReader;
+
+  scriptable;
+  smartptr;
+
+  /// Nickname of the molecule reader that parses the structure file
+  /// (e.g. "pdb", "gro"): the reader the trajectory's topology was read with.
+  /// No default: the value is always written to the block's reader options,
+  /// even when set from C++ rather than through the property system.
+  property string struct_type => redirect(getStructType, setStructType);
+
+  property integer targTrajUID => redirect(getTargTrajUID, setTargTrajUID) (nopersist);
+};
+
+#endif

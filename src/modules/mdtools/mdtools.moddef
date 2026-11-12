@@ -10,6 +10,7 @@
 #include "TrrTrajReader.qif"
 #include "XtcTrajReader.qif"
 #include "AmberNetCDFReader.qif"
+#include "StructFrameReader.qif"
 
 module mdtools
 {
@@ -25,5 +26,6 @@ module mdtools
   TrrTrajReader;
   XtcTrajReader;
   AmberNetCDFReader;
+  StructFrameReader;
 };
 

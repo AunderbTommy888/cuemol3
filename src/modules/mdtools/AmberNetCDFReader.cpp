@@ -66,6 +66,13 @@ qsys::ObjectPtr AmberNetCDFReader::createDefaultObj() const
 
 ///////////////////////////////////////////
 
+int AmberNetCDFReader::readFileAtomCount(qlib::InStream &ins)
+{
+    Netcdf3InStream nc(ins);
+    nc.parseHeader();
+    return nc.getNatoms();
+}
+
 bool AmberNetCDFReader::read(qlib::InStream &ins)
 {
     TrajBlockPtr pTB(getTarget<TrajBlock>());

@@ -83,6 +83,19 @@ public:
         return DetachedDecode();
     }
 
+    /// The atom count the file at getPath() declares, read from its header
+    /// only (no frames, no target needed), or -1 when it cannot be read. Lets
+    /// a caller find the molecules a trajectory fits before reading it.
+    int getFileAtomCount();
+
+protected:
+    /// Read the atom count from the header at the start of ins, or -1 when
+    /// this reader has no header to read it from. Throws on a file this
+    /// reader does not accept.
+    virtual int readFileAtomCount(qlib::InStream &ins) { return -1; }
+
+public:
+
 private:
     bool m_bLazyLoad;
 

@@ -171,6 +171,16 @@ qsys::ObjectPtr XtcTrajReader::createDefaultObj() const
 
 ///////////////////////////////////////////
 
+int XtcTrajReader::readFileAtomCount(qlib::InStream &ins)
+{
+    XdrInStream xdr(ins);
+    qfloat32 cell[6];
+    int natom = 0;
+    bool bLong = false;
+    if (!readFrameHeader(xdr, cell, natom, bLong)) return -1;
+    return natom;
+}
+
 bool XtcTrajReader::read(qlib::InStream &ins)
 {
     TrajBlockPtr pTB(getTarget<TrajBlock>());

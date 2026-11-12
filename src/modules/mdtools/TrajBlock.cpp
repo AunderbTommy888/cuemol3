@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <memory>
 #include <mutex>
 
 using namespace mdtools;
@@ -27,6 +28,17 @@ using qlib::LString;
 //
 // setupLazyBlock() and getTargTrajOf() need the complete Trajectory type and
 // are defined in Trajectory.cpp, next to getTargTraj() and scatterCoords().
+
+int TrajBlockReader::getFileAtomCount()
+{
+    try {
+        std::unique_ptr<qlib::InStream> pIn(createInStream());
+        if (!pIn) return -1;
+        return readFileAtomCount(*pIn);
+    } catch (...) {
+        return -1;
+    }
+}
 
 bool TrajBlockReader::canLazyLoad(qlib::InStream &ins) const
 {

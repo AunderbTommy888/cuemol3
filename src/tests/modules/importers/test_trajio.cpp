@@ -18,6 +18,9 @@
 
 #include "qsys/SceneManager.hpp"
 #include "qsys/Scene.hpp"
+#include "qsys/SceneXMLReader.hpp"
+#include "qsys/SceneXMLWriter.hpp"
+#include "mdtools/StructFrameReader.hpp"
 
 #include "molstr/MolAtom.hpp"
 #include "molstr/SelCommand.hpp"
@@ -32,6 +35,7 @@
 #include <climits>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -1240,6 +1244,130 @@ TEST(TrajectoryTest, BlockAppendUndoRedo)
     EXPECT_EQ(pTraj->getBlock(1)->getStartIndex(), 2);
 
     qsys::SceneManager::getInstance()->destroyScene(pScene->getUID());
+}
+
+// An object that joins the scene with a renderer already attached (as one
+// rebuilt from XML does, e.g. a molecule converted to a Trajectory) has no
+// record of that renderer's creation. Undoing and redoing its addition must
+// still bring the renderer back (ObjLoadEditInfo keeps it across the undo).
+TEST(TrajectoryTest, AddedObjectKeepsPreattachedRendererAcrossUndoRedo)
+{
+    qsys::ScenePtr pScene = qsys::SceneManager::getInstance()->createScene();
+    TrajectoryPtr pTraj = makeWaterTrajectory();
+    pTraj->createRenderer("simple");  // not in a scene yet -> not recorded
+    ASSERT_EQ(pTraj->getRendCount(), 1);
+
+    pScene->startUndoTxn("Add object");
+    pScene->addObject(pTraj);
+    pScene->commitUndoTxn();
+
+    pScene->undo(1);
+    EXPECT_TRUE(pScene->getObject(pTraj->getUID()).isnull());
+
+    pScene->redo(1);
+    ASSERT_FALSE(pScene->getObject(pTraj->getUID()).isnull());
+    EXPECT_EQ(pTraj->getRendCount(), 1);
+
+    qsys::SceneManager::getInstance()->destroyScene(pScene->getUID());
+}
+
+// A molecule converted to a Trajectory keeps its own coordinates as frame 0
+// through a "structframe" block that references the structure file. The block
+// is an ordinary file reference, so a .qsc reads it back from the file and
+// frame 0 is the structure again -- not whatever frame was shown when saved.
+TEST(TrajectoryTest, StructFrameBlockKeepsStructureAsFrameZeroAcrossQsc)
+{
+    const std::filesystem::path dir = std::filesystem::temp_directory_path();
+    const std::string groPath = (dir / "structframe_water.gro").string();
+    const std::string dcdPath = (dir / "structframe_water.dcd").string();
+    const std::string qscPath = (dir / "structframe_water.qsc").string();
+    {
+        std::ofstream(groPath, std::ios::binary) << kWaterGRO;
+        const std::string dcd = buildDCD(3, 2);
+        std::ofstream(dcdPath, std::ios::binary).write(dcd.data(), dcd.size());
+    }
+
+    qsys::ScenePtr pScene = qsys::SceneManager::getInstance()->createScene();
+    TrajectoryPtr pTraj(MB_NEW Trajectory());
+    {
+        GROFileReader gro;
+        gro.attach(pTraj);
+        gro.setPath(groPath.c_str());
+        gro.qsys::ObjReader::read();
+        gro.detach();
+    }
+    pScene->addObject(pTraj);
+
+    {
+        mdtools::StructFrameReader sf;
+        sf.setStructType("gro");
+        sf.setTargTrajUID(pTraj->getUID());
+        mdtools::TrajBlockPtr pBlk(sf.createDefaultObj());
+        sf.attach(pBlk);
+        sf.setPath(groPath.c_str());
+        sf.qsys::ObjReader::read();
+        sf.detach();
+        pTraj->append(pBlk);
+    }
+    {
+        // The header alone tells the atom count (how the attach dialog picks
+        // the molecules a dropped file fits), with no target attached.
+        DCDTrajReader peek;
+        peek.setPath(dcdPath.c_str());
+        EXPECT_EQ(peek.getFileAtomCount(), 3);
+
+        DCDTrajReader dr;
+        dr.setTargTrajUID(pTraj->getUID());
+        mdtools::TrajBlockPtr pBlk(dr.createDefaultObj());
+        dr.attach(pBlk);
+        dr.setPath(dcdPath.c_str());
+        dr.qsys::ObjReader::read();
+        dr.detach();
+        pTraj->append(pBlk);
+    }
+    ASSERT_EQ(pTraj->getFrameSize(), 3);
+
+    // Frame 0 is the GRO structure (nm -> Angstrom by the GRO reader).
+    auto firstAtomPos = [](const TrajectoryPtr &p) { return p->beginAtom()->second->getPos(); };
+    pTraj->setFrame(0);
+    EXPECT_NEAR(firstAtomPos(pTraj).x(), 1.0, 1e-4);
+    EXPECT_NEAR(firstAtomPos(pTraj).z(), 3.0, 1e-4);
+
+    // Save while showing a DCD frame, then read the scene back.
+    pTraj->setFrame(2);
+    {
+        qsys::SceneXMLWriter w;
+        w.setPath(qscPath.c_str());
+        w.attach(pScene);
+        w.write();
+        w.detach();
+    }
+    qsys::ScenePtr pScene2 = qsys::SceneManager::getInstance()->createScene();
+    {
+        qsys::SceneXMLReader r;
+        r.setPath(qscPath.c_str());
+        r.attach(pScene2);
+        try {
+            r.read();
+        } catch (const qlib::LException &e) {
+            FAIL() << "reading the qsc threw: " << e.getMsg().c_str();
+        }
+        r.detach();
+        EXPECT_TRUE(r.getErrMsg().isEmpty()) << r.getErrMsg().c_str();
+    }
+    ASSERT_EQ(pScene2->getObjectCount(), 1);
+    TrajectoryPtr pTraj2(pScene2->beginObj()->second, qlib::no_throw_tag());
+    ASSERT_FALSE(pTraj2.isnull());
+    EXPECT_EQ(pTraj2->getFrameSize(), 3);
+    pTraj2->setFrame(0);
+    EXPECT_NEAR(firstAtomPos(pTraj2).x(), 1.0, 1e-4);
+    EXPECT_NEAR(firstAtomPos(pTraj2).z(), 3.0, 1e-4);
+
+    qsys::SceneManager::getInstance()->destroyScene(pScene->getUID());
+    qsys::SceneManager::getInstance()->destroyScene(pScene2->getUID());
+    std::remove(groPath.c_str());
+    std::remove(dcdPath.c_str());
+    std::remove(qscPath.c_str());
 }
 
 // Remove is undoable: undo re-inserts the removed block at its index, redo

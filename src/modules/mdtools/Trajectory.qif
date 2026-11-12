@@ -36,6 +36,10 @@ runtime_class Trajectory extends AnimMol
 
   void removeBlock(integer index);
 
+  /// Atom count of the topology (every atom, also those a load selection
+  /// left out): what a trajectory file appended to this one must declare.
+  integer getAllAtomSize();
+
   void moveBlock(integer from, integer to);
 
   // Keep only the selected atoms (call after the topology, before append).

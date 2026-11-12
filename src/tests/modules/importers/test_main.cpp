@@ -33,6 +33,11 @@ extern bool init();
 extern void fini();
 }
 
+namespace mdtools {
+extern bool init();
+extern void fini();
+}
+
 class ImportersEnvironment : public ::testing::Environment {
 public:
     void SetUp() override {
@@ -44,8 +49,13 @@ public:
         symm::init();
         surface::init();
         importers::init();
+        // Registers the MD readers (gro, dcdtraj, structframe, ...) with the
+        // stream manager and their script classes, which a .qsc round trip of
+        // a Trajectory needs.
+        mdtools::init();
     }
     void TearDown() override {
+        mdtools::fini();
         importers::fini();
         surface::fini();
         symm::fini();
