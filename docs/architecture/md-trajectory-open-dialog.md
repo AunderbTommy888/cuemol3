@@ -69,10 +69,13 @@ stream read は非公開)、(c) `Trajectory::setup()` は非公開だが最初�
 
 この案内文のためだけに core が plugin id `'mdtools'` を直接参照している。
 tritium/CLAUDE.md の「core で plugin id を特別扱いしない」への意図的な例外で、
-`useSceneCommands.ts` の `MDTOOLS_PLUGIN_ID` 1 箇所に閉じている。**未実装**の
-一般解は `contributes.fileOpeners` 寄与点を設け、plugin 側が拡張子を引き取って
-落とされたファイルで本ダイアログを pre-fill する形 (`.gro` を topology 欄、残りを
-trajectory 欄に入れて開く)。そうなればこの定数は消える。
+`useSceneCommands.ts` の `MDTOOLS_PLUGIN_ID` 1 箇所に閉じている。
+
+plugin が有効なときは、落とした trajectory はここまで来ない。plugin が
+`contributes.fileOpeners` で拡張子を引き取り、付け先の分子を選ぶダイアログを出す
+([md-trajectory-attach-on-drop.md](md-trajectory-attach-on-drop.md))。上の案内は、
+plugin が無効なときに drop されたものと、ファイル選択以外の経路 (MRU など) で
+来たものに出る。
 
 ## フロー: 2 段 (deferred load)
 
@@ -197,18 +200,19 @@ core 側 (汎用の受け皿として残るもの):
 - **topology は gro のみ**。trajectory は dcd/xtc/trr。
   - `prmtop` は同一機構 (topology reader を Trajectory に attach) で動作する見込みだが未検証。
   - `psf` は専用 `PsfTrajReader` が未実装 (Phase 2 で保留) のため未対応。
-  - AMBER NetCDF (`.nc`) reader は develop 未マージ (`feature/md-trajectory-amber-netcdf`)。
+  - AMBER NetCDF (`.nc`, `ambnetcdftraj`) も trajectory として選べる。
 - **再生 UI (frame スライダー / transport) は本作業のスコープ外**。ロード済み `Trajectory` は
   `frame` / `nframe` / `dynframe` / `frame_aver_size` を公開しており、既存 `AnimationPanel` /
   `AnimTransport` への配線は別タスク (Phase 2d/2e 相当)。
 - **MRU 非対応**。topology + trajectory のセットを単一パスで表現できないため、`addRecent` は呼ばない。
 - **plugin が無効だと File メニューに項目が出ない** (既定オフ)。worker service は
   plugin の有効/無効に関わらず登録されたままだが、呼ぶ UI が無いので到達しない。
-- **trajectory file を落としても本ダイアログは開かない**。案内文が出るだけで、
-  `.gro` と `.xtc` を一緒に落とした場合も `.gro` が単独の `MolCoord` として開き、
-  `.xtc` には案内が出る。pre-fill 誘導は未実装 (上記「通常の Open / drag & drop
-  から trajectory file が来たとき」参照)。
-- per-file 間引き・frame averaging (`frame_aver_size`)・追加時の原子数事前検証は未実装。
+- **trajectory file を落としても本ダイアログは開かない**。plugin が有効なら、付け先の
+  分子を選ぶ別のダイアログが出る ([md-trajectory-attach-on-drop.md](md-trajectory-attach-on-drop.md))。
+  `.gro` と `.xtc` を一緒に落とすと、`.gro` を開いた後でその分子に `.xtc` を付ける。
+- frame averaging (`frame_aver_size`) は Trajectory のインスペクタで設定する
+  ([md-trajectory-attach-on-drop.md](md-trajectory-attach-on-drop.md#trajectory-のインスペクタ))。
+- per-file 間引きは未実装。
 
 ## 関連
 

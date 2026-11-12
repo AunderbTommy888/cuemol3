@@ -98,6 +98,7 @@ interface PluginContributes {
   bottomTabs?: PluginBottomTab[]
   statusBar?: PluginStatusBarItem[]
   settings?: PluginSettingDecl[]
+  fileOpeners?: PluginFileOpener[]
   extensions?: Record<string, readonly unknown[]>
 }
 ```
@@ -313,6 +314,40 @@ type BottomTabComponent = React.ComponentType<{
 
 起動時は左端のタブが前面に出ます (`console` plugin が有効なら、`before: 'output'` で左端にある Console)。
 ユーザーが選んだタブがあればそれを保ち、無効化でそのタブが消えたときは左端のタブに戻ります。
+
+plugin が自分のタブを前に出すには `revealBottomTab(tabId)` (`plugin-host/api`) を呼びます。ユーザーが選んだのと同じ
+扱いになり、無いタブの id は無視されます。bottom panel を畳んでいるときに開くことまではしません
+(例: `mdtools` は trajectory を付けた後に `trajectory` タブを出す)。
+
+---
+
+### fileOpeners
+
+window に落とされたファイルのうち、宣言した拡張子のものを plugin の command に渡します。
+
+```ts
+interface PluginFileOpener {
+  id: string
+  extensions: string[]   // 小文字、ドット付き ('.xtc')
+  command: string        // contributes.commands で宣言した command
+}
+
+// command が受け取る引数
+interface FileOpenerArgs {
+  paths: string[]                 // 落とした順
+  sceneId: number | undefined     // 同じ drop で開いたファイルの scene、無ければ active scene
+}
+```
+
+- drop の batch は、引き取ったファイルを普通の開く処理 (`OpenObjByPath`) から外し、残りを開き終えてから opener ごとに
+  command を await します。topology と一緒に落とせば、開いたばかりの分子に付け加えられます。
+- `sceneId` は、ドロップ先の設定が「新しい scene」でも active scene です。opener は scene にあるものに付け加えるもので、
+  新しい空の scene では使えないためです。
+- batch は command の完了まで次の drop を受け付けないので、command はダイアログと処理が終わるまで settle しない
+  Promise を返します。
+- 対象は drop (と OS からの open) だけで、File > Open のファイル選択は通りません。
+- 例: `mdtools` が `.xtc` / `.dcd` / `.trr` / `.nc` を `plugin.mdtools.attachTrajectory` に割り当てる
+  ([md-trajectory-attach-on-drop.md](../md-trajectory-attach-on-drop.md))。
 
 ---
 
