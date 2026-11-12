@@ -32,13 +32,14 @@ import { services } from '@renderer/worker/server/services/file/file.service'
 import { setupRenderer } from '@renderer/worker/server/services/rend/setupRenderer'
 import { pickReaderName } from '@renderer/worker/server/services/helpers/pickReaderName'
 import { applyReaderOptions } from '@renderer/worker/server/services/helpers/applyReaderOptions'
+import { hasNoCoords } from '@renderer/worker/server/services/helpers/hasNoCoords'
 
 const { loadObject } = services
 
-function makeFixture(opts: { readThrows?: boolean } = {}) {
+function makeFixture(opts: { readThrows?: boolean; obj?: Record<string, unknown> } = {}) {
     const calls: string[] = []
 
-    const obj: Record<string, unknown> = { __obj: true }
+    const obj: Record<string, unknown> = { __obj: true, ...opts.obj }
     Object.defineProperty(obj, 'name', {
         set(v: string) { calls.push(`name=${v}`) },
         configurable: true,
@@ -117,6 +118,30 @@ describe('loadObject.service — reader-based path', () => {
         ])
         expect(applyReaderOptions).toHaveBeenCalledWith(expect.anything(), 'pdb', unknownFormat)
         expect(setupRenderer).toHaveBeenCalledWith(ctx, obj, baseRendererOpts, true)
+    })
+
+    // A topology-only file (prmtop / PSF without coordinates) puts every atom
+    // at the origin: the view is not fitted to that point, and the result
+    // says so for the caller to tell the user.
+    it('a molecule without coordinates: no view fit, noCoords in the result', () => {
+        const origin = { x: 0, y: 0, z: 0 }
+        const mol = {
+            uid: 7,
+            getAtomSize: () => 3,
+            getBoundBoxMin: () => origin,
+            getBoundBoxMax: () => origin,
+        }
+        const { ctx, obj } = makeFixture({ obj: mol })
+        const result = loadObject(ctx, {
+            filePath: '/data/sys.prmtop',
+            sceneId: 1,
+            options: { format: unknownFormat, renderer: { ...baseRendererOpts, centerView: true } } as any,
+            contentFirst: false,
+        })
+        expect(result).toEqual({ ok: true, objId: 7, noCoords: { natoms: 3 } })
+        expect(setupRenderer).toHaveBeenCalledWith(ctx, obj, expect.objectContaining({ centerView: false }), true)
+        // One atom at the origin is a real position.
+        expect(hasNoCoords({ ...mol, getAtomSize: () => 1 })).toBe(false)
     })
 
     it('.gz path: sets reader.compress = "gzip"', () => {

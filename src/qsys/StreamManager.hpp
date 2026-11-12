@@ -203,6 +203,12 @@ public:
     qlib::LByteArrayPtr toXML2(const qlib::LScrObjBasePtr &pObj,
                                const LString &type_ovwr);
 
+    /// toXML2() without the object's reader sub-streams (ropts/subsrc): the
+    /// object read back from it reads its main source only (e.g. a prmtop
+    /// opened with a coord file becomes a topology-only Trajectory).
+    qlib::LByteArrayPtr toXML2NoSubSrc(const qlib::LScrObjBasePtr &pObj,
+                                       const LString &type_ovwr);
+
     /// Convert renderers (in array) to XML byte stream
     /// @param objs renderer ptrs stored in variant array
     /// @return XML byte stream

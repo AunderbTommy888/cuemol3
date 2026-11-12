@@ -6,10 +6,18 @@
  * Runs in the Web Worker thread; wrappers are sync. A Trajectory target gets
  * the files appended as blocks. A plain molecule is first converted into a
  * Trajectory the way `convertToMorphMol` converts into a MorphMol (XML round
- * trip with the type overwritten, then the objects swapped), and keeps its own
- * coordinates as frame 0 through a `structframe` block that references its
- * structure file. Everything is one undo txn, so a failure (most often an atom
- * count that does not match) leaves the molecule as it was.
+ * trip with the type overwritten, then the objects swapped). Its own
+ * coordinates stay as frame 0:
+ *   - opened as topology + coordinate file (prmtop + rst7, PSF + coor: the
+ *     topology reader's "coord" sub-stream): the topology is read back without
+ *     the sub-stream and the coordinate file becomes a one-frame block, so the
+ *     Trajectory holds the same blocks as one assembled from the files;
+ *   - a molecule without coordinates (a topology-only file): no frame-0 block,
+ *     it starts at the first dropped file, and every view is fitted to it
+ *     after the attach (it has just become visible);
+ *   - any other molecule: a `structframe` block referencing its structure file.
+ * Everything is one undo txn, so a failure (most often an atom count that does
+ * not match) leaves the molecule as it was.
  *
  * Molecules that cannot be converted are refused, both in the target list
  * (with the reason) and here, for callers other than the dialog:
@@ -28,7 +36,17 @@ import { safeRead } from '@renderer/worker/server/services/helpers/safeRead';
 import { isMoleculeClass } from '@renderer/worker/shared/objectClasses';
 import { listSceneObjects } from '@renderer/worker/server/services/scene/listSceneObjects';
 import { fail, ok, type Result } from '@renderer/worker/shared/result';
-import { appendStructFrame, appendTrajFile, fileAtomCount, unsupportedTrajFormat, type TrajAppendTarget } from './trajBlocks';
+import { hasNoCoords } from '@renderer/worker/server/services/helpers/hasNoCoords';
+import { focusAllViewsOnNode } from '@renderer/worker/server/services/sceneTree/sceneOps';
+import {
+    appendCoordFile,
+    appendStructFrame,
+    appendTrajFile,
+    fileAtomCount,
+    unsupportedTrajFormat,
+    type TrajAppendTarget,
+} from './trajBlocks';
+import { COORD_BLOCK_READER_BY_TOPOLOGY } from '../trajFormats';
 
 const log = console;
 
@@ -46,10 +64,13 @@ interface MolHandle {
     getAtomSize(): number;
     /** Trajectory only: the topology's full atom count. */
     getAllAtomSize?(): number;
+    /** Absolute path of the reader sub-stream `key`, '' when none. */
+    getSubSrcPath(key: string): string;
 }
 
 interface SceneHandle {
     uid: number;
+    view_uids: string;
     getObject(uid: number): unknown;
     destroyObject(uid: number): boolean;
     addObject(obj: unknown): void;
@@ -62,6 +83,8 @@ export interface AttachTarget {
     /** C++ class name; `Trajectory` gets blocks appended, others are converted. */
     className: string;
     natoms: number;
+    /** Read without coordinates (a topology-only file); starts at the first dropped file. */
+    noCoords?: boolean;
     /** Why it cannot be chosen; absent when it can. */
     reason?: string;
 }
@@ -112,6 +135,18 @@ function localSourceOf(mol: MolHandle): string {
 }
 
 /**
+ * The coordinate file `mol` was opened with (its topology reader's "coord"
+ * sub-stream) and the block reader that reads it, or undefined when it has
+ * none (or its topology reader has no block reader for it).
+ */
+function coordFileOf(mol: MolHandle): { path: string; reader: string } | undefined {
+    const reader = COORD_BLOCK_READER_BY_TOPOLOGY[safeRead(() => mol.srctype) ?? ''];
+    if (!reader) return undefined;
+    const path = safeRead(() => mol.getSubSrcPath('coord')) ?? '';
+    return path ? { path, reader } : undefined;
+}
+
+/**
  * Why `mol` (a plain molecule, not a Trajectory) cannot be converted, or ''
  * when it can.
  */
@@ -123,6 +158,8 @@ function conversionRefusal(mol: MolHandle): string {
     if (!(safeRead(() => mol.srctype) ?? '') || !localSourceOf(mol)) {
         return 'has no original file to read its coordinates from';
     }
+    const coord = coordFileOf(mol);
+    if (coord && !fs.existsSync(coord.path)) return `has lost its coordinate file (${coord.path})`;
     return '';
 }
 
@@ -180,6 +217,7 @@ export function listAttachTargets(
             name: safeRead(() => mol.name) ?? '',
             className,
             natoms,
+            ...(hasNoCoords(mol) ? { noCoords: true } : {}),
             ...(reason ? { reason } : {}),
         });
     }
@@ -188,15 +226,26 @@ export function listAttachTargets(
 
 /**
  * Convert `mol` into a Trajectory in place (same name and scene-tree
- * position) and append its structure file as frame 0. Runs inside the
- * caller's txn.
+ * position) and append its own coordinates as frame 0 (see the file header).
+ * Runs inside the caller's txn.
  */
-function convertToTrajectory(ctx: WorkerContext, scene: SceneHandle, mol: MolHandle): TrajAppendTarget {
+function convertToTrajectory(
+    ctx: WorkerContext,
+    scene: SceneHandle,
+    mol: MolHandle,
+    noCoords: boolean,
+): TrajAppendTarget {
     const name = mol.name;
     const uiOrder = mol.ui_order;
     const srcPath = localSourceOf(mol);
     const srcType = mol.srctype;
-    const xml = ctx.strMgr.toXML2(mol as unknown as Parameters<typeof ctx.strMgr.toXML2>[0], 'Trajectory');
+    const coord = coordFileOf(mol);
+    type MolArg = Parameters<typeof ctx.strMgr.toXML2>[0];
+    // With a coordinate file, the topology is read back from its main file
+    // alone: the coordinates move to their own block.
+    const xml = coord
+        ? ctx.strMgr.toXML2NoSubSrc(mol as unknown as MolArg, 'Trajectory')
+        : ctx.strMgr.toXML2(mol as unknown as MolArg, 'Trajectory');
     const traj = ctx.strMgr.fromXML(xml, scene.uid) as unknown as (TrajAppendTarget & MolHandle) | null;
     if (!traj) throw new Error('conversion to a trajectory failed');
     traj.name = name;
@@ -205,7 +254,8 @@ function convertToTrajectory(ctx: WorkerContext, scene: SceneHandle, mol: MolHan
     // ui_order is not persisted, so the round trip gave the new object one of
     // its own (the end of the scene tree); put it back where the molecule was.
     traj.ui_order = uiOrder;
-    appendStructFrame(ctx, traj, srcPath, srcType);
+    if (coord) appendCoordFile(ctx, traj, coord.path, coord.reader);
+    else if (!noCoords) appendStructFrame(ctx, traj, srcPath, srcType);
     return traj;
 }
 
@@ -232,14 +282,19 @@ export function attachTrajectory(
         if (reason) return fail(`"${mol.name}" ${reason}, so a trajectory cannot be attached`, 'unsupported');
     }
     const nevery = args.nevery && args.nevery > 1 ? args.nevery : 1;
+    const noCoords = hasNoCoords(mol);
 
     log.info(`[worker] attaching ${args.trajPaths.length} trajectory file(s) to ${mol.name}`);
     // A throw (atom-count mismatch, missing reader) rolls the conversion and
     // every block back and comes out as a Fail.
-    return undoTxnResult(scene as unknown as Parameters<typeof undoTxnResult>[0], 'Attach MD trajectory', () => {
-        const traj = isTraj ? (mol as unknown as TrajAppendTarget) : convertToTrajectory(ctx, scene, mol);
+    const res = undoTxnResult(scene as unknown as Parameters<typeof undoTxnResult>[0], 'Attach MD trajectory', () => {
+        const traj = isTraj ? (mol as unknown as TrajAppendTarget) : convertToTrajectory(ctx, scene, mol, noCoords);
         for (const p of args.trajPaths) appendTrajFile(ctx, traj, p, nevery);
         const nframe = safeRead(() => (traj as unknown as { nframe: number }).nframe) ?? 0;
         return ok({ objId: traj.uid, nframe });
     });
+    // It had nothing to show until now (all atoms at the origin): bring it
+    // into every view. Not part of the undo step, like any view change.
+    if (res.ok && noCoords) focusAllViewsOnNode(ctx, scene, res.objId, 'object');
+    return res;
 }

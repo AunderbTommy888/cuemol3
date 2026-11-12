@@ -6,8 +6,7 @@
  * (`worker/shared/fileOpenDefaults.ts`), because a service that opens a file
  * without a dialog needs exactly the same ones; they are re-exported here so
  * dialog code keeps taking everything from one place. What stays is what only
- * the dialog means: the "(modified)" comparison, the mol-format fallback, and
- * the derived PSF path.
+ * the dialog means: the "(modified)" comparison and the mol-format fallback.
  */
 
 // The option types themselves live on the worker boundary (nine services read
@@ -19,7 +18,7 @@ export type {
     MapTypeChoice,
     Ccp4MapOptions,
     MsmsOptions,
-    NamdCoorOptions,
+    PsfOptions,
     AmberPrmtopOptions,
     RendererOptions,
     PresetTypeEntry,
@@ -33,7 +32,7 @@ import type {
     MtzOptions,
     Ccp4MapOptions,
     MsmsOptions,
-    NamdCoorOptions,
+    PsfOptions,
     AmberPrmtopOptions,
     FormatOptions,
 } from '@renderer/worker/shared/fileOpenTypes';
@@ -46,23 +45,13 @@ export {
     getDefaultMtzOptions,
     getDefaultCcp4MapOptions,
     getDefaultMsmsOptions,
-    getDefaultNamdCoorOptions,
+    getDefaultPsfOptions,
     getDefaultAmberPrmtopOptions,
     getDefaultRendererOptions,
     mapReaderDefaultsToFormatOptions,
     buildDefaultFormatOptions,
 } from '@renderer/worker/shared/fileOpenDefaults';
 
-
-/**
- * Default PSF topology path for a NAMD coordinate file: the coordinate path
- * with its final extension replaced by `.psf`. Mirrors UXP fopen-namdcooropt
- * (`util.splitFileName(path, "*.coor") + ".psf"`).
- */
-export function deriveDefaultPsfPath(coorPath: string): string {
-  if (!coorPath) return '';
-  return coorPath.replace(/\.[^.\\/]+$/, '') + '.psf';
-}
 
 // Returns true for formats that produce MolCoord-like objects, where atom
 // selection is meaningful. False for scalar/surface objects (mtz, ccp4map,
@@ -136,8 +125,8 @@ export function isFormatOptionsModified(options: FormatOptions, defaults: Format
     }
     case 'msms':
       return options.options.vertFilePath !== (defaults.options as MsmsOptions).vertFilePath;
-    case 'namdcoor':
-      return options.options.psfFilePath !== (defaults.options as NamdCoorOptions).psfFilePath;
+    case 'psf':
+      return options.options.coordFilePath !== (defaults.options as PsfOptions).coordFilePath;
     case 'amberprm':
       return options.options.coordFilePath !== (defaults.options as AmberPrmtopOptions).coordFilePath;
     default:

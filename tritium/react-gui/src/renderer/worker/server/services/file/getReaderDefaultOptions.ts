@@ -67,7 +67,7 @@ export function getReaderDefaultOptions(
 ): GetReaderDefaultOptionsResult {
     const props = PROPS_BY_NICKNAME[args.nickname];
     if (!props) {
-        // Reader without dialog-exposed value options (msms / namdcoor / ...).
+        // Reader without dialog-exposed value options (msms / psf / ...).
         return { ok: true, values: {} };
     }
 

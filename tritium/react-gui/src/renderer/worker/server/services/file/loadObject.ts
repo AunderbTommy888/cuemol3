@@ -31,6 +31,7 @@ import { applyReaderOptions } from '@renderer/worker/server/services/helpers/app
 import { applyMapTypeChoice, applyMapCenterPolicy } from '@renderer/worker/server/services/map/emDefaults';
 import { fail, failFrom, ok, type Result } from '@renderer/worker/shared/result';
 import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneResolver';
+import { hasNoCoords } from '@renderer/worker/server/services/helpers/hasNoCoords';
 
 const log = console;
 
@@ -59,8 +60,12 @@ export interface LoadObjectArgs {
     readerName?: string;
 }
 
-/** `{ objId }` of the new object on success. */
-export type LoadObjectResult = Result<{ objId: number }>;
+/**
+ * `{ objId }` of the new object on success. `noCoords` (with the atom count)
+ * when it is a molecule read without coordinates (a topology-only file): the
+ * view was left alone, and the caller tells the user how to get coordinates.
+ */
+export type LoadObjectResult = Result<{ objId: number; noCoords?: { natoms: number } }>;
 
 export function loadObject(ctx: WorkerContext, args: LoadObjectArgs): LoadObjectResult {
     log.info(`[worker] loading object file: ${args.filePath} (contentFirst=${args.contentFirst})`);
@@ -120,15 +125,26 @@ export function loadObject(ctx: WorkerContext, args: LoadObjectArgs): LoadObject
         applyMapTypeChoice(obj, args.options.format);
         (scene as unknown as { addObject: (o: CObject) => void }).addObject(obj);
 
+        // A molecule without coordinates is one point at the origin: fitting
+        // the view to it would only throw the view off.
+        const noCoords = hasNoCoords(obj);
+        const rendOpts = noCoords ? { ...args.options.renderer, centerView: false } : args.options.renderer;
+        if (noCoords) log.info(`[worker] loadObject: ${args.filePath} has no coordinates; view left as is`);
+
         // The map kind also picks the renderer's default style (and with it
         // the cryo-EM contour level), see setupRenderer.
-        const rend = setupRenderer(ctx, obj, args.options.renderer, true);
+        const rend = setupRenderer(ctx, obj, rendOpts, true);
         if (rend) {
             // What the view does for a volume object (UXP's scalar-object
             // deck). Runs here rather than in setupRenderer because `auto`
             // reads the map kind, which only exists once the reader has run.
             applyMapCenterPolicy(ctx, scene, obj, rend, args.options.renderer.mapCenterPolicy);
         }
-        return ok({ objId: (obj as unknown as { uid: number }).uid });
+        const objId = (obj as unknown as { uid: number }).uid;
+        if (noCoords) {
+            const natoms = (obj as unknown as { getAtomSize(): number }).getAtomSize();
+            return ok({ objId, noCoords: { natoms } });
+        }
+        return ok({ objId });
     });
 }

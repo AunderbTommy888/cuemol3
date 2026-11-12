@@ -13,24 +13,10 @@ import { FieldSection, ButtonRow, FormButton } from '@renderer/h3-kit/form'
 import { Listbox, ListRow } from '@renderer/h3-kit/list'
 import { IPC } from '@shared/ipcChannels'
 import { setLastTrajPath } from './trajPathHistory'
-
-const TRAJ_FILTERS = [
-  { name: 'MD trajectory (*.dcd, *.xtc, *.trr, *.nc)', extensions: ['dcd', 'xtc', 'trr', 'nc'] },
-  { name: 'All Files', extensions: ['*'] },
-]
-
-/** Trajectory extension -> short format badge label. */
-const TRAJ_BADGE: Record<string, string> = { dcd: 'DCD', xtc: 'XTC', trr: 'TRR', nc: 'NetCDF' }
+import { TRAJ_FILTERS, trajBadge } from '../trajFormats'
 
 function basename(p: string): string {
   return p.split(/[\\/]/).pop() ?? p
-}
-
-function trajBadge(p: string): string {
-  const base = basename(p)
-  const dot = base.lastIndexOf('.')
-  const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : ''
-  return TRAJ_BADGE[ext] ?? ext.toUpperCase()
 }
 
 interface Props {

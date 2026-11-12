@@ -36,6 +36,7 @@ import { useTrajectory } from './useTrajectory';
 import { useTrajPlayback } from './useTrajPlayback';
 import { TrajTransport } from './track/TrajTransport';
 import { TrajTrack } from './track/TrajTrack';
+import { TRAJ_FILTERS } from '../trajFormats';
 import {
     DEFAULT_PX_PER_FRAME,
     clampPxPerFrame,
@@ -50,12 +51,6 @@ const ZOOM_FACTOR = 1.4;
  * name does not end in "Mol", so `objectFilters.molCoord` does not cover it).
  */
 const isTrajectory: ObjectFilter = (it) => it.className === 'Trajectory';
-
-/** Native file-picker filters for adding trajectory blocks. */
-const TRAJ_FILTERS = [
-    { name: 'MD trajectory (*.dcd, *.xtc, *.trr)', extensions: ['dcd', 'xtc', 'trr'] },
-    { name: 'All Files', extensions: ['*'] },
-];
 
 /**
  * MD trajectory timeline panel. Selects a target Trajectory object, draws its

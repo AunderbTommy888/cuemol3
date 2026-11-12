@@ -7,6 +7,7 @@
  */
 
 import type { PluginCommandId, PluginManifest } from '@renderer/plugin-host/api'
+import { TRAJ_DOT_EXTS } from './trajFormats'
 
 /** Opens the Open MD Trajectory dialog and runs the load the user confirms. */
 export const OPEN_MD_TRAJ_COMMAND: PluginCommandId = 'plugin.mdtools.openTrajDialog'
@@ -35,9 +36,9 @@ export const mdtoolsManifest: PluginManifest = {
       { id: OPEN_MD_TRAJ_COMMAND, title: 'Open MD Trajectory...' },
       { id: ATTACH_TRAJ_COMMAND, title: 'Attach Trajectory' },
     ],
-    // A dropped trajectory file goes onto a molecule already in the scene.
+    // A dropped coordinate / trajectory file goes onto a molecule already in the scene.
     fileOpeners: [
-      { id: 'trajectory', extensions: ['.xtc', '.dcd', '.trr', '.nc'], command: ATTACH_TRAJ_COMMAND },
+      { id: 'trajectory', extensions: TRAJ_DOT_EXTS, command: ATTACH_TRAJ_COMMAND },
     ],
     menus: [
       {

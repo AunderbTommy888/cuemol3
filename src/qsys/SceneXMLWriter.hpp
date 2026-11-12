@@ -111,9 +111,12 @@ namespace qsys {
     }
 
     /// Convert object (rend, obj, cam) to bytearray (with type overwrite option)
-    /// type overwrite option is valid for renderers
+    /// type overwrite option is valid for renderers and objects.
+    /// bDropSubSrc leaves an object's reader sub-streams (ropts/subsrc) out, so
+    /// the object read back reads its main source only.
     qlib::LByteArrayPtr toByteArray(const qlib::LScrSp<qlib::LScrObjBase> &pSObj,
-                                    const LString &type_ovwr);
+                                    const LString &type_ovwr,
+                                    bool bDropSubSrc = false);
 
     /// Convert multiple renderers to bytearray (in qsc format)
     /// @param pArray list containing renderer ptrs

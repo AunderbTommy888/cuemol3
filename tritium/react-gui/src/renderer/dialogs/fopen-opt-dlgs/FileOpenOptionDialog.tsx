@@ -35,11 +35,9 @@ import {
   isFormatOptionsModified,
   mapReaderDefaultsToFormatOptions,
   isMolFormat,
-  deriveDefaultPsfPath,
 } from './types';
 import { useRendererOptions } from './useRendererOptions';
 import { computeMtzDefaults } from './mtzColumns';
-import { getLastPsfPath, setLastPsfPath } from './psfPathHistory';
 import { getLastCoordPath, setLastCoordPath } from './coordPathHistory';
 import type { GetMtzColumnInfoResult } from '@renderer/worker/server/services/map/map.service';
 
@@ -48,12 +46,12 @@ import { MtzOptionsPane } from '@renderer/dialogs/fopen-opt-dlgs/panes/MtzOption
 import { Ccp4MapOptionsPane } from '@renderer/dialogs/fopen-opt-dlgs/panes/Ccp4MapOptionsPane';
 import type { MapHeaderInfo } from '@renderer/worker/server/services/map/map.service';
 import { MsmsOptionsPane } from '@renderer/dialogs/fopen-opt-dlgs/panes/MsmsOptionsPane';
-import { NamdCoorOptionsPane } from '@renderer/dialogs/fopen-opt-dlgs/panes/NamdCoorOptionsPane';
+import { PsfOptionsPane } from '@renderer/dialogs/fopen-opt-dlgs/panes/PsfOptionsPane';
 import { AmberPrmtopOptionsPane } from '@renderer/dialogs/fopen-opt-dlgs/panes/AmberPrmtopOptionsPane';
 import { RendererOptionsPane } from '@renderer/dialogs/fopen-opt-dlgs/panes/RendererOptionsPane';
 import { isMolObjectClass, isScalarMapClass } from '@renderer/worker/shared/objectClasses';
 
-import type { PdbOptions, MtzOptions, Ccp4MapOptions, MsmsOptions, NamdCoorOptions, AmberPrmtopOptions, PresetTypeEntry } from './types';
+import type { PdbOptions, MtzOptions, Ccp4MapOptions, MsmsOptions, PsfOptions, AmberPrmtopOptions, PresetTypeEntry } from './types';
 
 // ---- helpers ----
 
@@ -64,7 +62,7 @@ function formatLabel(kind: string): string {
     case 'mtz': return 'MTZ';
     case 'ccp4map': return 'CCP4/MRC Map';
     case 'msms': return 'MSMS Surface';
-    case 'namdcoor': return 'NAMD Coordinate';
+    case 'psf': return 'PSF topology';
     case 'amberprm': return 'AMBER prmtop';
     default: return '';
   }
@@ -266,25 +264,11 @@ export const FileOpenOptionDialog: React.FC<FileOpenOptionDialogProps> = ({
     })();
   }, [cm, visible, formatKind, readerName]);
 
-  // Effect: when a NAMD coordinate file is shown, seed the PSF topology path
-  // from history (last-used) or, failing that, the coordinate path with a
-  // `.psf` extension (UXP fopen-namdcooropt onInit). Only seeds while the
-  // path is still empty so it never clobbers a user edit.
-  useEffect(() => {
-    if (!visible || formatKind !== 'namdcoor') return;
-    const seeded = getLastPsfPath() ?? deriveDefaultPsfPath(filePath);
-    if (!seeded) return;
-    setFormatOptions((prev) =>
-      prev.kind === 'namdcoor' && prev.options.psfFilePath === ''
-        ? { kind: 'namdcoor', options: { psfFilePath: seeded } }
-        : prev,
-    );
-  }, [visible, filePath, formatKind]);
-
   // Effect: when an AMBER prmtop file is shown, seed the coordinate path from
-  // history (last-used). Unlike NAMD's required PSF, the coord sub-stream is
-  // optional and its extension (rst7 / inpcrd / restrt) is ambiguous, so there
-  // is no path-derivation fallback -- an empty path means topology-only.
+  // history (last-used). The coord sub-stream is optional and its extension
+  // (rst7 / inpcrd / restrt) is ambiguous, so there is no path-derivation
+  // fallback -- an empty path means topology-only. (A PSF's .coor is not
+  // seeded at all: empty is the topology-only load it is mostly opened for.)
   useEffect(() => {
     if (!visible || formatKind !== 'amberprm') return;
     const seeded = getLastCoordPath();
@@ -300,11 +284,6 @@ export const FileOpenOptionDialog: React.FC<FileOpenOptionDialogProps> = ({
     // commitHistory also records the renderer selection in the shared
     // selection history (see useRendererOptions).
     commitHistory();
-    // Remember the chosen PSF path for the next NAMD coordinate load (UXP
-    // pref "cuemol2.ui.histories.namdcoor.psfpath").
-    if (formatOptions.kind === 'namdcoor' && formatOptions.options.psfFilePath) {
-      setLastPsfPath(formatOptions.options.psfFilePath);
-    }
     // Remember the chosen AMBER coordinate path for the next prmtop load.
     if (formatOptions.kind === 'amberprm' && formatOptions.options.coordFilePath) {
       setLastCoordPath(formatOptions.options.coordFilePath);
@@ -396,10 +375,10 @@ export const FileOpenOptionDialog: React.FC<FileOpenOptionDialogProps> = ({
                     onChange={(opts: MsmsOptions) => setFormatOptions({ kind: 'msms', options: opts })}
                   />
                 )}
-                {formatKind === 'namdcoor' && formatOptions.kind === 'namdcoor' && (
-                  <NamdCoorOptionsPane
+                {formatKind === 'psf' && formatOptions.kind === 'psf' && (
+                  <PsfOptionsPane
                     options={formatOptions.options}
-                    onChange={(opts: NamdCoorOptions) => setFormatOptions({ kind: 'namdcoor', options: opts })}
+                    onChange={(opts: PsfOptions) => setFormatOptions({ kind: 'psf', options: opts })}
                   />
                 )}
                 {formatKind === 'amberprm' && formatOptions.kind === 'amberprm' && (

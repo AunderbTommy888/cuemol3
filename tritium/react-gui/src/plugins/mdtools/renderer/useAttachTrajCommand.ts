@@ -19,6 +19,7 @@ import { mdtoolsServices } from '../calls'
 import { ATTACH_TRAJ_COMMAND, TRAJECTORY_TAB_ID } from '../manifest'
 import { useShowAttachTrajectoryDialog } from './AttachTrajectoryDialogProvider'
 import { requestTrajFocus } from './trajFocus'
+import { singleFrameFirst } from '../trajFormats'
 
 const TITLE = 'Attach trajectory'
 
@@ -37,7 +38,7 @@ function noTargetMessage(listed: { fileAtoms?: number; mismatched: number } | un
   }
   return (
     'A trajectory file needs a molecule to attach to. Open its topology first ' +
-    '(for example a .gro or .pdb file), then drop the trajectory again.'
+    '(for example a .gro, .pdb, .prmtop or .psf file), then drop the trajectory again.'
   )
 }
 
@@ -58,7 +59,8 @@ export function useAttachTrajCommand(): void {
         return
       }
       const { targets } = listed
-      const choice = await showAttachDialog({ targets, paths })
+      // A one-frame coordinate file (restart, .coor) goes first, as frame 0.
+      const choice = await showAttachDialog({ targets, paths: singleFrameFirst(paths) })
       if (!choice) return
       const res = await mdtoolsServices.invoke(cm, 'attachTrajectory', {
         sceneId,

@@ -5,7 +5,8 @@
  * adjusted. It only collects the choice; the command runs the attach.
  *
  * A plain molecule is converted to a Trajectory (its own coordinates stay as
- * frame 0); a Trajectory gets the files appended. Molecules that cannot be
+ * frame 0, or, for one read without coordinates, it starts at the first file);
+ * a Trajectory gets the files appended. Molecules that cannot be
  * converted are listed greyed with the reason, so the user sees why the one
  * they expected is not pickable.
  */
@@ -97,14 +98,17 @@ export function AttachTrajectoryDialog({
                 <span className="type-caption" title={t.reason}>
                   {t.reason
                     ? `Cannot attach: ${t.reason}`
-                    : `${t.natoms} atoms${t.className === 'Trajectory' ? ', trajectory' : ''}`}
+                    : `${t.natoms} atoms${t.className === 'Trajectory' ? ', trajectory' : ''}` +
+                      (t.noCoords ? ', no coordinates' : '')}
                 </span>
               </ListRow>
             ))}
           </Listbox>
           {chosen && !chosen.reason && chosen.className !== 'Trajectory' && (
             <span className="type-caption">
-              This molecule is converted to a trajectory; its coordinates stay as the first frame.
+              {chosen.noCoords
+                ? 'This molecule is converted to a trajectory; it starts at the first file below.'
+                : 'This molecule is converted to a trajectory; its coordinates stay as the first frame.'}
             </span>
           )}
         </FieldSection>

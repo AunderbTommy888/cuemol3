@@ -22,6 +22,7 @@ import type { NewSceneAction, OpenSceneFileAction } from '@renderer/hooks/useNew
 import type { FileOpenedData } from '@shared/types/fileEvents'
 import type { OpenResult } from './CommandMap'
 import { usePlugins } from '@renderer/plugin-host'
+import { useNotify } from '@renderer/shell/notifications'
 
 /**
  * Plugin that owns the MD trajectory open flow, named here so the
@@ -66,7 +67,7 @@ function cannotOpenMessage(
     }
     if (objType === TRAJ_BLOCK_CLASS) {
         const ways = 'drop it onto the window to attach it to an open molecule, or open it with ' +
-            'File > Open MD Trajectory..., together with a topology file (.gro).'
+            'File > Open MD Trajectory..., together with a topology file (.gro, .prmtop, .psf).'
         const how = mdtoolsEnabled
             ? ways.charAt(0).toUpperCase() + ways.slice(1)
             : `Enable the MD Tools plugin in Settings > Plugins, then ${ways}`
@@ -74,6 +75,18 @@ function cannotOpenMessage(
     }
     return `Nothing can display what this file contains:\n${path}\n\n` +
         `It was read as "${readerName}", but no renderer accepts the resulting object.`
+}
+
+/**
+ * What to tell the user after opening a molecule without coordinates (a
+ * topology-only file): it is there, but nothing shows until coordinates come.
+ */
+function noCoordsDetail(mdtoolsEnabled: boolean): string {
+    const ways = 'drop a coordinate or trajectory file (.rst7, .coor, .dcd, .xtc, .nc, ...) onto the window ' +
+        'to attach it'
+    return mdtoolsEnabled
+        ? ways.charAt(0).toUpperCase() + ways.slice(1) + '.'
+        : `Enable the MD Tools plugin in Settings > Plugins, then ${ways}.`
 }
 
 interface UseSceneCommandsOptions {
@@ -103,6 +116,7 @@ export function useSceneCommands({
 
     const showFileOpenOptionDialog = useShowFileOpenOptionDialog()
     const showErrorAlert = useShowErrorAlert()
+    const { notify } = useNotify()
 
     const openNewScene = useCallback(async (filePath?: string): Promise<OpenResult> => {
         if (!cm) return { loaded: false }
@@ -271,6 +285,14 @@ export function useSceneCommands({
                         return { loaded: false }
                     }
                     addRecent(data.path, 'obj', readerName)
+                    if (loaded.noCoords) {
+                        const name = options.renderer.objectName || data.path.split(/[\\/]/).pop()
+                        notify({
+                            severity: 'info',
+                            message: `${name}: read ${loaded.noCoords.natoms} atoms without coordinates.`,
+                            detail: noCoordsDetail(isEnabled(MDTOOLS_PLUGIN_ID)),
+                        })
+                    }
                     return { loaded: true, sceneId }
                 } catch (e) {
                     const msg = e instanceof Error ? e.message : String(e)

@@ -292,6 +292,11 @@ void SceneXMLReader::procDataSrcLoad(qlib::LDom2InStream &ois, LDom2Node *pNode)
     MB_DPRINTLN("XXX invalid basedir");
   }*/
 
+  // The reader's sub-stream files (e.g. AMBER coord, PSF coord) are paths
+  // in the reader options, resolved the same way before the reader runs.
+  Object *pObj = dynamic_cast<Object *>(pCnt);
+  if (pObj != NULL) pObj->resolveSubSrcPaths(basedir);
+
   LString abs_path = pCnt->readFromSrcAltSrc(src, altsrc, basedir, bAlt);
 
   // ATTN 14/06/29:

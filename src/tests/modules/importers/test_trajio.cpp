@@ -21,6 +21,8 @@
 #include "qsys/SceneXMLReader.hpp"
 #include "qsys/SceneXMLWriter.hpp"
 #include "mdtools/StructFrameReader.hpp"
+#include "mdtools/PsfMolReader.hpp"
+#include "mdtools/NamdCoorTrajReader.hpp"
 
 #include "molstr/MolAtom.hpp"
 #include "molstr/SelCommand.hpp"
@@ -1368,6 +1370,87 @@ TEST(TrajectoryTest, StructFrameBlockKeepsStructureAsFrameZeroAcrossQsc)
     std::remove(groPath.c_str());
     std::remove(dcdPath.c_str());
     std::remove(qscPath.c_str());
+}
+
+// A PSF is a topology like a prmtop: with the optional "coord" sub-stream (a
+// NAMD .coor) it is a molecule with coordinates; without it, a topology-only
+// Trajectory that takes the .coor as a one-frame block followed by a DCD.
+TEST(TrajectoryTest, PsfTopologyTakesCoorAndDcdBlocks)
+{
+    const std::filesystem::path dir = std::filesystem::temp_directory_path();
+    const std::string psfPath = (dir / "psf_water.psf").string();
+    const std::string coorPath = (dir / "psf_water.coor").string();
+    {
+        std::string psf = "PSF\n\n       1 !NTITLE\n REMARKS water\n\n       3 !NATOM\n";
+        const char *names[3] = {"OH2", "H1", "H2"};
+        const double mass[3] = {15.9994, 1.008, 1.008};
+        for (int i = 0; i < 3; ++i) {
+            psf += qlib::LString::format("%8d %-4s %-4d %-4s %-4s %-4s %10.6f %13.4f %11d\n", i + 1,
+                                         "W", 1, "TIP3", names[i], "HT", 0.0, mass[i], 0)
+                       .c_str();
+        }
+        std::ofstream(psfPath, std::ios::binary) << psf;
+
+        std::ofstream coor(coorPath, std::ios::binary);
+        const qint32 natoms = 3;
+        coor.write(reinterpret_cast<const char *>(&natoms), sizeof(natoms));
+        for (int i = 0; i < 9; ++i) {
+            const double v = 20.0 + i;  // atom a, axis k -> 20 + 3a + k
+            coor.write(reinterpret_cast<const char *>(&v), sizeof(v));
+        }
+    }
+
+    // With the coord sub-stream: a molecule with the .coor coordinates.
+    molstr::MolCoordPtr pMol(MB_NEW molstr::MolCoord());
+    {
+        mdtools::PsfMolReader rdr;
+        rdr.attach(pMol);
+        rdr.setPath(psfPath.c_str());
+        rdr.setPath("coord", coorPath.c_str());
+        rdr.qsys::ObjReader::read();
+        rdr.detach();
+    }
+    ASSERT_EQ(pMol->getAtomSize(), 3);
+    EXPECT_NEAR(pMol->getAtom(1)->getPos().x(), 23.0, 1e-9);
+
+    // Without it: the topology of a Trajectory, frames from blocks.
+    TrajectoryPtr pTraj(MB_NEW Trajectory());
+    {
+        mdtools::PsfMolReader rdr;
+        rdr.attach(pTraj);
+        rdr.setPath(psfPath.c_str());
+        rdr.qsys::ObjReader::read();
+        rdr.detach();
+    }
+    pTraj->setup();
+    // Atom IDs follow the PSF order (the array index map exists only once
+    // frames are appended).
+    EXPECT_NEAR(pTraj->getAtom(1)->getPos().x(), 0.0, 1e-9);
+    {
+        mdtools::NamdCoorTrajReader nr;
+        nr.setPath(coorPath.c_str());
+        EXPECT_EQ(nr.getFileAtomCount(), 3);
+        nr.setTargTrajUID(pTraj->getUID());
+        mdtools::TrajBlockPtr pBlk(nr.createDefaultObj());
+        nr.attach(pBlk);
+        nr.qsys::ObjReader::read();
+        nr.detach();
+        pTraj->append(pBlk);
+    }
+    appendDCD(pTraj, buildDCD(3, 2));
+    ASSERT_EQ(pTraj->getFrameSize(), 3);
+
+    auto atomPos = [&pTraj](int i) {
+        return pTraj->getAtom(pTraj->getAtomIDByArrayInd(static_cast<quint32>(i)))->getPos();
+    };
+    pTraj->setFrame(0);
+    EXPECT_NEAR(atomPos(1).x(), 23.0, 1e-4);
+    EXPECT_NEAR(atomPos(1).z(), 25.0, 1e-4);
+    pTraj->setFrame(2);
+    EXPECT_NEAR(atomPos(1).x(), dcdCoord(1, 1, 0), 1e-4);
+
+    std::remove(psfPath.c_str());
+    std::remove(coorPath.c_str());
 }
 
 // Remove is undoable: undo re-inserts the removed block at its index, redo

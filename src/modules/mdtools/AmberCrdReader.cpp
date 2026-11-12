@@ -90,26 +90,26 @@ void AmberCrdReader::attach(MolCoordPtr pMol)
   m_pMol = pMol;
 }
 
-void AmberCrdReader::read(qlib::InStream &ins)
-{
-  qlib::LineStream lin(ins);
+namespace {
 
+// Line 2: NATOM (TIME). Be lenient: trim and take the first whitespace token.
+int readHeaderNatom(qlib::LineStream &lin)
+{
   // Line 1: title (ignored).
   if (!lin.ready()) {
     MB_THROW(qlib::FileFormatException, "Empty AMBER restart file");
-    return;
+    return -1;
   }
   lin.readLine();
 
-  // Line 2: NATOM (TIME). Be lenient: trim and take the first whitespace token.
   if (!lin.ready()) {
     MB_THROW(qlib::FileFormatException, "Missing NATOM line in AMBER restart");
-    return;
+    return -1;
   }
   LString headerLine = trimStr(lin.readLine());
   if (headerLine.isEmpty()) {
     MB_THROW(qlib::FileFormatException, "Empty NATOM line in AMBER restart");
-    return;
+    return -1;
   }
   std::list<LString> headTokens;
   headerLine.split(' ', headTokens);
@@ -120,24 +120,32 @@ void AmberCrdReader::read(qlib::InStream &ins)
     if (!tok.toInt(&natom)) {
       MB_THROW(qlib::FileFormatException,
                LString::format("Invalid NATOM '%s' in restart header", tok.c_str()));
-      return;
+      return -1;
     }
     break;
   }
   if (natom <= 0) {
     MB_THROW(qlib::FileFormatException,
              LString::format("Non-positive NATOM (%d) in restart", natom));
-    return;
+    return -1;
   }
+  return natom;
+}
 
-  // Verify NATOM matches the attached MolCoord.
-  if (m_pMol->getAtomSize() != natom) {
-    LString msg = LString::format(
-        "AMBER restart NATOM (%d) does not match prmtop NATOM (%d)",
-        natom, m_pMol->getAtomSize());
-    MB_THROW(qlib::FileFormatException, msg);
-    return;
-  }
+}  // namespace
+
+// static
+int AmberCrdReader::readNatom(qlib::InStream &ins)
+{
+  qlib::LineStream lin(ins);
+  return readHeaderNatom(lin);
+}
+
+// static
+void AmberCrdReader::parse(qlib::InStream &ins, Snapshot &snap)
+{
+  qlib::LineStream lin(ins);
+  const int natom = readHeaderNatom(lin);
 
   // Read all remaining reals (coords + optional velocities + optional box).
   std::vector<double> reals;
@@ -150,18 +158,6 @@ void AmberCrdReader::read(qlib::InStream &ins)
              LString::format("AMBER restart truncated: expected at least %d reals, got %d",
                              nCoord, static_cast<int>(reals.size())));
     return;
-  }
-
-  // Apply coordinates to existing atoms. AID assignment in AmberPrmtopReader
-  // is strictly sequential (i -> AID i), matching prmtop convention.
-  qlib::Vector4D pos;
-  for (int i = 0; i < natom; ++i) {
-    MolAtomPtr pAtom = m_pMol->getAtom(i);
-    qlib::ensureNotNull(pAtom);
-    pos.x() = reals[i * 3 + 0];
-    pos.y() = reals[i * 3 + 1];
-    pos.z() = reals[i * 3 + 2];
-    pAtom->setPos(pos);
   }
 
   // Detect optional trailing blocks.
@@ -183,23 +179,52 @@ void AmberCrdReader::read(qlib::InStream &ins)
                  "extras ignored", nExtra);
   }
 
+  snap.natom = natom;
+  snap.crd.assign(reals.begin(), reals.begin() + nCoord);
+  snap.hasBox = hasBox;
   if (hasBox) {
     const int boxOffset = nCoord + (hasVel ? nCoord : 0);
-    double a = reals[boxOffset + 0];
-    double b = reals[boxOffset + 1];
-    double c = reals[boxOffset + 2];
-    double alpha = reals[boxOffset + 3];
-    double beta  = reals[boxOffset + 4];
-    double gamma = reals[boxOffset + 5];
+    for (int i = 0; i < 6; ++i) snap.box[i] = reals[boxOffset + i];
+  }
+}
 
+void AmberCrdReader::read(qlib::InStream &ins)
+{
+  Snapshot snap;
+  parse(ins, snap);
+  const int natom = snap.natom;
+
+  // Verify NATOM matches the attached MolCoord.
+  if (m_pMol->getAtomSize() != natom) {
+    LString msg = LString::format(
+        "AMBER restart NATOM (%d) does not match prmtop NATOM (%d)",
+        natom, m_pMol->getAtomSize());
+    MB_THROW(qlib::FileFormatException, msg);
+    return;
+  }
+
+  // Apply coordinates to existing atoms. AID assignment in AmberPrmtopReader
+  // is strictly sequential (i -> AID i), matching prmtop convention.
+  qlib::Vector4D pos;
+  for (int i = 0; i < natom; ++i) {
+    MolAtomPtr pAtom = m_pMol->getAtom(i);
+    qlib::ensureNotNull(pAtom);
+    pos.x() = snap.crd[i * 3 + 0];
+    pos.y() = snap.crd[i * 3 + 1];
+    pos.z() = snap.crd[i * 3 + 2];
+    pAtom->setPos(pos);
+  }
+
+  if (snap.hasBox) {
     symm::CrystalInfoPtr pci = m_pMol->getCreateExtData("CrystalInfo");
     if (pci.isnull()) {
       LOG_DPRINTLN("AmberCrdReader> Warning: failed to attach CrystalInfo");
     } else {
-      pci->setCellDimension(a, b, c, alpha, beta, gamma);
+      pci->setCellDimension(snap.box[0], snap.box[1], snap.box[2],
+                            snap.box[3], snap.box[4], snap.box[5]);
     }
   }
 
-  LOG_DPRINTLN("AmberCrdReader> applied coords to %d atoms (vel=%d, box=%d)",
-               natom, hasVel ? 1 : 0, hasBox ? 1 : 0);
+  LOG_DPRINTLN("AmberCrdReader> applied coords to %d atoms (box=%d)",
+               natom, snap.hasBox ? 1 : 0);
 }

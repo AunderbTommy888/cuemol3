@@ -10,6 +10,8 @@
 #include "mdtools.hpp"
 
 #include <qlib/LString.hpp>
+
+#include <vector>
 #include <qlib/LExceptions.hpp>
 #include <modules/molstr/molstr.hpp>
 
@@ -42,6 +44,23 @@ namespace mdtools {
 
     /// Read one snapshot from ins and overwrite m_pMol atom positions.
     void read(qlib::InStream &ins);
+
+    /// One parsed restart snapshot.
+    struct Snapshot {
+      int natom = 0;
+      /// Coordinates in file (atom) order, xyz interleaved, Angstrom.
+      std::vector<double> crd;
+      bool hasBox = false;
+      /// a, b, c, alpha, beta, gamma (valid when hasBox).
+      double box[6] = {0, 0, 0, 0, 0, 0};
+    };
+
+    /// Parse a whole restart file. Throws qlib::FileFormatException on a
+    /// malformed or truncated file.
+    static void parse(qlib::InStream &ins, Snapshot &snap);
+
+    /// Read NATOM from the header (the first two lines) only.
+    static int readNatom(qlib::InStream &ins);
   };
 
 }

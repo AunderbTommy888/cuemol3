@@ -25,6 +25,7 @@ vi.mock('@renderer/dialogs/ErrorAlertDialogProvider', () => ({
   useShowErrorAlert: () => showErrorAlert,
 }))
 vi.mock('@renderer/commands/addRecent', () => ({ addRecent: vi.fn() }))
+vi.mock('@renderer/shell/notifications', () => ({ useNotify: () => ({ notify: vi.fn() }) }))
 vi.mock('@renderer/dialogs/NewRendererDialogProvider', () => ({
   useShowNewRendererDialog: () => vi.fn(),
 }))

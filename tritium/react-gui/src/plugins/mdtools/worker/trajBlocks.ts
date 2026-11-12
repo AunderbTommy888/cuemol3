@@ -12,14 +12,9 @@
 
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext';
 import { OBJREADER_CATEGORY } from '@renderer/worker/server/services/helpers/pickReaderName';
+import { SINGLE_FRAME_READERS, TRAJ_READER_BY_EXT, fileExt } from '../trajFormats';
 
-/** Trajectory file extension -> block reader nickname (mdtools TrajBlockReader). */
-export const TRAJ_READER_BY_EXT: Record<string, string> = {
-    dcd: 'dcdtraj',
-    xtc: 'xtctraj',
-    trr: 'trrtraj',
-    nc: 'ambnetcdftraj',
-};
+export { TRAJ_READER_BY_EXT, fileExt };
 
 /** The block reader that reads a structure file as one frame (frame 0 of a converted molecule). */
 const STRUCT_FRAME_READER = 'structframe';
@@ -41,13 +36,6 @@ interface TrajBlockReaderHandle {
 export interface TrajAppendTarget {
     uid: number;
     append(block: unknown): void;
-}
-
-/** Lower-cased final extension (without the dot). */
-export function fileExt(filePath: string): string {
-    const base = filePath.split(/[\\/]/).pop() ?? filePath;
-    const dot = base.lastIndexOf('.');
-    return dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
 }
 
 /**
@@ -118,8 +106,22 @@ export function appendTrajFile(
     const nick = TRAJ_READER_BY_EXT[ext];
     if (!nick) throw new Error(`unsupported trajectory format ".${ext}": ${path}`);
     const reader = blockReader(ctx, nick, traj);
-    if (nevery > 1) reader.nevery = nevery;
+    // A one-frame reader has no frame sampling (and no nevery property).
+    if (nevery > 1 && !SINGLE_FRAME_READERS.has(nick)) reader.nevery = nevery;
     readAndAppend(reader, traj, path);
+}
+
+/**
+ * Append the coordinate file a molecule was opened with (its topology
+ * reader's "coord" sub-stream) as a one-frame block read by `nick`.
+ */
+export function appendCoordFile(
+    ctx: WorkerContext,
+    traj: TrajAppendTarget,
+    path: string,
+    nick: string,
+): void {
+    readAndAppend(blockReader(ctx, nick, traj), traj, path);
 }
 
 /**
