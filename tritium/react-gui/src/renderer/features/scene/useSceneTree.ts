@@ -42,10 +42,6 @@ import {
     useSceneTreeRendererOps,
     type SceneTreeRendererOps,
 } from '@renderer/hooks/sceneTree/useSceneTreeRendererOps'
-import {
-    useSceneTreeStyleOps,
-    type SceneTreeStyleOps,
-} from '@renderer/hooks/sceneTree/useSceneTreeStyleOps'
 import { EVENT_BURST_DEBOUNCE_MS } from '@renderer/utils/timing'
 
 interface UseSceneTreeOptions {
@@ -95,8 +91,7 @@ export interface SceneTreeCoreState {
 
 export type UseSceneTreeResult = SceneTreeCoreState &
     SceneTreeNodeOps &
-    SceneTreeRendererOps &
-    SceneTreeStyleOps
+    SceneTreeRendererOps
 
 // Source-type bitmask matching UXP workspace_panel.js: any add/remove/propchg
 // on these categories triggers a tree refresh.
@@ -207,7 +202,6 @@ export function useSceneTree({ cm, sceneId }: UseSceneTreeOptions): UseSceneTree
     // --- Domain action callbacks ---
     const nodeOps = useSceneTreeNodeOps(cm, sceneIdRef, tree)
     const rendererOps = useSceneTreeRendererOps(cm, sceneIdRef, tree)
-    const styleOps = useSceneTreeStyleOps(cm, sceneIdRef)
 
     const selectedNode = useMemo(
         () => (selectedId ? findNode(tree, Number(selectedId)) : null),
@@ -242,12 +236,11 @@ export function useSceneTree({ cm, sceneId }: UseSceneTreeOptions): UseSceneTree
             refetch,
             ...nodeOps,
             ...rendererOps,
-            ...styleOps,
         }),
         [
             tree, selectedId, selectedIds, selectedNode, selectedHasOps,
             setSelectedId, toggleInSelection, selectRangeTo, refetch,
-            nodeOps, rendererOps, styleOps,
+            nodeOps, rendererOps,
         ],
     )
 }
@@ -257,12 +250,11 @@ export function useSceneTree({ cm, sceneId }: UseSceneTreeOptions): UseSceneTree
  * Mirrors UXP `onTreeSelChanged` + `onNewCmd` / `deleteCmdImpl` enablement
  * rules:
  *   - focus / delete: object / renderer / rendGroup
- *   - property: everything except the synthesised styleRoot
+ *   - property: every row
  *   - add: object / renderer / rendGroup -> New Renderer
- *          (style is handled via its own ctxmenu path for now)
  *
- * Cameras used to be a branch of this tree; they live in the Camera pane now,
- * which has its own toolbar.
+ * Cameras and style sets used to be branches of this tree; they live in the
+ * Camera pane and the Style Sets pane now, each with its own toolbar.
  */
 function computeOps(node: SceneTreeNode | null): SceneTreeSelectionOps {
     if (!node) return { focus: false, delete: false, property: false, add: false }
@@ -273,7 +265,7 @@ function computeOps(node: SceneTreeNode | null): SceneTreeSelectionOps {
     return {
         focus: isRendish,
         delete: isRendish,
-        property: node.type !== 'styleRoot',
+        property: true,
         add: isRendish,
     }
 }

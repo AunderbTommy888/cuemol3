@@ -38,7 +38,6 @@ vi.mock('@cuemol/core/src/BaseWrapper', () => ({ BaseWrapper: class {} }))
 //   |   |-- rendGroup 200 "group1"
 //   |        |-- renderer 201 "child1"
 //   |-- camera 900 "cam1"
-//   |-- style  910 "style1" (scopeId 5)
 
 const node = (o: Partial<SceneTreeNode>): SceneTreeNode => ({
     id: 0, name: '', type: 'object', className: '', visible: true,
@@ -57,15 +56,10 @@ const MOCK_TREE: SceneTreeNode = node({
                 }),
             ],
         }),
-        node({
-            id: 910, name: 'style1', type: 'style',
-            styleInfo: { scopeId: 5, src: '', readonly: false, modified: false },
-        }),
     ],
 })
 
 const objectNode = (): SceneTreeNode => MOCK_TREE.children[0]
-const styleNode = (): SceneTreeNode => MOCK_TREE.children[1]
 const rendererNode = (): SceneTreeNode => MOCK_TREE.children[0].children[0]
 const groupChildNode = (): SceneTreeNode => MOCK_TREE.children[0].children[1].children[0]
 
@@ -246,12 +240,6 @@ const WIRE_CASES: WireCase[] = [
         payload: { sceneId: SCENE_ID, nodeId: 42, nodeType: 'object' },
     },
     {
-        name: 'copyNode (style carries scopeId)',
-        run: (r) => r.copyNode(styleNode()),
-        channel: 'copyNode',
-        payload: { sceneId: SCENE_ID, nodeId: 910, nodeType: 'style', scopeId: 5 },
-    },
-    {
         // The clipboard payload read from main is threaded into the worker
         // call, so the paste is driven by the OS clipboard, not by state
         // the worker kept from its own copy.
@@ -364,36 +352,6 @@ const WIRE_CASES: WireCase[] = [
             items: [{ nodeId: 200, nodeType: 'rendGroup', childIds: [201] }],
         },
     },
-    {
-        name: 'createStyleSet',
-        run: (r) => r.createStyleSet('myStyle'),
-        channel: 'createStyleSet',
-        payload: { sceneId: SCENE_ID, name: 'myStyle' },
-    },
-    {
-        name: 'toggleStyleSetReadOnly',
-        run: (r) => r.toggleStyleSetReadOnly(3, 5),
-        channel: 'toggleStyleSetReadOnly',
-        payload: { sceneId: SCENE_ID, scopeId: 5, styleSetId: 3 },
-    },
-    {
-        name: 'loadStyleSetFromFile',
-        run: (r) => r.loadStyleSetFromFile('/p'),
-        channel: 'loadStyleSetFromFile',
-        payload: { sceneId: SCENE_ID, path: '/p' },
-    },
-    {
-        name: 'saveStyleSetToFile',
-        run: (r) => r.saveStyleSetToFile(3, 5, '/p'),
-        channel: 'saveStyleSetToFile',
-        payload: { sceneId: SCENE_ID, scopeId: 5, styleSetId: 3, path: '/p' },
-    },
-    {
-        name: 'saveStyleSetToCurrentSrc',
-        run: (r) => r.saveStyleSetToCurrentSrc(3, 5),
-        channel: 'saveStyleSetToCurrentSrc',
-        payload: { sceneId: SCENE_ID, scopeId: 5, styleSetId: 3 },
-    },
 ]
 
 describe('useSceneTree — action callback wire contracts', () => {
@@ -422,15 +380,6 @@ describe('useSceneTree — return-value mapping', () => {
         let ok: unknown
         await act(async () => { ok = await h.result.focusNodes(5, ['42']) })
         expect(ok).toBe(true)
-        h.unmount()
-    })
-
-    it('createStyleSet maps { ok, newId }', async () => {
-        const cm = makeCm()
-        const h = await mountReady(cm)
-        let res: unknown
-        await act(async () => { res = await h.result.createStyleSet('s') })
-        expect(res).toEqual({ ok: true, newId: 99 })
         h.unmount()
     })
 

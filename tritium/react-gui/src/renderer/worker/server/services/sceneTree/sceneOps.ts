@@ -16,7 +16,6 @@ import type { Vector } from '@cuemol/core/src/wrappers/Vector';
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext';
 import type { SceneNodeType } from '@renderer/worker/shared/sceneTreeTypes';
 import { withUndoTxn } from '../withUndoTxn';
-import { destroyStyleSetIn } from '../style/styleOps';
 import { recordDeleteNode, recordOp, recordRenameNode } from '@renderer/worker/server/actions/serviceOps';
 import { safeRead } from '@renderer/worker/server/services/helpers/safeRead';
 import { makeSel } from '@renderer/worker/server/services/helpers/makeSel';
@@ -54,13 +53,6 @@ export interface DeleteNodeArgs {
     nodeType: SceneNodeType;
     /** Child renderer IDs, required when nodeType === 'rendGroup'. */
     childIds?: number[];
-    /**
-     * Style scope id (0 for global, scene.uid for scene-local). Required
-     * when nodeType === 'style' so the worker can call
-     * `StyleManager.destroyStyleSet(scopeId, styleSetId)` with the right
-     * scope. Ignored for other node types.
-     */
-    scopeId?: number;
 }
 
 export interface DeleteNodeResult {
@@ -384,15 +376,6 @@ export function deleteNode(ctx: WorkerContext, args: DeleteNodeArgs): DeleteNode
             client.destroyRenderer(args.nodeId);
         });
         return { ok: true };
-    }
-
-    if (args.nodeType === 'style') {
-        if (args.scopeId === undefined) return { ok: false };
-        const mgr = ctx.svc.getService('StyleManager') as unknown as
-            | { destroyStyleSet: (scopeId: number, styleSetId: number) => boolean }
-            | null;
-        if (!mgr) return { ok: false };
-        return destroyStyleSetIn(ctx, scene, mgr, args.scopeId, args.nodeId);
     }
 
     if (args.nodeType === 'rendGroup') {

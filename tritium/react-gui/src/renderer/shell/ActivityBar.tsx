@@ -49,6 +49,7 @@ interface ActivityItemDef {
  */
 export const BUILTIN_ACTIVITY_ITEMS: readonly ActivityItemDef[] = [
   { id: "explorer", icon: "activity.explorer", label: "Explorer" },
+  { id: "styles", icon: "activity.styles", label: "Styles" },
   { id: "selection", icon: "activity.selection", label: "Selection" },
   { id: "crystal", icon: "activity.crystal", label: "Crystal" },
   { id: "actions", icon: "activity.actions", label: "Actions" },

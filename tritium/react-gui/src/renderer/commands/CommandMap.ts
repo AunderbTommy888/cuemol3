@@ -133,7 +133,11 @@ export interface CommandMap {
   [CmdId.ObjectRegenSurface]:   { args: { objId: string };       result: void }
 
   // Style sets. `scopeId` is the style set's scope, carried from the row.
-  [CmdId.StyleNew]:             { args: void;                    result: void }
+  // StyleNew resolves to the uid it created, so the pane can select it.
+  [CmdId.StyleNew]:             { args: void;                    result: number | null }
+  [CmdId.StyleDelete]:          { args: { id: string; scopeId: number }; result: void }
+  [CmdId.StyleCopy]:            { args: { id: string; scopeId: number }; result: boolean }
+  [CmdId.StylePaste]:           { args: void;                    result: void }
   [CmdId.StyleEdit]:            { args: StyleSetRef;             result: void }
   [CmdId.StyleToggleReadOnly]:  { args: { id: string; scopeId: number }; result: void }
   [CmdId.StyleLoadFromFile]:    { args: void;                    result: void }

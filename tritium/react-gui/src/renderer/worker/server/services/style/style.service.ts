@@ -8,12 +8,14 @@
 
 import { loadStyleSetFromFile, saveStyleSetToCurrentSrc, saveStyleSetToFile } from './styleFile';
 import { createStyleSet, destroyStyleSet, toggleStyleSetReadOnly } from './styleOps';
+import { listStyleSets } from './styleSetList';
 import { getStyleSetContents, removeStyleSetColor, removeStyleSetSelection, removeStyleSetStyle, setStyleSetColor, setStyleSetSelection } from './styleSetEdit';
 
 export const services = {
     loadStyleSetFromFile,
     saveStyleSetToFile,
     saveStyleSetToCurrentSrc,
+    listStyleSets,
     createStyleSet,
     destroyStyleSet,
     toggleStyleSetReadOnly,
@@ -28,3 +30,4 @@ export const services = {
 export type * from './styleFile';
 export type * from './styleOps';
 export type * from './styleSetEdit';
+export type * from './styleSetList';

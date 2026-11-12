@@ -20,8 +20,6 @@ const scene = node({ id: 1, type: 'scene', name: 'S' })
 const object = node({ id: 42, type: 'object', name: 'mol1' })
 const renderer = node({ id: 100, type: 'renderer', name: 'simple1' })
 const rendGroup = node({ id: 50, type: 'rendGroup', name: 'grp' })
-const style = node({ id: 7, type: 'style', name: 'st1', styleInfo: { scopeId: 3 } as never })
-const styleRoot = node({ id: -2, type: 'styleRoot', name: 'Styles' })
 
 const map = (n: SceneTreeNode, a: SceneCtxAction, sel?: Set<string>) =>
   sceneCtxActionToCommand(n, a, sel)
@@ -114,7 +112,7 @@ describe('sceneCtxActionToCommand - renderers', () => {
     expect(map(renderer, { kind: 'paintRend', colorValue: '#0f0' })).toEqual({
       id: CmdId.RendererPaint, args: { id: '100', colorValue: '#0f0' },
     })
-    expect(map(style, { kind: 'paintRend', colorValue: '#00f' })).toBeNull()
+    expect(map(scene, { kind: 'paintRend', colorValue: '#00f' })).toBeNull()
   })
 
   it('the renderer-only entries carry the row id and are gated', () => {
@@ -150,34 +148,5 @@ describe('sceneCtxActionToCommand - renderers', () => {
     ] as SceneCtxAction[]) {
       expect(map(object, a)).toBeNull()
     }
-  })
-})
-
-describe('sceneCtxActionToCommand - style sets', () => {
-  it('carries the uid, the scope and the name a style row holds', () => {
-    const ref = { id: '7', scopeId: 3, name: 'st1' }
-    expect(map(style, { kind: 'editStyle' })).toEqual({ id: CmdId.StyleEdit, args: ref })
-    expect(map(style, { kind: 'styleSave' })).toEqual({ id: CmdId.StyleSave, args: ref })
-    expect(map(style, { kind: 'styleSaveAs' })).toEqual({ id: CmdId.StyleSaveAs, args: ref })
-    expect(map(style, { kind: 'styleToggleReadOnly' })).toEqual({
-      id: CmdId.StyleToggleReadOnly, args: { id: '7', scopeId: 3 },
-    })
-  })
-
-  it('a row without a scope resolves to nothing', () => {
-    const scopeless = node({ id: 7, type: 'style', name: 'st1' })
-    expect(map(scopeless, { kind: 'editStyle' })).toBeNull()
-    expect(map(scopeless, { kind: 'styleSave' })).toBeNull()
-  })
-
-  it('New Style runs from a style row or the Styles root', () => {
-    expect(map(style, { kind: 'newStyle' })).toEqual({ id: CmdId.StyleNew })
-    expect(map(styleRoot, { kind: 'newStyle' })).toEqual({ id: CmdId.StyleNew })
-    expect(map(object, { kind: 'newStyle' })).toBeNull()
-  })
-
-  it('Load and Reload need no row', () => {
-    expect(map(styleRoot, { kind: 'styleLoad' })).toEqual({ id: CmdId.StyleLoadFromFile })
-    expect(map(styleRoot, { kind: 'styleReload' })).toEqual({ id: CmdId.StyleReload })
   })
 })

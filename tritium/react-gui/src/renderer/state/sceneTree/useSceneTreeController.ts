@@ -199,10 +199,8 @@ export function useSceneTreeController({
       },
 
       // UXP `onTreeItemClick` detail==2: open the property inspector.
-      // styleRoot is a no-op.
       nodeDoubleClick: (node) => {
         const { dispatch: d } = live.current;
-        if (node.type === "styleRoot") return;
         run("show property", () => d(CmdId.SceneNodeProperty, { id: String(node.id) }));
       },
 
@@ -225,8 +223,8 @@ export function useSceneTreeController({
 
       // Tree row expand/collapse -- persist into C++ `ui_collapsed` so the
       // state survives a qsc save/load (UXP onTwistyClick parity). Only real
-      // C++ rows qualify; synthesised rows (cameraRoot / styleRoot, negative
-      // ids) and camera / style rows are no-ops.
+      // C++ object / group rows qualify; a negative (synthesised) id is a
+      // no-op.
       nodeExpandChange: (node, collapsed) => {
         if (node.type !== "object" && node.type !== "rendGroup") return;
         if (node.id < 0) return;

@@ -11,7 +11,7 @@
  *
  * Pure and synchronous. The node-type gates live here, so an action that
  * does not apply to the row (a `selectMol` on a renderer, a camera action on
- * a style) returns null and nothing is dispatched.
+ * an object) returns null and nothing is dispatched.
  */
 
 import type { SceneCtxAction } from '@shared/types/sceneCtxMenu'
@@ -34,11 +34,6 @@ export function sceneCtxActionToCommand(
 ): CommandInvocation | null {
   const id = String(node.id)
   const type = node.type
-  /** The style-set reference a style row carries. */
-  const styleRef = () =>
-    type === 'style' && node.styleInfo?.scopeId !== undefined
-      ? { id, scopeId: node.styleInfo.scopeId, name: node.name }
-      : null
 
   switch (action.kind) {
     // --- Node operations (also reachable from the toolbar and the keyboard) ---
@@ -124,30 +119,6 @@ export function sceneCtxActionToCommand(
         ? { id: CmdId.RendererEditIntrList, args: { id, rendName: node.name } }
         : null
 
-    // --- Style sets ---
-    case 'newStyle':
-      return type === 'style' || type === 'styleRoot' ? { id: CmdId.StyleNew } : null
-    case 'styleLoad':
-      return { id: CmdId.StyleLoadFromFile }
-    case 'styleReload':
-      return { id: CmdId.StyleReload }
-    case 'editStyle': {
-      const ref = styleRef()
-      return ref ? { id: CmdId.StyleEdit, args: ref } : null
-    }
-    case 'styleToggleReadOnly': {
-      const ref = styleRef()
-      return ref ? { id: CmdId.StyleToggleReadOnly, args: { id: ref.id, scopeId: ref.scopeId } } : null
-    }
-    case 'styleSave': {
-      const ref = styleRef()
-      return ref ? { id: CmdId.StyleSave, args: ref } : null
-    }
-    case 'styleSaveAs': {
-      const ref = styleRef()
-      return ref ? { id: CmdId.StyleSaveAs, args: ref } : null
-    }
-
     // --- Cameras ---
     // Camera menus are raised by the Camera pane, not by a tree row, so they
     // resolve in `features/camera/cameraCtxActionToCommand` against a camera
@@ -161,6 +132,19 @@ export function sceneCtxActionToCommand(
     case 'cameraApplyToView':
     case 'cameraEditVisFlags':
     case 'cameraClearVisFlags':
+      return null
+
+    // --- Style sets ---
+    // Raised by the Style Sets pane against a style set, and resolved in
+    // `features/styles/styleCtxActionToCommand`. Listed here only to keep the
+    // switch exhaustive.
+    case 'newStyle':
+    case 'styleLoad':
+    case 'styleReload':
+    case 'editStyle':
+    case 'styleToggleReadOnly':
+    case 'styleSave':
+    case 'styleSaveAs':
       return null
   }
 }

@@ -1,0 +1,65 @@
+/*
+ * Styles view panes (Style Sets / Colors / Selections). Row height, hover and
+ * selection come from list-kit (`_list-kit.css`); only what is specific to
+ * these rows lives here.
+ */
+
+.style-pane-body {
+    padding: var(--space-1) 0;
+}
+
+.style-row-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* "global" scope tag and the lock / file-link marks. */
+.style-row-scope,
+.style-row-badge {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+}
+
+.h3-list-row.is-selected .style-row-badge {
+    color: var(--accent);
+}
+
+/* Which set the definitions below belong to. */
+.style-defs-target {
+    padding: 0 var(--space-3) var(--space-1);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Definition rows: a fixed-share name column, then the value editor. */
+.style-def-name {
+    flex: 0 0 40%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.style-def-value {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Style entries dialog: name, then the style type, then Delete. */
+.style-entry-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.style-entry-type {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+}

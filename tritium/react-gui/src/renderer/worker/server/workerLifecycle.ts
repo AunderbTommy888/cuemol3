@@ -66,6 +66,33 @@ export function loadUserStyle(cm: CueMol, userStylePath?: string): boolean {
     }
 }
 
+/**
+ * Mark the style sets the library loaded at init (the bundled files the
+ * sysconfig names: system, cuemol3, ...) read-only. Nothing saves them --
+ * only the "user" set is written back on exit -- so an edit would be lost
+ * on restart, and Save would write into the app bundle. Call right after
+ * `initCueMol`, before the dot styles and the user style are loaded.
+ *
+ * @returns how many sets were marked
+ */
+export function markBundledStylesReadOnly(cm: CueMol): number {
+    const stylem = cm.getService('StyleManager') as StyleManager;
+    if (stylem === null) return 0;
+    let n = 0;
+    try {
+        for (const uid of globalSetUids(stylem)) {
+            const set = stylem.getStyleSet(uid) as StyleSet | null;
+            if (!set) continue;
+            set.readonly = true;
+            n++;
+        }
+    } catch (e) {
+        // Startup must go on; the sets just stay editable for this session.
+        log.warn('Worker> cannot mark the bundled style sets read-only:', e);
+    }
+    return n;
+}
+
 /** The id of a style file's root `<styles id="...">`; '' when it has none. */
 export function styleFileId(text: string): string {
     const root = /<styles\b([^>]*)>/.exec(text);

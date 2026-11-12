@@ -7,7 +7,6 @@ import { createDialogHook } from '@renderer/hooks/useDialogFactory'
 
 export interface StyleEditorDialogArgs {
     styleSetId: number
-    scopeId: number
     sceneId: number
     styleName: string
 }
@@ -21,7 +20,6 @@ export const {
         <StyleEditorDialog
             visible={visible}
             styleSetId={args?.styleSetId ?? -1}
-            scopeId={args?.scopeId ?? 0}
             sceneId={args?.sceneId ?? 0}
             styleName={args?.styleName ?? ''}
             onClose={() => resolve()}

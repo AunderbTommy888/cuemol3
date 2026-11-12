@@ -320,7 +320,7 @@ When mirroring UXP behaviour where a single tree view shows scene + cameras + st
 
 ### IDs are not URLs
 
-The numeric `ID` returned in the JSON shapes above is a C++ `qlib::uid_t`. Treat it as opaque — never invent negative or large values for "virtual" UI rows except via clearly-marked synthesisers (see `buildStyleRoot` in `sceneTreeTypes.ts`). Real C++ uids are non-negative.
+The numeric `ID` returned in the JSON shapes above is a C++ `qlib::uid_t`. Treat it as opaque — never invent negative or large values for "virtual" UI rows. Real C++ uids are non-negative.
 
 ---
 
