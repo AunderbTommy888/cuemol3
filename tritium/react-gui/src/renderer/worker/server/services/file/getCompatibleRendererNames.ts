@@ -65,6 +65,13 @@ export interface GetCompatibleRendererNamesResult {
      * matched.
      */
     readerName: string;
+    /**
+     * The reader's own format description without its extension list (e.g.
+     * 'GROMACS Coordinates' from "GROMACS Coordinates (*.gro)"), for the
+     * dialog's format badge on formats it has no short label for. Empty
+     * string when no reader matched.
+     */
+    formatDescr: string;
 }
 
 /**
@@ -76,7 +83,12 @@ export interface GetCompatibleRendererNamesResult {
  * then knows nothing about would only narrow the message to something it
  * cannot support.
  */
-const EMPTY_RESULT: GetCompatibleRendererNamesResult = { types: [], objType: '', readerName: '' };
+const EMPTY_RESULT: GetCompatibleRendererNamesResult = { types: [], objType: '', readerName: '', formatDescr: '' };
+
+/** "GROMACS Coordinates (*.gro)" -> "GROMACS Coordinates". */
+function stripExtList(descr: string): string {
+    return descr.replace(/\s*\([^)]*\*[^)]*\)\s*$/, '').trim();
+}
 
 export function getCompatibleRendererNames(
     ctx: WorkerContext,
@@ -89,6 +101,12 @@ export function getCompatibleRendererNames(
     const reader = ctx.strMgr.createHandler(readerName, OBJREADER_CATEGORY) as ObjReader;
     if (!reader) return EMPTY_RESULT;
     reader.setPath(args.filePath);
+    let formatDescr = '';
+    try {
+        formatDescr = stripExtList(reader.typedescr ?? '');
+    } catch {
+        /* description is cosmetic -- leave it empty */
+    }
 
     const tmpObj = reader.createDefaultObj();
     if (!tmpObj) return EMPTY_RESULT;
@@ -96,12 +114,12 @@ export function getCompatibleRendererNames(
     const objType = (tmpObj as any).getClassName?.() ?? '';
 
     const rendTypesStr = tmpObj.searchCompatibleRendererNames();
-    if (!rendTypesStr) return { types: [], objType, readerName };
+    if (!rendTypesStr) return { types: [], objType, readerName, formatDescr };
 
     const types = rendTypesStr
         .split(',')
         .map((s: string) => s.trim())
         .filter(isInitialRendererType);
 
-    return { types, objType, readerName };
+    return { types, objType, readerName, formatDescr };
 }

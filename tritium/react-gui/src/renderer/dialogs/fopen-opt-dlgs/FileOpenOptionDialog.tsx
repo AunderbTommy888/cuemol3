@@ -99,6 +99,11 @@ export interface FileOpenOptionDialogProps {
    * pane to show -- never re-derived from the extension on the TS side.
    */
   readerName: string;
+  /**
+   * The reader's own format description (e.g. 'GROMACS Coordinates'),
+   * shown as the format badge when the format has no short label.
+   */
+  formatDescr?: string;
   onConfirm: (options: FileOpenOptions) => void;
   onCancel: () => void;
 }
@@ -113,12 +118,14 @@ export const FileOpenOptionDialog: React.FC<FileOpenOptionDialogProps> = ({
   presetTypes,
   objType,
   readerName,
+  formatDescr = '',
   onConfirm,
   onCancel,
 }) => {
   const { cm } = useCueMol();
   const formatKind = formatKindForReader(readerName);
   const formatName = formatLabel(formatKind);
+  const badgeLabel = formatName || formatDescr;
   const hasFormatOptions = formatKind !== 'unknown';
 
   // Renderer-options state + UXP-parity behaviour (type history, default
@@ -322,8 +329,8 @@ export const FileOpenOptionDialog: React.FC<FileOpenOptionDialogProps> = ({
         <div className="fod-file-info">
           <AppIcon name="ui.document" size="md" className="fod-file-icon" aria-hidden />
           <span className="fod-file-name" title={filePath}>{basename(filePath)}</span>
-          {formatName && (
-            <span className="fod-file-format">{formatName}</span>
+          {badgeLabel && (
+            <span className="fod-file-format">{badgeLabel}</span>
           )}
         </div>
 
