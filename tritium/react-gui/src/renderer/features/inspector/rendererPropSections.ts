@@ -34,6 +34,7 @@ import { NAMELABEL_SECTIONS } from "@renderer/features/inspector/schema/namelabe
 import { CONTOUR_SECTIONS, GPU_MAPMESH_SECTIONS, ISOSURF_SECTIONS } from "@renderer/features/inspector/schema/map";
 import { SCENE_SECTIONS } from "@renderer/features/inspector/schema/scene";
 import { DENSITY_MAP_SECTIONS } from "@renderer/features/inspector/schema/densitymap";
+import { TRAJECTORY_SECTIONS } from "@renderer/features/inspector/schema/trajectory";
 import type {
   GenericPropEntry,
   PropWriteOpts,
@@ -130,6 +131,8 @@ export const RENDERER_SECTION_REGISTRY: Record<string, RendererPropSectionDef[]>
   // periodicity and how every map renderer's `region_mode: auto` resolves.
   // See schema/densitymap.ts.
   DensityMap: DENSITY_MAP_SECTIONS,
+  // Trajectory OBJECT: the playback averaging window. See schema/trajectory.ts.
+  Trajectory: TRAJECTORY_SECTIONS,
   // SimpleRenderer ("simple"): UXP simple-propdlg "Simple" tab -- line width only.
   simple: SIMPLE_SECTIONS,
   // TraceRenderer ("trace"): shares the UXP simple-propdlg with SimpleRenderer
