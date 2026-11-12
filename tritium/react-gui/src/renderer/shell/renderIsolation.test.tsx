@@ -58,6 +58,7 @@ vi.mock('@renderer/state/layout', () => ({
 // isolation, so their contents are irrelevant -- only that they mount.
 vi.mock('@renderer/features/scene/ScenePane', () => ({ ScenePane: () => null }))
 vi.mock('@renderer/features/coloring/ColorPane', () => ({ ColorPane: () => null }))
+vi.mock('@renderer/features/camera/CameraPane', () => ({ CameraPane: () => null }))
 vi.mock('@renderer/features/molview/ViewPane', () => ({ ViewPane: () => null }))
 vi.mock('@renderer/features/selection/MolStructPane', () => ({ MolStructPane: () => null }))
 vi.mock('@renderer/features/selection/SelectionPane', () => ({ SelectionPane: () => null }))

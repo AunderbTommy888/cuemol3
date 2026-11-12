@@ -314,7 +314,7 @@ try {
     await waitFor(
       () => page.evaluate((v) => window.__cuemolE2E.views().includes(v), plan.view),
       10000,
-      `sidebar view ${plan.view} (views: explorer, view, selection, crystal, or a plugin's)`,
+      `sidebar view ${plan.view} (views: explorer, selection, crystal, actions, or a plugin's)`,
     )
     await page.evaluate((v) => window.__cuemolE2E.openView(v), plan.view)
   }
