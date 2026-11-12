@@ -108,8 +108,8 @@ renderer dialog (手順 4) を cancel した時点で手順 1 は何もロード
 
 ```
 traj = ctx.svc.createObj('Trajectory')
-gro  = ctx.strMgr.createHandler('gro', OBJREADER_CATEGORY)
-gro.attach(traj); gro.setPath(topologyPath); gro.read(); gro.detach()   // topology を Trajectory に読む
+topo = ctx.strMgr.createHandler(TOPOLOGY_READER_BY_EXT[ext(topologyPath)], OBJREADER_CATEGORY)
+topo.attach(traj); topo.setPath(topologyPath); topo.read(); topo.detach() // topology を Trajectory に読む
 traj.name = renderer.objectName || stem(topologyPath)
 scene.addObject(traj)                                    // uid を getObjectS で解決可能にする
 for (p of trajPaths):
@@ -127,7 +127,10 @@ setupRenderer(ctx, traj, renderer)                        // Trajectory は MolC
 - **順序が意味を持つ**。`trajPaths` の順に append され、frame がグローバル連番になる。
 - 原子数不一致は `Trajectory::append` が throw -> `withUndoTxn` が rollback -> command 側で
   error dialog。事前検証はしない (MVP)。
-- reader nickname (C++ 確認済み): topology `gro`、trajectory `dcdtraj` / `xtctraj` / `trrtraj`。
+- reader は拡張子で選ぶ (`trajFormats.ts`): topology `gro` / `amberprm` (`.prmtop` / `.parm7`) / `psf`、block
+  `dcdtraj` / `xtctraj` / `trrtraj` / `ambnetcdftraj` と 1 frame の `amberrst` / `namdcoortraj`
+  ([md-topology-coordinate-files.md](md-topology-coordinate-files.md))。`prmtop` / PSF は座標無しで読むので、frame 0 は
+  最初の block になる。
 
 ### `getTrajectoryRendererInfo.service.ts`
 
@@ -197,10 +200,8 @@ core 側 (汎用の受け皿として残るもの):
 
 ## スコープと既知の制約
 
-- **topology は gro のみ**。trajectory は dcd/xtc/trr。
-  - `prmtop` は同一機構 (topology reader を Trajectory に attach) で動作する見込みだが未検証。
-  - `psf` は専用 `PsfTrajReader` が未実装 (Phase 2 で保留) のため未対応。
-  - AMBER NetCDF (`.nc`, `ambnetcdftraj`) も trajectory として選べる。
+- **topology は gro / prmtop (parm7) / psf**。block は dcd / xtc / trr / AMBER NetCDF (`.nc`) と、1 frame の AMBER
+  restart (`.rst7` / `.inpcrd` / `.restrt`) と NAMD `.coor`。
 - **再生 UI (frame スライダー / transport) は本作業のスコープ外**。ロード済み `Trajectory` は
   `frame` / `nframe` / `dynframe` / `frame_aver_size` を公開しており、既存 `AnimationPanel` /
   `AnimTransport` への配線は別タスク (Phase 2d/2e 相当)。

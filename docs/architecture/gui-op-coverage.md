@@ -129,7 +129,7 @@ op を経由せずに worker の service を直接呼ぶ。scene を変える se
 
 | GUI 操作 | worker 側 (service 名、または `services/` 以下のファイル) | op |
 |---|---|---|
-| File > Open (object) | `loadObject` | 形式ごとの `load_pdb` / `load_mmcif` / `load_mtz` / `load_ccp4` / `load_msms` / `load_namd` / `load_amber`。それ以外は `load_file` (dialog が読んだ reader を `reader` に入れる) |
+| File > Open (object) | `loadObject` | 形式ごとの `load_pdb` / `load_mmcif` / `load_mtz` / `load_ccp4` / `load_msms` / `load_psf` / `load_amber`。それ以外は `load_file` (dialog が読んだ reader を `reader` に入れる) |
 | File > Open (scene) | `loadScene` | `load_file` (`.qsc`)。scene の読み込みは undo に載らないので記録しない |
 | Get PDB / EMDB | `streamLoadFromUrl` / `streamLoadDensityMap` | `fetch_pdb` / `fetch_url` / `fetch_emdb` / `fetch_map`。File Open dialog の形式オプションは `fetch_pdb` に入る (`load_pdb` / `load_mmcif` と同じ名前) |
 | object の Save as | `saveObjectToFile` | `save_object` (scene を変えないので記録しない) |

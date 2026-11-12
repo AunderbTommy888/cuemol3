@@ -224,8 +224,8 @@ which are finite and tiny and used to pass as coordinates near zero, so
 a CCP4 map sniffed as NAMD coordinates. With it, stray ASCII or
 unrelated binary input fails the float-sanity check almost certainly. The
 endian-pair retry mirrors the runtime swap-detection that the
-reader's `read()` already performs. `NAMDCoorReader::canHandleContent`
-implements this pattern.
+reader's `read()` already performs. `NamdCoorFormat::sniff` (used by
+`NamdCoorTrajReader::canHandleContent`) implements this pattern.
 
 ## Decision table: NO vs UNKNOWN
 
@@ -284,11 +284,9 @@ is read-only and lives parallel to `read()`.
 
 ## Readers without sniff coverage
 
-`PsfReader` (`src/modules/mdtools/PsfReader.cpp`) is not a
-`qsys::ObjReader` subclass; it is an internal helper used only from
-`NAMDCoorReader::loadTopology()` to consume a `"topo"` sub-stream.
-It has no entry in the file-type registry and never reaches the
-sniff chain, so no `canHandleContent` is added.
+`PsfMolReader` (nickname `psf`, `src/modules/mdtools/PsfMolReader.cpp`)
+reads PSF topologies through the internal `PsfReader` helper. It is
+picked by its `*.psf` extension only and has no `canHandleContent`.
 
 ## Related files
 
