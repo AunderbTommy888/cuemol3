@@ -9,7 +9,7 @@
 
 #include <qsys/RendererFactory.hpp>
 #include <qsys/StreamManager.hpp>
-#include "NAMDCoorReader.hpp"
+#include "PsfMolReader.hpp"
 #include "GROFileReader.hpp"
 #include "AmberPrmtopReader.hpp"
 #include "DCDTrajReader.hpp"
@@ -17,6 +17,8 @@
 #include "TrrTrajReader.hpp"
 #include "XtcTrajReader.hpp"
 #include "AmberNetCDFReader.hpp"
+#include "AmberRstTrajReader.hpp"
+#include "NamdCoorTrajReader.hpp"
 
 extern void mdtools_regClasses();
 extern void mdtools_unregClasses();
@@ -32,7 +34,7 @@ namespace mdtools {
 
     // register IO handlers
     StreamManager *pSM = StreamManager::getInstance();
-    pSM->registWriter<NAMDCoorReader>();
+    pSM->registReader<PsfMolReader>();
     pSM->registReader<GROFileReader>();
     pSM->registReader<AmberPrmtopReader>();
     pSM->registReader<DCDTrajReader>();
@@ -40,6 +42,8 @@ namespace mdtools {
     pSM->registReader<XtcTrajReader>();
     pSM->registReader<AmberNetCDFReader>();
     pSM->registReader<StructFrameReader>();
+    pSM->registReader<AmberRstTrajReader>();
+    pSM->registReader<NamdCoorTrajReader>();
 
     MB_DPRINTLN("mdtools init: OK");
     return true;

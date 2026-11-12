@@ -146,12 +146,16 @@ architecture, it belongs here.
   MD trajectory を tritium から開く新規機能の設計。block-centric `Trajectory` を worker から
   scriptable API のみで組み立てる `loadTrajectory` service、renderer cancel = 全 transaction
   キャンセルに合わせた 2 段 deferred-load フロー、`DIALOG_PICK_PATH` の複数選択拡張、
-  `OpenMdTrajDialog` の構成とスコープ (gro のみ / 再生 UI 別タスク)。migration ではない。
+  `OpenMdTrajDialog` の構成とスコープ (topology は gro / prmtop / psf、再生 UI 別タスク)。migration ではない。
 - [MD trajectory: 落としたファイルを既存の分子に付ける (tritium / libcuemol2)](md-trajectory-attach-on-drop.md) (日本語) --
   trajectory を drop すると付け先の分子を選ぶダイアログ (`contributes.fileOpeners`)。原子数がヘッダで合う分子だけを
   候補にし、普通の分子は `Trajectory` に変換して元の座標を `structframe` block で frame 0 に残す。行列・編集・元の
   ファイル無しの分子と MorphMol を断る理由、1 txn、`ObjLoadEditInfo` の Undo -> Redo で renderer を戻す修正、
   付けた後の Trajectory タブ (`revealBottomTab`)、インスペクタの frame averaging と object ページの型名の修正。
+- [MD の topology と座標のファイル (libcuemol2 / tritium)](md-topology-coordinate-files.md) (日本語) -- topology
+  (`prmtop`、PSF) と座標 (restart、`.coor`) を分け、座標は 1 frame の block (`amberrst` / `namdcoortraj`) として付ける
+  規則、`Trajectory` では sub-stream を使わない qsc の形、`psf` reader (`coord` 任意) と `namdcoor` の廃止、
+  sub-stream のパスの保存と解決、座標の無い分子を開いたときの view と通知。
 - [分子の object の判定と Trajectory](molecule-object-class.md) (日本語) -- `isMoleculeClass` で
   `Trajectory` を分子に含める規則と使う場所、原子の数を変える操作と superpose / morph で `Trajectory` を断る
   (UI の `molCoordNotTraj` と service の `refuseTrajectory`)。

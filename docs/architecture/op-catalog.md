@@ -483,4 +483,4 @@ set は名前で指す。同じ名前があれば scene の set を global (syst
       `loadAnisou`、`loadAltConf`、`build2ndry`、`autoTopology`
     - `load_mtz`: `columnF`、`columnPhi`、`columnWeight`、`resolutionLimit`、`gridSpacing` (列を指定するとその列を使う)
     - `load_ccp4`: `normalize`、`truncateMin`、`truncateMax` (指定すると切り捨てる)、`mapType`、`subsample`
-    - `load_msms` (`vertFile`)、`load_namd` (`psfFile`)、`load_amber` (`coordFile`)
+    - `load_msms` (`vertFile`)、`load_psf` (`coordFile`)、`load_amber` (`coordFile`)

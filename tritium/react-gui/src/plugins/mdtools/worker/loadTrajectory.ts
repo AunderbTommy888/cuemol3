@@ -31,13 +31,11 @@ import { setupRenderer } from '@renderer/worker/server/services/rend/setupRender
 import { undoTxnResult } from '@renderer/worker/server/services/withUndoTxn';
 import { OBJREADER_CATEGORY } from '@renderer/worker/server/services/helpers/pickReaderName';
 import { fail, ok, type Result } from '@renderer/worker/shared/result';
-import { appendTrajFile, unsupportedTrajFormat } from './trajBlocks';
+import { appendTrajFile, fileExt, unsupportedTrajFormat } from './trajBlocks';
+import { TOPOLOGY_READER_BY_EXT } from '../trajFormats';
 
 const log = console;
 
-// Topology reader nickname. Only GROMACS .gro is supported for now; AMBER
-// prmtop and NAMD psf are deferred (see ADR-md-trajectory-open-dialog).
-const TOPOLOGY_READER = 'gro';
 
 // Minimal native-object surfaces (all calls go through `as unknown as` casts).
 interface ObjReaderHandle {
@@ -60,9 +58,9 @@ interface SceneHandle {
 
 export interface LoadTrajectoryArgs {
     sceneId: number;
-    /** Topology file (GROMACS .gro). */
+    /** Topology file (.gro, or a topology-only .prmtop / .parm7 / .psf). */
     topologyPath: string;
-    /** Trajectory files (.dcd/.xtc/.trr) in frame-concatenation order. */
+    /** Coordinate / trajectory files in frame-concatenation order. */
     trajPaths: string[];
     /** Load every Nth frame (applied to every trajectory reader). Default 1. */
     nevery?: number;
@@ -87,6 +85,12 @@ export function loadTrajectory(
     }
     const unsupported = unsupportedTrajFormat(args.trajPaths);
     if (unsupported) return fail(unsupported, 'unsupported');
+    // The topology reader by extension; a prmtop / PSF is read without
+    // coordinates, so frame 0 is the first coordinate block.
+    const topologyReader = TOPOLOGY_READER_BY_EXT[fileExt(args.topologyPath)];
+    if (!topologyReader) {
+        return fail(`unsupported topology format: ${args.topologyPath}`, 'unsupported');
+    }
 
     const scene = ctx.sceMgr.getScene(args.sceneId);
     if (!scene) {
@@ -107,9 +111,9 @@ export function loadTrajectory(
         //    pre-created Trajectory (not to createDefaultObj's MolCoord) so the
         //    atoms are read onto the Trajectory itself.
         const topoReader = ctx.strMgr.createHandler(
-            TOPOLOGY_READER, OBJREADER_CATEGORY,
+            topologyReader, OBJREADER_CATEGORY,
         ) as unknown as ObjReaderHandle | null;
-        if (!topoReader) return fail(`topology reader "${TOPOLOGY_READER}" not available`, 'unsupported');
+        if (!topoReader) return fail(`topology reader "${topologyReader}" not available`, 'unsupported');
         topoReader.setPath(args.topologyPath);
         topoReader.attach(traj);
         topoReader.read();

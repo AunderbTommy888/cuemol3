@@ -243,8 +243,8 @@ export function formatLoad(format: FormatOptions): [string, Record<string, unkno
     }
     case 'msms':
       return ['load_msms', { vertFile: orNull(format.options.vertFilePath) }]
-    case 'namdcoor':
-      return ['load_namd', { psfFile: format.options.psfFilePath }]
+    case 'psf':
+      return ['load_psf', { coordFile: orNull(format.options.coordFilePath) }]
     case 'amberprm':
       return ['load_amber', { coordFile: orNull(format.options.coordFilePath) }]
     default:

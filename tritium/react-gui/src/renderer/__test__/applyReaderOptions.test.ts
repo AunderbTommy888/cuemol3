@@ -137,18 +137,11 @@ describe('applyReaderOptions', () => {
         expect('vertex_file' in reader).toBe(false)
     })
 
-    it('namdcoor: wires PSF via setSubPath("topo", path)', () => {
+    it('psf: wires the .coor via setSubPath("coord", path)', () => {
         const { reader, setSubPath } = makeReader()
-        const fmt: FormatOptions = { kind: 'namdcoor', options: { psfFilePath: '/data/x.psf' } }
-        applyReaderOptions(reader as unknown as ObjReader, 'namdcoor', fmt)
-        expect(setSubPath).toHaveBeenCalledWith('topo', '/data/x.psf')
-    })
-
-    it('namdcoor: skips setSubPath when psf path empty', () => {
-        const { reader, setSubPath } = makeReader()
-        const fmt: FormatOptions = { kind: 'namdcoor', options: { psfFilePath: '' } }
-        applyReaderOptions(reader as unknown as ObjReader, 'namdcoor', fmt)
-        expect(setSubPath).not.toHaveBeenCalled()
+        const fmt: FormatOptions = { kind: 'psf', options: { coordFilePath: '/data/x.coor' } }
+        applyReaderOptions(reader as unknown as ObjReader, 'psf', fmt)
+        expect(setSubPath).toHaveBeenCalledWith('coord', '/data/x.coor')
     })
 
     it('amberprm: wires coord via setSubPath("coord", path)', () => {

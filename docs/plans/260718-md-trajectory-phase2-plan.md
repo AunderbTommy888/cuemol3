@@ -23,7 +23,6 @@ Phase 2 の目的は **MD trajectory (DCD) の realtime 表示**である。DCD 
 3. **遅延 setup()**: GRO reader は `Trajectory::setup()` を呼ばないので、`getAllAtomSize`/`getSelIndexArray` で topology 到達後に自動実行。
 4. **遅延 finalize**: develop の `qsys::Object` は `SceneEventListener` ではなく `sceneChanged(ONLOADED)` フックが無い(dev2016 との差)。→ `setFrame`/`getFrameSize` 初回アクセスで `updateTrajBlockDataImpl` を実行。
 5. **frame count off-by-one 修正**: kept 数は `ceil(nfile/nevery)`(frame 0 を含む)。floor だと 1 block 分不足で `getCrdArray` 範囲外 → SIGSEGV(参照実装も同じ floor バグ)。
-6. **PSF は保留**: PSF は trajectory ではなく、develop の `PsfReader` は coordinate reader 併用前提のヘルパ。専用 PSF ObjReader は要設計。GRO topology で代替(GROFileReader を Trajectory に attach)。
 
 **保留(今後実装)**:
 - **厳密な 1-frame/vsync ベンチ**: AnimMgr は wall-clock でフレームを飛ばす(遅いと frame drop して同じ時間で再生)。ベンチには rAF tick ごとに `dynframe++` する frame カウントベースの harness が必要(`ViewLoopController` に追加、`PERF_MEASURE` と併用)。MVP では MolAnim の `length = nframes/target_fps`(秒)で近似。
@@ -53,14 +52,13 @@ Phase 2 の目的は **MD trajectory (DCD) の realtime 表示**である。DCD 
 
 [mdtools 層]
   Trajectory : AnimMol ── std::deque<TrajBlockPtr> ── update(frame) → 座標書込 + fireAtomsMoved
-  PsfTrajReader : ObjReader ── createDefaultObj → Trajectory (topology を構築)
 
 [qsys 層]
   AnimMgr ── frame プロパティを PropAnim で駆動 (MorphMol と同じ経路)
   既存の座標テクスチャ renderer (CPK2/Simple/Selection/Trace/BallStick) ── 無変更で追従
 ```
 
-**入口の流れ**: `.psf` を `PsfTrajReader` で読み `Trajectory`(topology のみ)を生成 → `.dcd` を `DCDTrajReader` で同じ `Trajectory` に coord frame (TrajBlock) として流し込む → `AnimMgr` が `frame` を駆動 → `Trajectory::update()` が現フレーム座標を書いて `fireAtomsMoved()` → 移植済みレンダラが高速追従。
+**入口の流れ**: topology を topology reader で `Trajectory` に読む → `.dcd` を `DCDTrajReader` で同じ `Trajectory` に coord frame (TrajBlock) として流し込む → `AnimMgr` が `frame` を駆動 → `Trajectory::update()` が現フレーム座標を書いて `fireAtomsMoved()` → 移植済みレンダラが高速追従。
 
 ---
 
@@ -101,8 +99,7 @@ Phase 2 の目的は **MD trajectory (DCD) の realtime 表示**である。DCD 
 - `DispCacheRenderer::objectChanged`(`src/qsys/DispCacheRenderer.cpp:71-86`): `OBE_CHANGED` のみ処理。dynamic を足すなら基底のこの分岐修正が必須(§9.5)。
 - `MorphMol : molstr::MolCoord`(`src/modules/anim/MorphMol.hpp:46`)。`m_id2aid`(CrdArray index→AID)を既に保持。`update()`(`.cpp:464-528`)は `pAtom->setPos` + `fireAtomsMoved()`。
 - `MolCoord::fireAtomsMoved()`(`MolCoord.hpp:239`)→ `OBE_CHANGED` "atomsMoved"。`getCrdArray()`(`:314`)は QDF/scripting 用シリアライズで本件と無関係。
-- mdtools 登録(`src/modules/mdtools/mdtools.cpp:30-32`, `mdtools.moddef`): `registReader<GROFileReader>()` / `registWriter<NAMDCoorReader>()`。**develop の慣習は `registReader`**(参照の all-`registWriter` は参照側の癖)。`Trajectory`/`TrajBlock`/`DCDTrajReader`/`FortBinStream`/`AnimMol` は develop に**未移植**。
-- `PsfReader`(develop): `ObjReader` ですらない素のヘルパ(`attach`+`read`)。→ 薄い `PsfTrajReader` を新設(§9.4)。
+- mdtools 登録(`src/modules/mdtools/mdtools.cpp`, `mdtools.moddef`): **develop の慣習は `registReader`**(参照の all-`registWriter` は参照側の癖)。`Trajectory`/`TrajBlock`/`DCDTrajReader`/`FortBinStream`/`AnimMol` は develop に**未移植**。
 - 前提基底クラスは develop に存在確認済み: `qlib::BinInStream` / `qlib::Array` / `qlib::TimerListener` / `qsys::ObjReader` / `StreamManager::registReader`。
 - reader gtest 前例: `src/tests/modules/importers/test_grofilereader.cpp` / `test_amber_reader.cpp`。
 
@@ -151,7 +148,7 @@ Phase 1/3 のとおりレンダラが `m_pCoordTex` を所有。MVP は「1 分�
 |---|---|---|---|
 | **2a** | I/O 層: `FortBinStream` + `TrajBlock`(+`TrajBlockReader`) + `DCDTrajReader` | gtest(合成 DCD で record/frame/seek) | **不要** |
 | **2b** | `AnimMol`(削減版) を molstr に新設 + `MorphMol` を AnimMol 派生に再親子化 | gtest(index map / getCrdArrayInd)+ MorphMol 回帰(既存シーン) | 2b は最小(再親子化の回帰は GUI 目視が望ましい) |
-| **2c** | `Trajectory`(mdtools) : AnimMol + `PsfTrajReader` 入口 | gtest(PSF+DCD ロード→ frame 数 / 現フレーム座標マッピング) | 不要 |
+| **2c** | `Trajectory`(mdtools) : AnimMol | gtest(topology+DCD ロード→ frame 数 / 現フレーム座標マッピング) | 不要 |
 | **2d** | `AnimMgr` 再生配線 + GUI 検証(realtime DCD 再生) | GUI 目視(CPK/stick で DCD 再生が座標テクスチャ経由・再構築なし) | **必要** |
 | **2e** | (任意/後段) `OBE_CHANGED_DYNAMIC` + AnimMol 所有 1 枚共有テクスチャ + serial + レンダラ CrdArray source 化 | GUI + perf | 必要 |
 
@@ -166,7 +163,7 @@ MVP = 2a→2b→2c→2d。2e は性能が問題になった段階で。
 1. `FortBinStream.{hpp,cpp}` を移植(参照はほぼそのまま)。`qlib::BinInStream` 派生。
 2. `TrajBlock.{hpp,cpp,qif}` を移植。`qsys::Object` 派生。**`TrajBlockReader`(抽象)の同居を維持するか分離するか判断**: 参照は同居(TrajBlock.hpp 内)。分離すると TrajBlock 容器が SceneManager 依存を切れて gtest しやすい。まず参照どおり同居で移植し、gtest で困れば分離を検討。
 3. `DCDTrajReader.{hpp,cpp,qif}` を移植。`TrajBlockReader` 派生、`createDefaultObj → TrajBlock`。
-4. mdtools 登録: `mdtools.moddef` に `TrajBlock; DCDTrajReader;`(+ 後で `Trajectory; PsfTrajReader;`)、`mdtools.cpp` に `registReader<DCDTrajReader>()`。`.qif` の wrapper は build 時生成。`CMakeLists.txt` に新規 `.cpp` を追加。
+4. mdtools 登録: `mdtools.moddef` に `TrajBlock; DCDTrajReader;`(+ 後で `Trajectory;`)、`mdtools.cpp` に `registReader<DCDTrajReader>()`。`.qif` の wrapper は build 時生成。`CMakeLists.txt` に新規 `.cpp` を追加。
 5. **gtest**: 合成 DCD(小さな CORD ヘッダ + 数フレーム)を作り、`FortBinStream` の record 読み、`DCDTrajReader` の header 解析・frame 数・座標値・seek 遅延ロードを検証。`test_grofilereader.cpp` を雛形に(`SetUp()` で `qsys::init(sysconfig.xml)`)。lazy_load + nevery>1 の相互作用(§7 gotcha)もケース化。
 
 *注*: `DCDTrajReader` は `Trajectory::getAllAtomSize()` 等を使うので、2a 完結には最小限の `Trajectory` スタブか、2c を待つ設計にする。**推奨**: 2a では `TrajBlock` 単体 + `FortBinStream` を gtest 完結させ、`DCDTrajReader` の全経路検証は `Trajectory` が入る 2c と合流させる(header 解析部だけ 2a で単体テスト可)。
@@ -178,17 +175,16 @@ MVP = 2a→2b→2c→2d。2e は性能が問題になった段階で。
 3. `MorphMol::update()` は現状 `setPos` + `fireAtomsMoved`。write-both として **CrdArray にも書く**(`getAtomCrdArray()` に補間結果を書いてから setPos、あるいは setPos ループと同時)。ただし MVP でレンダラが getPos 経由なら CrdArray 書込は 2e まで no-op でも可 — **まず既存挙動を壊さないことを優先**し、CrdArray 書込は getCrdArrayInd を使うレンダラを入れる 2e で有効化。
 4. **gtest**: AnimMol の index map(getCrdArrayInd/getAtomIDByArrayInd の往復)を検証。**回帰**: 既存 MorphMol テストシーンで再生が従来どおり動くこと(再親子化でデグレしないこと)。
 
-### Step 2c: Trajectory + PsfTrajReader
+### Step 2c: Trajectory
 
 1. `src/modules/mdtools/Trajectory.{hpp,cpp,qif}` を新設。`molstr::AnimMol` 派生。`std::deque<TrajBlockPtr> m_blocks`、`append`/`findBlk`、`getCrdArrayImpl`(現フレーム→ block coord、frame_aver は後回し可)、`createIndexMapImpl`、`update(iframe)`(現フレーム座標を **MolAtom に setPos + CrdArray に書き** → `fireAtomsMoved`)、`setup`/`setupSel`。プロパティ `frame`/`nframe`(`frame_aver_size`/`dynframe` は後回し可)。self-anim(`onTimer` 等)は**外す**。
-2. `PsfTrajReader.{hpp,cpp,qif}` を新設(§9.4)。`ObjReader` 派生、`createDefaultObj → Trajectory`。`read()` は develop の素の `PsfReader` ヘルパを `attach(traj)` + `read(ins)` で使い、`traj->applyTopology(false)` + `traj->setup()`。`readsel` 部分読みは最初は省略。
-3. mdtools 登録に `Trajectory` / `PsfTrajReader` を追加。`DCDTrajReader` の `targTrajUID` 経由で PSF 由来 Trajectory に DCD を流し込めることを確認。
-4. **gtest**: PSF(topology)+ DCD(coord)をロードし、`Trajectory` の atom 数一致、`nframe`、`update(k)` 後の代表原子座標が k フレーム目と一致することを検証。
+2. mdtools 登録に `Trajectory` を追加。`DCDTrajReader` の `targTrajUID` 経由で topology を読んだ Trajectory に DCD を流し込めることを確認。
+3. **gtest**: topology + DCD(coord)をロードし、`Trajectory` の atom 数一致、`nframe`、`update(k)` 後の代表原子座標が k フレーム目と一致することを検証。
 
 ### Step 2d: AnimMgr 再生 + GUI 検証
 
 1. `AnimMgr`(`src/qsys/anim/`)が `frame` プロパティを `PropAnim` で駆動する経路を確認(MorphMol 前例)。`Trajectory` が同じ `frame` プロパティ + `update()` を持てば追加配線は最小のはず — **実装時に MorphMol の再生配線と対照して確認**。
-2. tritium で PSF+DCD を読み、CPK/stick を付けて再生。**確認**: (a) 座標テクスチャ経由で更新され `renderCoordTexImpl` が毎フレーム走らない、(b) realtime に動く、(c) fireAtomsMoved 経由で移植済みレンダラが追従。
+2. tritium で topology + DCD を読み、CPK/stick を付けて再生。**確認**: (a) 座標テクスチャ経由で更新され `renderCoordTexImpl` が毎フレーム走らない、(b) realtime に動く、(c) fireAtomsMoved 経由で移植済みレンダラが追従。
 3. native はビルドのみ。
 
 ### Step 2e (任意・後段): dynamic events + 共有テクスチャ + serial
@@ -202,7 +198,7 @@ MVP = 2a→2b→2c→2d。2e は性能が問題になった段階で。
 
 ## 6. 検証
 
-- **2a-2c**: gtest(`task run_gtest`)。合成 DCD / 小 PSF を fixture 化。`SetUp()` で `qsys::init(sysconfig.xml)`(pre-install: `<topdir>/data/sysconfig.xml`)。不必要に類似テストを量産せず、record 境界・frame seek・topology 一致・frame→座標マッピングという仕様を pin する結合テストを主軸に。
+- **2a-2c**: gtest(`task run_gtest`)。合成 DCD / 小 topology を fixture 化。`SetUp()` で `qsys::init(sysconfig.xml)`(pre-install: `<topdir>/data/sysconfig.xml`)。不必要に類似テストを量産せず、record 境界・frame seek・topology 一致・frame→座標マッピングという仕様を pin する結合テストを主軸に。
 - **2b 回帰**: 既存 MorphMol シーンが再親子化後も従来どおり再生(デグレ検出)。
 - **2d**: tritium(release)で DCD 再生を目視。`renderCoordTexImpl` が初期化時のみ・再生中に出ないこと(ログ確認)。native は `task build_libcuemol2` が通ること(目視なし)。
 - **不変条件**: `MolAtom::getPos()` ホット経路に validity-flag 分岐を足していないこと。既存移植済みレンダラ(CPK2/Simple/Selection/Trace/BallStick)を MVP で変更していないこと。
@@ -216,9 +212,8 @@ MVP = 2a→2b→2c→2d。2e は性能が問題になった段階で。
 3. **変更シリアル不在**: 参照 AnimMol に serial は無い(tri-state flag のみ)。共有テクスチャ化(2e)で単調増加 serial を**新規追加**する(移植でなく設計)。
 4. **AnimMol に GL 無し**: テクスチャ生成/更新には `DisplayContext` が要る。共有テクスチャ化(2e)は「最初に draw したレンダラが lazy 生成」で回避する。MVP はレンダラ所有のまま。
 5. **`TrajBlockReader` の結合**: `TrajBlock.hpp` 同居の reader 基底が `Trajectory`+`SceneManager` に依存。gtest 容易化のため容器と reader の分離を検討可(まず参照どおり同居)。
-6. **PsfReader の形**: develop の `PsfReader` は `ObjReader` でない素のヘルパ。薄い `PsfTrajReader` で包む(§9.4)。`readsel`(部分読み)は最初省略。
-7. **worker 内大確保**: `docs/plans/umbreon-process-isolation-plan.md` の PartitionAlloc OOM。トラジェクトリ全体を worker 内に置く場合は要検討(遅延ロードで緩和)。
-8. **登録方式**: develop 慣習の `registReader<>()` を使う(参照の all-`registWriter` を踏襲しない)。
+6. **worker 内大確保**: `docs/plans/umbreon-process-isolation-plan.md` の PartitionAlloc OOM。トラジェクトリ全体を worker 内に置く場合は要検討(遅延ロードで緩和)。
+7. **登録方式**: develop 慣習の `registReader<>()` を使う(参照の all-`registWriter` を踏襲しない)。
 
 ---
 
@@ -240,7 +235,7 @@ MVP = 2a→2b→2c→2d。2e は性能が問題になった段階で。
 - `src/qsys/ObjectEvent.hpp` / `src/qsys/DispCacheRenderer.cpp` — イベント型と既定 objectChanged。
 - `src/modules/anim/MorphMol.{hpp,cpp}` — AnimMol 再親子化と update() の前例。
 - `src/qsys/anim/AnimMgr.{hpp,cpp}` — frame 駆動(PropAnim)。
-- `src/modules/mdtools/{mdtools.cpp,mdtools.moddef,PsfReader.*}` — 登録と PSF ヘルパ。
+- `src/modules/mdtools/{mdtools.cpp,mdtools.moddef}` — 登録。
 - `src/tests/modules/importers/test_grofilereader.cpp` — reader gtest 前例。
 
 ### 参照実装 (`/Users/user1/proj64/cuemol2_png`, dev201608)

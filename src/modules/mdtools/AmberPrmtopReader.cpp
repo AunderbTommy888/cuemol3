@@ -600,7 +600,7 @@ void AmberPrmtopReader::buildMol()
     }
     // After appendAtom, MolCoord internally assigns an AID. For AMBER's
     // strictly-sequential ordering, atom index ia maps to atom AID ia.
-    // We rely on this convention (same as NAMDCoorReader/PsfReader).
+    // We rely on this convention (same as PsfReader).
   }
 
   // Add the bonds declared in the file. In "autogen" mode the file bonds are

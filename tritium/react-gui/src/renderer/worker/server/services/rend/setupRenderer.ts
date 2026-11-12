@@ -34,7 +34,7 @@ import {
     listRendererNamesByType,
 } from '@renderer/worker/server/services/helpers/rendererNames';
 import { safeRead } from '@renderer/worker/server/services/helpers/safeRead';
-import { focusOnNode } from '@renderer/worker/server/services/sceneTree/sceneOps';
+import { focusAllViewsOnNode } from '@renderer/worker/server/services/sceneTree/sceneOps';
 import { NON_MOL_CLASSES, isScalarMapClass } from '@renderer/worker/shared/objectClasses';
 
 const log = console;
@@ -60,17 +60,7 @@ function fitViewsIfRequested(ctx: WorkerContext, mol: any, rend: Renderer, rendO
     const scene = safeRead(() => mol.getScene() as Scene | null) ?? null;
     const rendId = safeRead(() => (rend as unknown as { uid: number }).uid);
     if (!scene || rendId === undefined) return;
-    // scene.view_uids: the C++ getViewTable() accessor is not wrapped to TS.
-    const uidStr = safeRead(() => scene.view_uids) ?? '';
-    for (const tok of uidStr.split(',')) {
-        const viewId = Number(tok.trim());
-        if (tok.trim() === '' || !Number.isFinite(viewId)) continue;
-        try {
-            focusOnNode(ctx, { sceneId: scene.uid, viewId, nodeId: rendId, nodeType: 'renderer', record: false });
-        } catch (e) {
-            log.warn(`fitting view ${viewId} to the new renderer failed:`, e);
-        }
-    }
+    focusAllViewsOnNode(ctx, scene, rendId, 'renderer');
 }
 
 /**

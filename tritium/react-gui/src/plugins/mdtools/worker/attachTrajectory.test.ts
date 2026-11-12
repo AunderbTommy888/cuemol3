@@ -5,6 +5,9 @@
  * Pinned: a plain molecule is converted in ONE undo txn (XML round trip into
  * a Trajectory, objects swapped, scene-tree position kept, its structure file
  * appended as the frame-0 `structframe` block, then the trajectory files); a
+ * molecule opened with a coordinate file takes that file as the frame-0 block
+ * instead (topology read back without the sub-stream), and one without
+ * coordinates gets no frame-0 block and the views fitted after the attach; a
  * failed read rolls all of it back; and the target list keeps only molecules
  * the files fit, with the reason for those that cannot be converted.
  */
@@ -18,6 +21,11 @@ vi.mock('fs', () => {
 })
 
 const sceneObjects: { uid: number; name: string; className: string }[] = []
+const fitCalls: string[] = []
+vi.mock('@renderer/worker/server/services/sceneTree/sceneOps', () => ({
+  focusAllViewsOnNode: (_ctx: unknown, _scene: unknown, nodeId: number, nodeType: string) =>
+    fitCalls.push(`fit(${nodeType} ${nodeId})`),
+}))
 vi.mock('@renderer/worker/server/services/scene/listSceneObjects', () => ({
   listSceneObjects: () => ({ objects: sceneObjects }),
 }))
@@ -31,6 +39,11 @@ interface MolOpts {
   src?: string
   moved?: boolean
   modified?: boolean
+  srctype?: string
+  /** Every atom at the origin (a topology-only file). */
+  noCoords?: boolean
+  /** The reader's "coord" sub-stream path. */
+  coord?: string
 }
 
 function makeMol(o: MolOpts) {
@@ -41,11 +54,14 @@ function makeMol(o: MolOpts) {
     modified: o.modified ?? false,
     src: o.src ?? '',
     alt_src: '',
-    srctype: o.src ? 'pdb' : '',
+    srctype: o.srctype ?? (o.src ? 'pdb' : ''),
     xformMat: { isIdent: () => !o.moved },
     getClassName: () => o.className,
     getAtomSize: () => o.natoms,
     getAllAtomSize: () => o.natoms,
+    getBoundBoxMin: () => (o.noCoords ? { x: 0, y: 0, z: 0 } : { x: -1, y: -1, z: -1 }),
+    getBoundBoxMax: () => (o.noCoords ? { x: 0, y: 0, z: 0 } : { x: 1, y: 1, z: 1 }),
+    getSubSrcPath: (key: string) => (key === 'coord' ? o.coord ?? '' : ''),
   }
 }
 
@@ -78,6 +94,7 @@ function makeFixture(opts: { mols: ReturnType<typeof makeMol>[]; fileAtoms?: num
 
   const scene = {
     uid: 1,
+    view_uids: '10',
     getObject: (uid: number) => objs.get(uid) ?? null,
     destroyObject: (uid: number) => calls.push(`scene.destroyObject(${uid})`),
     addObject: () => calls.push('scene.addObject(traj)'),
@@ -91,6 +108,7 @@ function makeFixture(opts: { mols: ReturnType<typeof makeMol>[]; fileAtoms?: num
     strMgr: {
       createHandler: (nick: string) => makeReader(nick),
       toXML2: (_mol: unknown, cls: string) => { calls.push(`toXML2(${cls})`); return '<xml/>' },
+      toXML2NoSubSrc: (_mol: unknown, cls: string) => { calls.push(`toXML2NoSubSrc(${cls})`); return '<xml/>' },
       fromXML: () => { calls.push('fromXML'); return traj },
     },
   } as unknown as WorkerContext
@@ -99,7 +117,7 @@ function makeFixture(opts: { mols: ReturnType<typeof makeMol>[]; fileAtoms?: num
 }
 
 describe('attachTrajectory', () => {
-  beforeEach(() => { sceneObjects.length = 0 })
+  beforeEach(() => { sceneObjects.length = 0; fitCalls.length = 0 })
 
   it('converts a molecule in one txn, keeping its coordinates as frame 0', () => {
     const mol = makeMol({ uid: 5, className: 'MolCoord', natoms: 100, src: '/p/m.pdb' })
@@ -127,6 +145,30 @@ describe('attachTrajectory', () => {
       'traj.append',
       'commitUndoTxn',
     ])
+  })
+
+  it('moves a coordinate sub-stream to the frame-0 block; no coordinates means no frame-0 block and a view fit', () => {
+    // prmtop + rst7: the topology is read back alone, the rst7 is frame 0.
+    const prm = makeMol({ uid: 5, className: 'MolCoord', natoms: 3, src: '/p/s.prmtop', srctype: 'amberprm', coord: '/p/s.rst7' })
+    const a = makeFixture({ mols: [prm] })
+    expect(mdtoolsServices.attachTrajectory(a.ctx, { sceneId: 1, objId: 5, trajPaths: ['/p/a.dcd'] }).ok).toBe(true)
+    expect(a.calls.filter((c) => /^(toXML|\w+\.setPath)/.test(c))).toEqual([
+      'toXML2NoSubSrc(Trajectory)',
+      'amberrst.setPath(/p/s.rst7)',
+      'dcdtraj.setPath(/p/a.dcd)',
+    ])
+    expect(fitCalls).toEqual([])
+
+    // A topology-only PSF: no frame-0 block; the views fit after the commit.
+    const psf = makeMol({ uid: 6, className: 'MolCoord', natoms: 3, src: '/p/s.psf', srctype: 'psf', noCoords: true })
+    const b = makeFixture({ mols: [psf] })
+    expect(mdtoolsServices.attachTrajectory(b.ctx, { sceneId: 1, objId: 6, trajPaths: ['/p/a.dcd'] }).ok).toBe(true)
+    expect(b.calls.filter((c) => /^(toXML|\w+\.setPath)/.test(c))).toEqual([
+      'toXML2(Trajectory)',
+      'dcdtraj.setPath(/p/a.dcd)',
+    ])
+    expect(b.calls[b.calls.length - 1]).toBe('commitUndoTxn')
+    expect(fitCalls).toEqual(['fit(object 99)'])
   })
 
   it('rolls the conversion back when a trajectory file fails to read', () => {

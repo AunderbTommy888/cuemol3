@@ -12,6 +12,7 @@
 #include <qlib/StringStream.hpp>
 #include <qlib/FileStream.hpp>
 #include <qlib/ClassRegistry.hpp>
+#include <qlib/Utils.hpp>
 
 #include "SceneManager.hpp"
 #include "SceneEvent.hpp"
@@ -631,9 +632,14 @@ void Object::writeTo2(qlib::LDom2Node *pNode) const
 
     // write reader options
     if (m_pReaderOpts!=NULL) {
+      // Write a copy: the sub-stream paths are converted for the file only,
+      // so the reader options in memory keep the absolute paths they were
+      // read with (a later re-read, e.g. the object's XML round trip, must
+      // not find them made relative to the scene file).
+      qlib::LDom2Node *pROptsCopy = MB_NEW qlib::LDom2Node(*m_pReaderOpts);
 
       // Convert reader opt's pathnames (sub streams), if exists.
-      qlib::LDom2Node *pSSNode = m_pReaderOpts->findChild("subsrc");
+      qlib::LDom2Node *pSSNode = pROptsCopy->findChild("subsrc");
       if (pSSNode!=NULL) {
         for (pSSNode->firstChild(); pSSNode->hasMoreChild(); pSSNode->nextChild()) {
           qlib::LDom2Node *pCNode = pSSNode->getCurChild();
@@ -645,7 +651,7 @@ void Object::writeTo2(qlib::LDom2Node *pNode) const
         }
       }
 
-      pNode->appendChild( MB_NEW qlib::LDom2Node(*m_pReaderOpts) );
+      pNode->appendChild(pROptsCopy);
     }
   }
   else {
@@ -942,6 +948,50 @@ void Object::readFromStream(qlib::InStream &ins)
 
   // END
   delete pRdr;
+}
+
+void Object::resolveSubSrcPaths(const LString &basedir)
+{
+  if (m_pReaderOpts == NULL) return;
+  qlib::LDom2Node *pSSNode = m_pReaderOpts->findChild("subsrc");
+  if (pSSNode == NULL) return;
+
+  for (pSSNode->firstChild(); pSSNode->hasMoreChild(); pSSNode->nextChild()) {
+    qlib::LDom2Node *pCNode = pSSNode->getCurChild();
+    const LString src = pCNode->getStrAttr("src");
+    const LString altsrc = pCNode->getStrAttr("alt_src");
+    if (src.isEmpty() && altsrc.isEmpty()) continue;
+
+    // The same choice as the main source (SceneXMLReader::procDataSrcLoad):
+    // src relative to the scene file first, then alt_src. Throws when
+    // neither can be read.
+    bool bAlt = false;
+    LString abs_path = qlib::LDataSrcContainer::selectSrcAltSrc(
+        src.isEmpty() ? altsrc : src, altsrc, basedir, bAlt);
+    if (!qlib::isAbsolutePath(abs_path) && !basedir.isEmpty())
+      abs_path = qlib::makeAbsolutePath(abs_path, basedir);
+
+    pCNode->setStrAttr("src", abs_path);
+    pCNode->removeChild("alt_src");
+  }
+}
+
+LString Object::getSubSrcPath(const LString &key) const
+{
+  if (m_pReaderOpts == NULL) return LString();
+  qlib::LDom2Node *pSSNode = m_pReaderOpts->findChild("subsrc");
+  if (pSSNode == NULL) return LString();
+  qlib::LDom2Node *pCNode = pSSNode->findChild(key);
+  if (pCNode == NULL) return LString();
+
+  const LString src = pCNode->getStrAttr("src");
+  if (src.isEmpty() || qlib::isAbsolutePath(src)) return src;
+  const LString altsrc = pCNode->getStrAttr("alt_src");
+  if (!altsrc.isEmpty() && qlib::isAbsolutePath(altsrc)) return altsrc;
+  ScenePtr pScene = getScene();
+  if (!pScene.isnull() && !pScene->getBasePath().isEmpty())
+    return qlib::makeAbsolutePath(src, pScene->getBasePath());
+  return src;
 }
 
 void Object::updateSrcPath(const LString &srcpath)

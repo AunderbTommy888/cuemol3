@@ -3,6 +3,9 @@
 
 #include "mdtools/AmberPrmtopReader.hpp"
 #include "mdtools/AmberCrdReader.hpp"
+#include "mdtools/AmberRstTrajReader.hpp"
+#include "mdtools/Trajectory.hpp"
+#include "mdtools/TrajBlock.hpp"
 #include "molstr/MolCoord.hpp"
 #include "molstr/MolAtom.hpp"
 #include "molstr/MolBond.hpp"
@@ -16,7 +19,14 @@
 #include <qlib/StringStream.hpp>
 #include <qlib/Vector4D.hpp>
 #include <qsys/Object.hpp>
+#include <qsys/Scene.hpp>
+#include <qsys/SceneManager.hpp>
+#include <qsys/SceneXMLReader.hpp>
+#include <qsys/SceneXMLWriter.hpp>
+#include <qsys/StreamManager.hpp>
+#include <qlib/LByteArray.hpp>
 
+#include <filesystem>
 #include <fstream>
 #include <string>
 
@@ -406,4 +416,162 @@ TEST(AmberPrmtopReaderTest, AutogenBondModeClearsNoautogenMarker)
     LString noautogen;
     pRes->getPropStr("noautogen", noautogen);
     EXPECT_FALSE(noautogen.equals("true"));
+}
+
+// ---- qsc round trips (a scene file away from the working directory) ----
+
+namespace {
+
+// A second restart for the water, every coordinate shifted by +10.
+const char *const kInpcrdWaterShifted =
+    "water restart shifted\n"
+    "    3\n"
+    "  11.0000000  12.0000000  13.0000000  11.5000000  12.0000000  13.0000000\n"
+    "  11.0000000  12.5000000  13.0000000\n";
+
+// A fresh directory under the temp dir (not the working directory, so a path
+// left relative to the scene file would not be found from the cwd).
+std::filesystem::path makeQscDir(const char *name)
+{
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / name;
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    return dir;
+}
+
+std::string writeIn(const std::filesystem::path &dir, const char *fname, const char *payload)
+{
+    const std::string path = (dir / fname).string();
+    std::ofstream(path, std::ios::binary) << payload;
+    return path;
+}
+
+void saveScene(const qsys::ScenePtr &pScene, const std::string &path)
+{
+    qsys::SceneXMLWriter w;
+    w.setPath(path.c_str());
+    w.attach(pScene);
+    w.write();
+    w.detach();
+}
+
+qsys::ScenePtr loadScene(const std::string &path)
+{
+    qsys::ScenePtr pScene = qsys::SceneManager::getInstance()->createScene();
+    qsys::SceneXMLReader r;
+    r.setPath(path.c_str());
+    r.attach(pScene);
+    r.read();
+    r.detach();
+    EXPECT_TRUE(r.getErrMsg().isEmpty()) << r.getErrMsg().c_str();
+    return pScene;
+}
+
+qlib::Vector4D firstAtomPos(const MolCoordPtr &pMol)
+{
+    return pMol->beginAtom()->second->getPos();
+}
+
+}  // namespace
+
+// A topology-only prmtop takes its coordinates as AMBER restart blocks (one
+// frame each), which a .qsc stores as references and reads back: the
+// Trajectory is two files of one kind each, with no reader sub-stream.
+TEST(AmberRstTrajReaderTest, RestartBlocksFollowTopologyOnlyPrmtopAcrossQsc)
+{
+    const std::filesystem::path dir = makeQscDir("amberrst_qsc");
+    const std::string prmtop = writeIn(dir, "water.prmtop", kPrmtopWater);
+    const std::string rst0 = writeIn(dir, "water0.rst7", kInpcrdWater);
+    const std::string rst1 = writeIn(dir, "water1.rst7", kInpcrdWaterShifted);
+    const std::string qsc = (dir / "water.qsc").string();
+
+    qsys::ScenePtr pScene = qsys::SceneManager::getInstance()->createScene();
+    mdtools::TrajectoryPtr pTraj(MB_NEW mdtools::Trajectory());
+    {
+        AmberPrmtopReader topo;
+        topo.attach(pTraj);
+        topo.setPath(prmtop.c_str());
+        topo.qsys::ObjReader::read();
+        topo.detach();
+    }
+    pScene->addObject(pTraj);
+
+    for (const std::string &rst : {rst0, rst1}) {
+        mdtools::AmberRstTrajReader rr;
+        rr.setPath(rst.c_str());
+        EXPECT_EQ(rr.getFileAtomCount(), 3);
+        rr.setTargTrajUID(pTraj->getUID());
+        mdtools::TrajBlockPtr pBlk(rr.createDefaultObj());
+        rr.attach(pBlk);
+        rr.qsys::ObjReader::read();
+        rr.detach();
+        pTraj->append(pBlk);
+    }
+    ASSERT_EQ(pTraj->getFrameSize(), 2);
+    pTraj->setFrame(1);
+    EXPECT_NEAR(firstAtomPos(pTraj).x(), 11.0, 1e-4);
+    pTraj->setFrame(0);
+    EXPECT_NEAR(firstAtomPos(pTraj).x(), 1.0, 1e-4);
+    EXPECT_NEAR(firstAtomPos(pTraj).z(), 3.0, 1e-4);
+
+    saveScene(pScene, qsc);
+    qsys::ScenePtr pScene2 = loadScene(qsc);
+    ASSERT_EQ(pScene2->getObjectCount(), 1);
+    mdtools::TrajectoryPtr pTraj2(pScene2->beginObj()->second, qlib::no_throw_tag());
+    ASSERT_FALSE(pTraj2.isnull());
+    ASSERT_EQ(pTraj2->getFrameSize(), 2);
+    pTraj2->setFrame(0);
+    EXPECT_NEAR(firstAtomPos(pTraj2).x(), 1.0, 1e-4);
+    EXPECT_NEAR(firstAtomPos(pTraj2).z(), 3.0, 1e-4);
+
+    qsys::SceneManager::getInstance()->destroyScene(pScene->getUID());
+    qsys::SceneManager::getInstance()->destroyScene(pScene2->getUID());
+    std::filesystem::remove_all(dir);
+}
+
+// A molecule read with a reader sub-stream (prmtop + coord) reads back from a
+// .qsc saved away from the working directory: the sub-stream path is resolved
+// against the scene file like the main source. Saving leaves the path in
+// memory absolute, and the XML without sub-streams (the trajectory
+// conversion's) reads the topology alone.
+TEST(AmberPrmtopReaderTest, CoordSubStreamSurvivesQscAwayFromCwd)
+{
+    const std::filesystem::path dir = makeQscDir("amber_coord_qsc");
+    const std::string prmtop = writeIn(dir, "water.prmtop", kPrmtopWater);
+    const std::string rst = writeIn(dir, "water.rst7", kInpcrdWater);
+    const std::string qsc = (dir / "water.qsc").string();
+
+    qsys::ScenePtr pScene = qsys::SceneManager::getInstance()->createScene();
+    MolCoordPtr pMol(MB_NEW MolCoord());
+    {
+        AmberPrmtopReader reader;
+        reader.attach(pMol);
+        reader.setPath(prmtop.c_str());
+        reader.setPath("coord", rst.c_str());
+        reader.qsys::ObjReader::read();
+        reader.detach();
+    }
+    pScene->addObject(pMol);
+
+    saveScene(pScene, qsc);
+    EXPECT_STREQ(pMol->getSubSrcPath("coord").c_str(), rst.c_str());
+
+    qsys::ScenePtr pScene2 = loadScene(qsc);
+    ASSERT_EQ(pScene2->getObjectCount(), 1);
+    MolCoordPtr pMol2(pScene2->beginObj()->second, qlib::no_throw_tag());
+    ASSERT_FALSE(pMol2.isnull());
+    EXPECT_NEAR(firstAtomPos(pMol2).x(), 1.0, 1e-6);
+    EXPECT_NEAR(firstAtomPos(pMol2).z(), 3.0, 1e-6);
+    EXPECT_STREQ(pMol2->getSubSrcPath("coord").c_str(), rst.c_str());
+
+    auto xmlOf = [](const qlib::LByteArrayPtr &p) {
+        return std::string(reinterpret_cast<const char *>(p->data()), p->size());
+    };
+    qsys::StreamManager *pSM = qsys::StreamManager::getInstance();
+    EXPECT_NE(xmlOf(pSM->toXML2(pMol2, "Trajectory")).find("<subsrc"), std::string::npos);
+    EXPECT_EQ(xmlOf(pSM->toXML2NoSubSrc(pMol2, "Trajectory")).find("<subsrc"), std::string::npos);
+
+    qsys::SceneManager::getInstance()->destroyScene(pScene->getUID());
+    qsys::SceneManager::getInstance()->destroyScene(pScene2->getUID());
+    std::filesystem::remove_all(dir);
 }

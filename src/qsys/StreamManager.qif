@@ -53,6 +53,8 @@ runtime_class StreamManager
   // XML-string serialization
   object<ByteArray$> toXML(object<LScrObject$>);
   object<ByteArray$> toXML2(object<LScrObject$>, string type_ovwr);
+  // toXML2 without the object's reader sub-streams (ropts/subsrc)
+  object<ByteArray$> toXML2NoSubSrc(object<LScrObject$>, string type_ovwr);
   // array ver
   object<ByteArray$> arrayToXML(array);
   object<ByteArray$> rendGrpToXML(array, string);

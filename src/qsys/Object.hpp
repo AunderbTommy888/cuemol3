@@ -182,6 +182,18 @@ namespace qsys {
     void setReaderOpts(LDom2Node *ptree);
     LDom2Node *getReaderOpts() const { return m_pReaderOpts; }
 
+    /// Resolve the reader's sub-stream paths (ropts/subsrc) read from a scene
+    /// file to the absolute path of the file actually found, the way the main
+    /// source is (src relative to basedir, else alt_src), and drop alt_src.
+    /// Throws qlib::IOException when a sub-stream file cannot be found.
+    void resolveSubSrcPaths(const LString &basedir);
+
+    /// Absolute path of the reader's sub-stream `key` (e.g. "coord") the
+    /// object was read with, or an empty string when it has none. A relative
+    /// path (as a save leaves it) is resolved with alt_src or the scene's base
+    /// path; the file is not checked.
+    LString getSubSrcPath(const LString &key) const;
+
     //////////
 
     const LString &getSourceType() const {
