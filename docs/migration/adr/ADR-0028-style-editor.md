@@ -4,6 +4,17 @@
 - Date: 2026-06-12
 - Mapping rows: [`dialog.style-editor`](../mapping/other_dlgs.md#dialogstyle-editor), [`panel.workspace.ctxmenu.style`](../mapping/panels.md#panelworkspacectxmenustyle)
 
+> **Update 2026-11-12**: the Color and Selection tabs moved to the Colors and
+> Selections panes of the Styles view, and this dialog now lists the style
+> entries only (delete-only, title `Style entries: <set>`, menu item "Style
+> Entries..."). The writers call the `StyleManager` methods
+> (`setColor(key, col, scopeId, styleSetId)` etc.) instead of the `StyleSet`
+> ones, because only the manager queues the pending event that redraws a named
+> colour's users. A set is editable when it is not read-only; the bundled global
+> sets are made read-only at startup, and an edit to the global "user" set runs
+> outside the scene undo txn (it is not undoable). See
+> [styles-panel](../../architecture/styles-panel.md).
+
 ## Context
 
 The UXP "Style editor" (`style/style_editor.xul`) edits a single style SET via

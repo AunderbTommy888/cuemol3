@@ -3,11 +3,9 @@ import type { Object as CueMolObject } from '@cuemol/core/src/wrappers/Object';
 import type { Renderer } from '@cuemol/core/src/wrappers/Renderer';
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext';
 import {
-    buildStyleRoot,
     parseSceneTreeJSON,
     type SceneNodeType,
     type SceneTreeNode,
-    type StyleRootEntry,
 } from '@renderer/worker/shared/sceneTreeTypes';
 import { withUndoTxn } from '../withUndoTxn';
 import { recordOp } from '@renderer/worker/server/actions/serviceOps';
@@ -46,66 +44,14 @@ export interface SetNodeUiCollapsedResult {
     ok: boolean;
 }
 
-interface StyleSetJSONEntry {
-    name?: string;
-    uid?: number;
-    scene_id?: number;
-    src?: string;
-    readonly?: boolean;
-    modified?: boolean;
-}
-
-function parseStyleSetsJSON(
-    styleMgr: { getStyleSetsJSON: (id: number) => string },
-    scopeId: number,
-): StyleRootEntry[] {
-    try {
-        const json = styleMgr.getStyleSetsJSON(scopeId);
-        if (!json) return [];
-        const parsed = JSON.parse(json) as StyleSetJSONEntry[];
-        if (!Array.isArray(parsed)) return [];
-        const out: StyleRootEntry[] = [];
-        for (const e of parsed) {
-            if (typeof e.uid !== 'number') continue;
-            out.push({
-                name: e.name ?? '',
-                uid: e.uid,
-                scopeId: e.scene_id ?? scopeId,
-                src: e.src ?? '',
-                readonly: e.readonly === true,
-                modified: e.modified === true,
-            });
-        }
-        return out;
-    } catch {
-        return [];
-    }
-}
-
-function getStyleEntries(ctx: WorkerContext, sceneId: number): StyleRootEntry[] {
-    // UXP `createStyleNodeData` concatenates `getStyleSetsJSON(0)` (global)
-    // with `getStyleSetsJSON(scene.uid)` (scene-local). Mirror that layout.
-    const styleMgr = ctx.svc.getService('StyleManager') as unknown as
-        | { getStyleSetsJSON?: (id: number) => string }
-        | null;
-    if (!styleMgr?.getStyleSetsJSON) return [];
-    const mgr = styleMgr as { getStyleSetsJSON: (id: number) => string };
-    return [...parseStyleSetsJSON(mgr, 0), ...parseStyleSetsJSON(mgr, sceneId)];
-}
-
 export function getSceneTree(ctx: WorkerContext, args: GetSceneTreeArgs): GetSceneTreeResult {
     const scene = getSceneOrNull(ctx, args.sceneId);
     if (!scene) return { ok: false, tree: null };
     const json = scene.getSceneDataJSON();
     const tree = parseSceneTreeJSON(json);
     if (!tree) return { ok: false, tree: null };
-
-    // Synthesize the style root branch: C++ `getSceneDataJSON` covers neither
-    // styles nor cameras, and styles have no pane of their own yet. Cameras
-    // are served by `listCameras` to the Camera pane instead.
-    const styleEntries = getStyleEntries(ctx, args.sceneId);
-    tree.children.push(buildStyleRoot(styleEntries));
-
+    // Cameras and style sets are not part of the tree: the Camera pane
+    // (`listCameras`) and the Style Sets pane (`listStyleSets`) show them.
     return { ok: true, tree };
 }
 

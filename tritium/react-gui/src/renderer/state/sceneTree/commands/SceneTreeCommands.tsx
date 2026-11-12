@@ -11,7 +11,6 @@ import type { AsyncCueMol } from '@renderer/worker/client/AsyncCueMol'
 import type { UseSceneTreeResult } from '@renderer/features/scene/useSceneTree'
 import { useSceneNodeCommands } from './useSceneNodeCommands'
 import { useRendererCommands } from './useRendererCommands'
-import { useStyleCommands } from './useStyleCommands'
 import type { SceneNewFlows } from './useSceneNewFlows'
 
 export interface SceneTreeCommandsProps extends SceneNewFlows {
@@ -30,6 +29,5 @@ export const SceneTreeCommands: React.FC<SceneTreeCommandsProps> = ({
 }) => {
   useSceneNodeCommands({ scene, beginInlineRename })
   useRendererCommands({ cm, sceneId, scene, openNewRendererFlow })
-  useStyleCommands({ cm, sceneId, scene })
   return null
 }

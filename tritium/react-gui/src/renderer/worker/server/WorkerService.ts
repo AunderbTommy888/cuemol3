@@ -24,6 +24,7 @@ import {
 import {
     loadUserStyle as loadUserStyleImpl,
     loadDotStyles as loadDotStylesImpl,
+    markBundledStylesReadOnly,
     saveUserStyle as saveUserStyleImpl,
     setViewInputConfigStyle as setViewInputConfigStyleImpl,
     registerWorkerEventListener,
@@ -278,6 +279,8 @@ export class WorkerService {
         log.info(`Worker> initCueMol called, loadPath: ${loadPath}`);
         this._cm.initCueMol(loadPath);
         log.info('Worker> initCueMol OK');
+        // Before the dot / user styles load: only these sets are bundled.
+        markBundledStylesReadOnly(this._cm);
 
         // Animation playback runs on a C++ timer the render loop pumps; this
         // is where the worker notices it moved and tells the renderer. The

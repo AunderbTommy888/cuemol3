@@ -17,6 +17,9 @@
 import type { Icon as PhosphorIcon, IconWeight } from "@phosphor-icons/react";
 import {
   Angle,
+  PaintBucket,
+  PencilSimple,
+  Swatches,
   Scroll,
   Target,
   BookmarkSimple,
@@ -151,6 +154,7 @@ export const APP_ICONS = {
   "activity.agent": { lib: "phosphor", Comp: Sparkle },
   "activity.settings": { lib: "phosphor", Comp: Gear },
   "activity.actions": { lib: "phosphor", Comp: Scroll },
+  "activity.styles": { lib: "phosphor", Comp: Swatches },
 
   // Top toolbar.
   "toolbar.newTab": { lib: "phosphor", Comp: Plus },
@@ -247,6 +251,9 @@ export const APP_ICONS = {
   "ui.tree": { lib: "phosphor", Comp: TreeStructure },
   "ui.document": { lib: "phosphor", Comp: File },
   "ui.lock": { lib: "phosphor", Comp: Lock },
+  "ui.edit": { lib: "phosphor", Comp: PencilSimple },
+  "ui.namedColor": { lib: "phosphor", Comp: PaintBucket },
+  "ui.namedSel": { lib: "phosphor", Comp: Selection },
   "ui.unlock": { lib: "phosphor", Comp: LockOpen },
   "ui.eyeOpen": { lib: "phosphor", Comp: Eye },
   "ui.eyeClosed": { lib: "phosphor", Comp: EyeSlash },

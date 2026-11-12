@@ -57,7 +57,6 @@ export interface SceneCtxPayload {
     regenSurfaceEnabled: boolean
     canEditInteractions: boolean
     rendChangeTypes: string[]
-    styleInfo?: SceneTreeNode extends { styleInfo?: infer S } ? S : undefined
 }
 
 export async function buildSceneCtxPayload(
@@ -176,10 +175,6 @@ export async function buildSceneCtxPayload(
         }
     }
 
-    // Style node payload data is just a property read on the tree node --
-    // getSceneTree already populated it.
-    const styleInfo = node.type === 'style' ? node.styleInfo : undefined
-
     return {
         nodeType: node.type,
         nodeLabel: nodeMenuLabel(node),
@@ -198,6 +193,5 @@ export async function buildSceneCtxPayload(
         regenSurfaceEnabled,
         canEditInteractions,
         rendChangeTypes,
-        styleInfo: styleInfo as SceneCtxPayload['styleInfo'],
     }
 }

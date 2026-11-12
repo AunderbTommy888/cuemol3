@@ -15,6 +15,7 @@
  * | View       | Panes                                       |
  * |------------|---------------------------------------------|
  * | Explorer   | ScenePane, CameraPane, ColorPane, ViewPane  |
+ * | Styles     | StyleSetsPane, StyleColorsPane, StyleSelectionsPane |
  * | Selection  | MolStructPane, SelectionPane                |
  * | Crystal    | SymmetryPane, DensityMapPane                |
  * | Actions    | ActionHistoryPane, ActionLibraryPane        |
@@ -70,6 +71,9 @@ import { SymmetryPane } from "@renderer/features/density/SymmetryPane";
 import { DensityMapPane } from "@renderer/features/density/DensityMapPane";
 import { ActionLibraryPane } from "@renderer/features/actions/ActionLibraryPane";
 import { ActionHistoryPane } from "@renderer/features/actions/ActionHistoryPane";
+import { StyleSetsPane } from "@renderer/features/styles/StyleSetsPane";
+import { StyleColorsPane } from "@renderer/features/styles/StyleColorsPane";
+import { StyleSelectionsPane } from "@renderer/features/styles/StyleSelectionsPane";
 
 /* --- Re-export types for external consumers --- */
 export type { SceneTreeNode } from "@renderer/worker/shared/sceneTreeTypes";
@@ -85,6 +89,7 @@ const HEADER_HEIGHT = 28;
 
 const VIEW_TITLES: Record<string, string> = {
   explorer: "Explorer",
+  styles: "Styles",
   selection: "Selection",
   crystal: "Crystal",
   actions: "Actions",
@@ -92,6 +97,7 @@ const VIEW_TITLES: Record<string, string> = {
 
 const VIEW_ICONS: Record<string, AppIconKey> = {
   explorer: "activity.explorer",
+  styles: "activity.styles",
   selection: "activity.selection",
   crystal: "activity.crystal",
   actions: "activity.actions",
@@ -141,6 +147,30 @@ const VIEW_PANES: Record<string, PaneConfig[]> = {
       defaultSize: 300,
       render: (collapsed, onToggle) => (
         <ViewPane collapsed={collapsed} onToggleCollapse={onToggle} />
+      ),
+    },
+  ],
+  // Style sets and the named colours / selections of the one picked.
+  styles: [
+    {
+      id: "sets",
+      defaultSize: 200,
+      render: (collapsed, onToggle) => (
+        <StyleSetsPane collapsed={collapsed} onToggleCollapse={onToggle} />
+      ),
+    },
+    {
+      id: "colors",
+      defaultSize: 260,
+      render: (collapsed, onToggle) => (
+        <StyleColorsPane collapsed={collapsed} onToggleCollapse={onToggle} />
+      ),
+    },
+    {
+      id: "selections",
+      defaultSize: 260,
+      render: (collapsed, onToggle) => (
+        <StyleSelectionsPane collapsed={collapsed} onToggleCollapse={onToggle} />
       ),
     },
   ],

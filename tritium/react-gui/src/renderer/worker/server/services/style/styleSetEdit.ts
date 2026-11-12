@@ -24,19 +24,26 @@ interface StyleSetLike {
     readonly: boolean;
     getColorDefsJSON(): string;
     getColor(name: string): AbstractColorLike | null;
-    setColor(name: string, col: AbstractColorLike): boolean;
-    removeColor(name: string): boolean;
     getStrDataNamesJSON(cat: string): string;
     getStrData(cat: string, key: string): string;
-    setStrData(cat: string, key: string, value: string): boolean;
-    removeStrData(cat: string, key: string): boolean;
     getStyleNamesJSON(): string;
     removeStyle(name: string): boolean;
 }
 
+/**
+ * Writes go through the manager, not the set: `StyleSet.setColor` and friends
+ * change the set but queue no style event, so `firePendingEvents` would fire
+ * nothing -- the named-colour cache would keep the old value and no renderer
+ * would redraw. The manager's versions write the same way (undo record
+ * included) and queue the event.
+ */
 interface StyleMgrLike {
     getStyleSet(id: number): StyleSetLike | null;
     compileColor(str: string, scopeId: number): AbstractColorLike | null;
+    setColor(key: string, col: AbstractColorLike, scopeId: number, styleSetId: number): boolean;
+    removeColor(key: string, scopeId: number, styleSetId: number): boolean;
+    setStrData(cat: string, key: string, value: string, scopeId: number, styleSetId: number): boolean;
+    removeStrData(cat: string, key: string, scopeId: number, styleSetId: number): boolean;
     firePendingEvents?(): void;
 }
 
@@ -139,13 +146,17 @@ export function getStyleSetContents(
 
 // --- writes (live-applied, one undo step each) ---
 
-/** Resolve set + scene, run `fn` in an undo txn, fire pending events. */
+/**
+ * Resolve set + scene, run `fn` in an undo txn, fire pending events.
+ * `fn` receives the set's scope (0 global, else the scene uid), which the
+ * manager's write methods key on.
+ */
 function mutate(
     ctx: WorkerContext,
     sceneId: number,
     styleSetId: number,
     label: string,
-    fn: (set: StyleSetLike, mgr: StyleMgrLike) => void,
+    fn: (set: StyleSetLike, mgr: StyleMgrLike, scopeId: number) => void,
 ): boolean {
     const scene = getSceneOrNull(ctx, sceneId);
     if (!scene) return false;
@@ -153,12 +164,27 @@ function mutate(
     if (!mgr) return false;
     const set = mgr.getStyleSet(styleSetId);
     if (!set) return false;
+    // `getStyleSetsJSON` lists one scope, so a global set is found under 0.
+    const scopeId = [...styleSetsOf(ctx, sceneId), ...styleSetsOf(ctx, 0)]
+        .find((e) => e.uid === styleSetId)?.scene_id;
+    if (typeof scopeId !== 'number') return false;
+    // Editability is the set's read-only flag alone: the bundled global sets
+    // and the dot-directory styles are read-only, the "user" set (saved on
+    // exit) and the scene's own sets are not.
+    if (set.readonly) return false;
 
     let ok = false;
-    withUndoTxn(scene, label, () => {
-        fn(set, mgr);
+    if (scopeId === 0) {
+        // A global set has no scene, so C++ records no undo for it; a scene
+        // txn around the edit would commit empty and clear the Redo stack.
+        fn(set, mgr, scopeId);
         ok = true;
-    });
+    } else {
+        withUndoTxn(scene, label, () => {
+            fn(set, mgr, scopeId);
+            ok = true;
+        });
+    }
     mgr.firePendingEvents?.();
     return ok;
 }
@@ -178,11 +204,11 @@ export function setStyleSetColor(ctx: WorkerContext, args: SetStyleSetColorArgs)
     const name = args.name.trim();
     if (name.length === 0) return { ok: false };
     const styleSet = styleSetNameOf(ctx, args.sceneId, args.styleSetId);
-    const ok = mutate(ctx, args.sceneId, args.styleSetId, `Set style color ${name}`, (set, mgr) => {
+    const ok = mutate(ctx, args.sceneId, args.styleSetId, `Set style color ${name}`, (_set, mgr, scopeId) => {
         const col = mgr.compileColor(args.colorStr, args.scopeId);
         if (!col) return;
         if (styleSet !== null) recordOp(ctx, args.sceneId, 'define_color', { name, color: args.colorStr.trim(), styleSet });
-        set.setColor(name, col);
+        mgr.setColor(name, col, scopeId, args.styleSetId);
     });
     return { ok };
 }
@@ -195,9 +221,9 @@ export interface RemoveStyleSetKeyArgs {
 
 export function removeStyleSetColor(ctx: WorkerContext, args: RemoveStyleSetKeyArgs): StyleSetEditResult {
     const styleSet = styleSetNameOf(ctx, args.sceneId, args.styleSetId);
-    const ok = mutate(ctx, args.sceneId, args.styleSetId, `Remove style color ${args.name}`, (set) => {
+    const ok = mutate(ctx, args.sceneId, args.styleSetId, `Remove style color ${args.name}`, (_set, mgr, scopeId) => {
         if (styleSet !== null) recordOp(ctx, args.sceneId, 'remove_color', { styleSet, name: args.name });
-        set.removeColor(args.name);
+        mgr.removeColor(args.name, scopeId, args.styleSetId);
     });
     return { ok };
 }
@@ -283,11 +309,11 @@ export function setStyleSetSelection(
     // define_selection trims the expression it stores.
     const styleSet = styleSetNameOf(ctx, args.sceneId, args.styleSetId);
     const opEquivalent = args.value.trim() === args.value && args.value !== '' && styleSet !== null;
-    const ok = mutate(ctx, args.sceneId, args.styleSetId, `Set style selection ${name}`, (set) => {
+    const ok = mutate(ctx, args.sceneId, args.styleSetId, `Set style selection ${name}`, (_set, mgr, scopeId) => {
         if (opEquivalent) {
             recordOp(ctx, args.sceneId, 'define_selection', { name, selection: args.value, styleSet });
         }
-        set.setStrData(SEL_CAT, name, args.value);
+        mgr.setStrData(SEL_CAT, name, args.value, scopeId, args.styleSetId);
     });
     return { ok };
 }
@@ -297,9 +323,9 @@ export function removeStyleSetSelection(
     args: RemoveStyleSetKeyArgs,
 ): StyleSetEditResult {
     const styleSet = styleSetNameOf(ctx, args.sceneId, args.styleSetId);
-    const ok = mutate(ctx, args.sceneId, args.styleSetId, `Remove style selection ${args.name}`, (set) => {
+    const ok = mutate(ctx, args.sceneId, args.styleSetId, `Remove style selection ${args.name}`, (_set, mgr, scopeId) => {
         if (styleSet !== null) recordOp(ctx, args.sceneId, 'remove_selection', { styleSet, name: args.name });
-        set.removeStrData(SEL_CAT, args.name);
+        mgr.removeStrData(SEL_CAT, args.name, scopeId, args.styleSetId);
     });
     return { ok };
 }
