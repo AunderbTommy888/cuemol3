@@ -26,6 +26,13 @@ namespace qsys {
     qlib::uid_t m_nObjID;
     RendererPtr m_pTgtRend;
 
+    /// Renderers the created object carried when its creation was undone.
+    /// Scene::destroyObject() strips them without recording (undo is in
+    /// progress), so redo re-attaches them from here. Empty for an object
+    /// whose renderers were created after it joined the scene: those are
+    /// recorded on their own and already gone when the creation is undone.
+    std::vector<RendererPtr> m_stashRends;
+
     enum {
       OLEI_OBJ_CREATE,
       OLEI_OBJ_DESTROY,

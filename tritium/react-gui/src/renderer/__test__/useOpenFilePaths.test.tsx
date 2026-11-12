@@ -23,6 +23,16 @@ vi.mock('@renderer/dialogs/ErrorAlertDialogProvider', () => ({
   useShowErrorAlert: () => showErrorAlert,
 }))
 
+// Plugin file openers the batch routes by extension; a test fills it.
+const fileOpeners: { id: string; extensions: string[]; command: string }[] = []
+vi.mock('@renderer/plugin-host', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  usePluginContributions: () => ({ fileOpeners }),
+}))
+vi.mock('@renderer/state/workspace', () => ({
+  useActiveScene: () => ({ activeSceneId: 7, activeMolViewId: undefined }),
+}))
+
 const OBJ_FILTERS = [
   { name: 'All Supported', extensions: ['pdb', 'qsc'] },
   { name: 'PDB file', extensions: ['pdb'] },
@@ -45,6 +55,8 @@ function makeCm() {
 
 interface MountOpts {
   obj?: (args: unknown) => unknown
+  /** Handler registered for a plugin command id (the file openers' lane). */
+  plugin?: { id: string; handler: (args: unknown) => unknown }
   scene?: (args: unknown) => unknown
   /** null models CueMol still initialising. */
   cm?: unknown
@@ -63,15 +75,17 @@ function mountOpenPaths(opts: MountOpts = {}) {
 
   const handle = makeRenderHook<{ a: OpenFilePathsApi; b: OpenFilePathsApi }>(
     () => {
-      const { register } = useCommands()
+      const { register, registerAny } = useCommands()
       React.useEffect(() => {
         const un1 = register(CmdId.OpenObjByPath, objSpy as never)
         const un2 = register(CmdId.OpenSceneByPath, sceneSpy as never)
+        const un3 = opts.plugin ? registerAny(opts.plugin.id as never, opts.plugin.handler as never) : () => {}
         return () => {
           un1()
           un2()
+          un3()
         }
-      }, [register])
+      }, [register, registerAny])
       // Two instances so cross-consumer exclusion can be exercised; the second
       // stands in for useShellOpenFiles.
       const a = useOpenFilePaths({ cm: cm as never })
@@ -87,6 +101,7 @@ describe('useOpenFilePaths', () => {
   beforeEach(() => {
     showErrorAlert.mockClear()
     resetOpenFilePathsForTests()
+    fileOpeners.length = 0
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -290,6 +305,37 @@ describe('useOpenFilePaths', () => {
 
     await handle.result.a.openPaths([])
     expect(objSpy).not.toHaveBeenCalled()
+    expect(showErrorAlert).not.toHaveBeenCalled()
+
+    handle.unmount()
+  })
+
+  it('hands files a plugin opener claims to its command, after the rest, with the batch scene', async () => {
+    fileOpeners.push({ id: 'traj', extensions: ['.xtc'], command: 'plugin.md.attach' })
+    const order: string[] = []
+    const pluginSpy = vi.fn((_args: unknown) => {
+      order.push('plugin')
+      return Promise.resolve()
+    })
+    const { handle, objSpy } = mountOpenPaths({
+      obj: () => {
+        order.push('obj')
+        return Promise.resolve({ loaded: true, sceneId: 42 })
+      },
+      plugin: { id: 'plugin.md.attach', handler: pluginSpy },
+    })
+
+    // Dropped together: the topology opens first and the trajectory follows
+    // into the scene it landed in.
+    await handle.result.a.openPaths(['/d/t.XTC', '/d/m.pdb'])
+    expect(objSpy).toHaveBeenCalledTimes(1)
+    expect(order).toEqual(['obj', 'plugin'])
+    expect(pluginSpy).toHaveBeenCalledWith({ paths: ['/d/t.XTC'], sceneId: 42 })
+
+    // Dropped alone: the active scene, even for a drop meant for a new scene
+    // (a new empty scene has nothing to attach to).
+    await handle.result.a.openPaths(['/d/u.xtc'], { openTarget: 'new' })
+    expect(pluginSpy).toHaveBeenLastCalledWith({ paths: ['/d/u.xtc'], sceneId: 7 })
     expect(showErrorAlert).not.toHaveBeenCalled()
 
     handle.unmount()

@@ -23,6 +23,8 @@ export interface FileOpenOptionDialogArgs {
    * Drives which format-specific option pane is shown.
    */
   readerName?: string
+  /** The reader's format description, the badge for formats with no short label. */
+  formatDescr?: string
 }
 
 export const {
@@ -39,6 +41,7 @@ export const {
       presetTypes={args?.presetTypes ?? []}
       objType={args?.objType ?? ''}
       readerName={args?.readerName ?? ''}
+      formatDescr={args?.formatDescr ?? ''}
       onConfirm={(options) => resolve(options)}
       onCancel={() => resolve(null)}
     />

@@ -80,6 +80,7 @@ export const EMPTY_CONTRIBUTIONS: PluginContributions = {
   bottomTabs: [],
   statusBar: [],
   settings: [],
+  fileOpeners: [],
   extensions: {},
 }
 
@@ -93,7 +94,8 @@ export const EMPTY_CONTRIBUTIONS: PluginContributions = {
 export function collectContributions(active: readonly RendererPlugin[]): PluginContributions {
   const extensions: Record<string, unknown[]> = {}
   const out: PluginContributions = {
-    menus: [], toolbar: [], views: [], bottomTabs: [], statusBar: [], settings: [], extensions,
+    menus: [], toolbar: [], views: [], bottomTabs: [], statusBar: [], settings: [], fileOpeners: [],
+    extensions,
   }
 
   for (const plugin of active) {
@@ -103,6 +105,7 @@ export function collectContributions(active: readonly RendererPlugin[]): PluginC
 
     if (contributes.menus) out.menus.push(...contributes.menus)
     if (contributes.toolbar) out.toolbar.push(...contributes.toolbar)
+    if (contributes.fileOpeners) out.fileOpeners.push(...contributes.fileOpeners)
 
     for (const view of contributes.views ?? []) {
       const panes = view.panes.flatMap((pane) => {

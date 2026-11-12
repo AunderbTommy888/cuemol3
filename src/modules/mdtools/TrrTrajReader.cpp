@@ -75,6 +75,14 @@ qsys::ObjectPtr TrrTrajReader::createDefaultObj() const
 
 ///////////////////////////////////////////
 
+int TrrTrajReader::readFileAtomCount(qlib::InStream &ins)
+{
+    XdrInStream xdr(ins);
+    FrameHeader hdr;
+    if (!readFrameHeader(xdr, hdr)) return -1;
+    return hdr.natom;
+}
+
 bool TrrTrajReader::read(qlib::InStream &ins)
 {
     TrajBlockPtr pTB(getTarget<TrajBlock>());

@@ -66,6 +66,11 @@ public:
 
     virtual bool read(qlib::InStream &ins) override;
 
+protected:
+    virtual int readFileAtomCount(qlib::InStream &ins) override;
+
+public:
+
     /// Read frame ifrm into pTB, for a block this reader indexed lazily.
     virtual void loadFrm(int ifrm, TrajBlock *pTB) override;
 

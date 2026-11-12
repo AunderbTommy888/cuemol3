@@ -44,7 +44,7 @@ export async function getCompatibleRendererNames(
         });
     } catch (e) {
         log.warn('getCompatibleRendererNames failed:', e);
-        return { types: [], objType: '', readerName: '' };
+        return { types: [], objType: '', readerName: '', formatDescr: '' };
     }
 }
 

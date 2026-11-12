@@ -11,6 +11,12 @@ import type { PluginCommandId, PluginManifest } from '@renderer/plugin-host/api'
 /** Opens the Open MD Trajectory dialog and runs the load the user confirms. */
 export const OPEN_MD_TRAJ_COMMAND: PluginCommandId = 'plugin.mdtools.openTrajDialog'
 
+/** Receives dropped trajectory files and attaches them to a molecule (the file opener). */
+export const ATTACH_TRAJ_COMMAND: PluginCommandId = 'plugin.mdtools.attachTrajectory'
+
+/** The Trajectory bottom tab (shown after an attach). */
+export const TRAJECTORY_TAB_ID = 'trajectory'
+
 export const mdtoolsManifest: PluginManifest = {
   id: 'mdtools',
   name: 'MD Tools',
@@ -25,7 +31,14 @@ export const mdtoolsManifest: PluginManifest = {
   // the module follows this plugin and the two switch together.
   defaultEnabled: false,
   contributes: {
-    commands: [{ id: OPEN_MD_TRAJ_COMMAND, title: 'Open MD Trajectory...' }],
+    commands: [
+      { id: OPEN_MD_TRAJ_COMMAND, title: 'Open MD Trajectory...' },
+      { id: ATTACH_TRAJ_COMMAND, title: 'Attach Trajectory' },
+    ],
+    // A dropped trajectory file goes onto a molecule already in the scene.
+    fileOpeners: [
+      { id: 'trajectory', extensions: ['.xtc', '.dcd', '.trr', '.nc'], command: ATTACH_TRAJ_COMMAND },
+    ],
     menus: [
       {
         group: 'file',
@@ -38,7 +51,7 @@ export const mdtoolsManifest: PluginManifest = {
     ],
     bottomTabs: [
       {
-        id: 'trajectory',
+        id: TRAJECTORY_TAB_ID,
         label: 'Trajectory',
         icon: 'panel.trajectory',
         // Where the built-in tab used to sit, after Animation.

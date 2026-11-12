@@ -13,6 +13,7 @@
 #include "GROFileReader.hpp"
 #include "AmberPrmtopReader.hpp"
 #include "DCDTrajReader.hpp"
+#include "StructFrameReader.hpp"
 #include "TrrTrajReader.hpp"
 #include "XtcTrajReader.hpp"
 #include "AmberNetCDFReader.hpp"
@@ -38,6 +39,7 @@ namespace mdtools {
     pSM->registReader<TrrTrajReader>();
     pSM->registReader<XtcTrajReader>();
     pSM->registReader<AmberNetCDFReader>();
+    pSM->registReader<StructFrameReader>();
 
     MB_DPRINTLN("mdtools init: OK");
     return true;

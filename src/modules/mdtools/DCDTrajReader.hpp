@@ -64,6 +64,11 @@ public:
 
     virtual bool read(qlib::InStream &ins) override;
 
+protected:
+    virtual int readFileAtomCount(qlib::InStream &ins) override;
+
+public:
+
     /// Decode frame ifrm into pTB, for a block this reader indexed lazily.
     virtual void loadFrm(int ifrm, TrajBlock *pTB) override;
 
@@ -83,6 +88,10 @@ private:
     bool m_fcell;
 
     void readHeader(qlib::InStream &ins, const TrajectoryPtr &pTraj);
+
+    /// Read the header records into m_natom / m_nfile / m_fcell (no topology
+    /// check).
+    void readHeaderFields(qlib::InStream &ins);
     void readBody(qlib::InStream &ins, const TrajBlockPtr &pTB,
                   const TrajectoryPtr &pTraj);
 

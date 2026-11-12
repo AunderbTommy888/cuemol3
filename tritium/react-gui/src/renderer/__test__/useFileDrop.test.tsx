@@ -18,6 +18,9 @@ import { resetOpenFilePathsForTests } from '@renderer/features/file-io/useOpenFi
 
 void React
 
+vi.mock('@renderer/state/workspace', () => ({
+  useActiveScene: () => ({ activeSceneId: undefined, activeMolViewId: undefined }),
+}))
 vi.mock('@renderer/contexts/FileOpenPrefsContext', () => ({
   useFileOpenPrefs: () => ({
     dropTarget: 'new',

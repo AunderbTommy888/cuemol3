@@ -59,6 +59,12 @@ bool ObjLoadEditInfo::undo()
   case OLEI_OBJ_CREATE:
     pScene = qlib::ObjectManager::sGetObj<Scene>(m_nSceneID);
     if (pScene==NULL) return false;
+    // An object that joined the scene with renderers already attached (e.g.
+    // one rebuilt from XML) has no record of their creation, so keep them
+    // here for redo before destroyObject() strips them.
+    m_stashRends.clear();
+    for (Object::RendIter ri = m_pTgtObj->beginRend(); ri != m_pTgtObj->endRend(); ++ri)
+      m_stashRends.push_back(ri->second);
     // re-destroy the object
     res = pScene->destroyObject(m_pTgtObj->getUID());
     //if (res) {
@@ -111,11 +117,25 @@ bool ObjLoadEditInfo::redo()
   Object *pObj;
 
   switch (m_nMode) {
-  case OLEI_OBJ_CREATE:
+  case OLEI_OBJ_CREATE: {
     pScene = qlib::ObjectManager::sGetObj<Scene>(m_nSceneID);
     if (pScene==NULL) return false;
     // restore from the trash
-    return pScene->registerObjectImpl(m_pTgtObj);
+    if (!pScene->registerObjectImpl(m_pTgtObj))
+      return false;
+    // re-attach the renderers stashed by undo()
+    bool ok = true;
+    for (const RendererPtr &pRend : m_stashRends) {
+      try {
+        m_pTgtObj->registerRendererImpl(pRend);
+      }
+      catch (...) {
+        ok = false;
+      }
+    }
+    m_stashRends.clear();
+    return ok;
+  }
 
   case OLEI_OBJ_DESTROY:
     pScene = qlib::ObjectManager::sGetObj<Scene>(m_nSceneID);

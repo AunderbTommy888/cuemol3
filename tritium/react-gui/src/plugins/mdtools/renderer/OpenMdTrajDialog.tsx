@@ -15,15 +15,10 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { DialogShell } from '@renderer/plugin-host/api';
-import { AppIcon } from '@renderer/h3-kit/primitives';
 import { Field, FieldSection, ComboBoxField, SliderField, ButtonRow, FormButton } from '@renderer/h3-kit/form';
-import { Listbox, ListRow } from '@renderer/h3-kit/list';
 import { IPC } from '@shared/ipcChannels';
-import {
-    getLastTopologyPath,
-    setLastTopologyPath,
-    setLastTrajPath,
-} from './trajPathHistory';
+import { getLastTopologyPath, setLastTopologyPath } from './trajPathHistory';
+import { TrajFileListSection } from './TrajFileListSection';
 
 export interface OpenMdTrajResult {
     /** Topology file (GROMACS .gro). */
@@ -45,32 +40,9 @@ const TOPOLOGY_FILTERS = [
     { name: 'All Files', extensions: ['*'] },
 ];
 
-const TRAJ_FILTERS = [
-    { name: 'MD trajectory (*.dcd, *.xtc, *.trr)', extensions: ['dcd', 'xtc', 'trr'] },
-    { name: 'All Files', extensions: ['*'] },
-];
-
-/** Trajectory extension -> short format badge label. */
-const TRAJ_BADGE: Record<string, string> = { dcd: 'DCD', xtc: 'XTC', trr: 'TRR' };
-
-function basename(p: string): string {
-    return p.split(/[\\/]/).pop() ?? p;
-}
-
-function fileExt(p: string): string {
-    const base = basename(p);
-    const dot = base.lastIndexOf('.');
-    return dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
-}
-
-function trajBadge(p: string): string {
-    return TRAJ_BADGE[fileExt(p)] ?? fileExt(p).toUpperCase();
-}
-
 export function OpenMdTrajDialog({ visible, onConfirm, onCancel }: Props): React.JSX.Element {
     const [topologyPath, setTopologyPath] = useState('');
     const [trajPaths, setTrajPaths] = useState<string[]>([]);
-    const [selectedIdx, setSelectedIdx] = useState(-1);
     const [nevery, setNevery] = useState(1);
 
     // Seed state each time the dialog opens: topology from history, an empty
@@ -79,7 +51,6 @@ export function OpenMdTrajDialog({ visible, onConfirm, onCancel }: Props): React
         if (!visible) return;
         setTopologyPath(getLastTopologyPath() ?? '');
         setTrajPaths([]);
-        setSelectedIdx(-1);
         setNevery(1);
     }, [visible]);
 
@@ -103,47 +74,6 @@ export function OpenMdTrajDialog({ visible, onConfirm, onCancel }: Props): React
         }
     };
 
-    const addTrajectories = async (): Promise<void> => {
-        try {
-            const res = await window.electronAPI?.invoke(IPC.DIALOG_PICK_PATH, {
-                title: 'Add trajectory files',
-                filters: TRAJ_FILTERS,
-                multi: true,
-            });
-            if (res && !res.canceled) {
-                const added = res.filePaths ?? (res.filePath ? [res.filePath] : []);
-                if (added.length > 0) {
-                    setTrajPaths((prev) => [...prev, ...added]);
-                    setLastTrajPath(added[added.length - 1]);
-                }
-            }
-        } catch {
-            /* dialog unavailable -- ignore */
-        }
-    };
-
-    const removeTrajectory = (): void => {
-        if (selectedIdx < 0) return;
-        const next = trajPaths.slice();
-        next.splice(selectedIdx, 1);
-        setTrajPaths(next);
-        setSelectedIdx(next.length === 0 ? -1 : Math.min(selectedIdx, next.length - 1));
-    };
-
-    const moveTrajectory = (delta: -1 | 1): void => {
-        if (selectedIdx < 0) return;
-        const target = selectedIdx + delta;
-        if (target < 0 || target >= trajPaths.length) return;
-        const next = trajPaths.slice();
-        const [moved] = next.splice(selectedIdx, 1);
-        next.splice(target, 0, moved);
-        setTrajPaths(next);
-        setSelectedIdx(target);
-    };
-
-    const canDelete = selectedIdx >= 0;
-    const canMoveUp = selectedIdx > 0;
-    const canMoveDown = selectedIdx >= 0 && selectedIdx < trajPaths.length - 1;
     const canOpen = topologyPath.trim().length > 0 && trajPaths.length > 0;
 
     const handleOk = (): void => {
@@ -179,37 +109,7 @@ export function OpenMdTrajDialog({ visible, onConfirm, onCancel }: Props): React
                 </ButtonRow>
             </FieldSection>
 
-            <FieldSection
-                title="Trajectory files"
-                titleActions={
-                    <span className="type-caption">
-                        {trajPaths.length} file{trajPaths.length === 1 ? '' : 's'}
-                    </span>
-                }
-            >
-                <Listbox framed>
-                    {trajPaths.length === 0 ? (
-                        <div className="h3-list-empty">(no trajectory files added)</div>
-                    ) : (
-                        trajPaths.map((p, idx) => (
-                            <ListRow
-                                key={`${p}-${idx}`}
-                                selected={idx === selectedIdx}
-                                onClick={() => setSelectedIdx(idx)}
-                            >
-                                <span className="type-row" title={p}>{basename(p)}</span>
-                                <span className="type-caption">{trajBadge(p)}</span>
-                            </ListRow>
-                        ))
-                    )}
-                </Listbox>
-                <ButtonRow>
-                    <FormButton icon={<AppIcon name="ui.add" aria-hidden />} text="Add..." onClick={addTrajectories} />
-                    <FormButton icon={<AppIcon name="ui.trash" aria-hidden />} text="Remove" disabled={!canDelete} onClick={removeTrajectory} />
-                    <FormButton icon={<AppIcon name="ui.caretUp" aria-hidden />} text="Up" disabled={!canMoveUp} onClick={() => moveTrajectory(-1)} />
-                    <FormButton icon={<AppIcon name="ui.caretDown" aria-hidden />} text="Down" disabled={!canMoveDown} onClick={() => moveTrajectory(1)} />
-                </ButtonRow>
-            </FieldSection>
+            <TrajFileListSection paths={trajPaths} onChange={setTrajPaths} />
 
             <FieldSection title="Frame sampling">
                 <SliderField

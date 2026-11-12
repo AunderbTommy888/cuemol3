@@ -96,7 +96,7 @@ describe('OpenMdTrajDialog', () => {
         )
         expect(addCall).toBeTruthy()
         const filters = (addCall![1] as { filters: { extensions: string[] }[] }).filters
-        expect(filters[0].extensions).toEqual(['dcd', 'xtc', 'trr'])
+        expect(filters[0].extensions).toEqual(['dcd', 'xtc', 'trr', 'nc'])
         unmount()
     })
 

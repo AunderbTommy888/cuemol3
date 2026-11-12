@@ -367,6 +367,10 @@ describe('getGenericProps - selection-context molecule', () => {
       target: { getClassName: () => 'DensityMap', uid: 9, getPropsJSON: () => '[]' },
     })
     expect(read('object').molId).toBeUndefined()
+    // The type label is the C++ class name the inspector's object pages are
+    // keyed by; it used to read a property the wrappers do not have and came
+    // back as "Object" for everything, so no object page ever showed.
+    expect(read('object').typeLabel).toBe('DensityMap')
   })
 
   it('has no molecule for a Scene node', () => {

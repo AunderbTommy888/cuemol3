@@ -305,6 +305,12 @@ bottom tab の component には同じ値が props で届くので、そちらで
 各操作は tab strip に反映されてから resolve するので、続けて `useEnsureActiveScene()` を
 呼べば新しいアクティブ scene が返る。console の scene コマンドが使っている。
 
+### `revealBottomTab(tabId: string): void`
+
+bottom panel のタブ (built-in の id か、plugin の `contributes.bottomTabs` の id) を前に出す。ユーザーが選んだのと
+同じ扱いで、無い id は無視される。bottom panel を畳んでいても開きはしない。hook ではないので、command の handler
+などから呼べる。
+
 ### `useCueMolEventListener(opts): void`
 
 C++ 側の変更 (オブジェクト追加、プロパティ変更、シーン読み込み) を購読する。

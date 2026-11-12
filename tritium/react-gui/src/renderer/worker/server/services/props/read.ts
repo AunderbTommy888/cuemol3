@@ -33,8 +33,10 @@ export function typeLabelOf(target: BaseWrapper, nodeType: PropTargetType): stri
     if (nodeType === 'renderer' || nodeType === 'rendGroup') {
         return (safeRead(() => rec.type_name) as string | undefined) ?? 'Renderer';
     }
-    // object
-    return (safeRead(() => rec.className) as string | undefined) ?? 'Object';
+    // object: the C++ class name (the wrappers have no `className` property,
+    // so it has to be asked for), which is what the inspector's object pages
+    // are keyed by (`DensityMap`, `Trajectory`).
+    return safeRead(() => target.getClassName()) || 'Object';
 }
 
 export function getGenericProps(

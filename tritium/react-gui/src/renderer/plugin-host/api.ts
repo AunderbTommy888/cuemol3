@@ -18,6 +18,7 @@ export { definePlugin, validatePlugin } from './definePlugin'
 export type {
   BottomTabComponent,
   BottomTabComponentProps,
+  FileOpenerArgs,
   PaneComponent,
   PaneComponentProps,
   PluginCommandId,
@@ -74,6 +75,8 @@ export { useEnsureActiveScene } from '@renderer/hooks/useEnsureActiveScene'
 // The open scenes by name: list, make, show and close them (the console's
 // scene commands).
 export { useSceneTabs } from './sceneTabs'
+// Bring a bottom-panel tab (e.g. the plugin's own) to the front.
+export { revealBottomTab } from './bottomTabReveal'
 export { useOpenSceneFile } from './openSceneFile'
 export { useTrackedEndpointCalls } from './trackedCalls'
 export type { TrackedEndpointCalls } from './trackedCalls'

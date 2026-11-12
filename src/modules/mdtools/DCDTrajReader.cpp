@@ -118,7 +118,31 @@ void DCDTrajReader::indexFrames(qlib::InStream &ins, const TrajBlockPtr &pTB,
                  m_nSkip);
 }
 
+int DCDTrajReader::readFileAtomCount(qlib::InStream &ins)
+{
+    readHeaderFields(ins);
+    return m_natom;
+}
+
 void DCDTrajReader::readHeader(qlib::InStream &ins, const TrajectoryPtr &pTraj)
+{
+    readHeaderFields(ins);
+    const int natom = m_natom;
+
+    // Validate against the topology only when it is already loaded. During .qsc
+    // load the DCD block is read before the Trajectory's own topology (GRO/PSF),
+    // so getAllAtomSize() may still be 0 here; Trajectory::append()'s
+    // getCrdSize() check re-validates once the topology is present.
+    const int topoN = static_cast<int>(pTraj->getAllAtomSize());
+    if (topoN > 0 && natom != topoN) {
+        LString msg = LString::format("DCD: Inconsistent NATOM with topology %d!=%d",
+                                      natom, topoN);
+        MB_THROW(qlib::FileFormatException, msg);
+        return;
+    }
+}
+
+void DCDTrajReader::readHeaderFields(qlib::InStream &ins)
 {
     FortBinInStream fbis(ins);
 
@@ -166,18 +190,6 @@ void DCDTrajReader::readHeader(qlib::InStream &ins, const TrajectoryPtr &pTraj)
     m_fcell = fcell ? true : false;
 
     LOG_DPRINTLN("DCDTraj> NFILE=%d NATOM=%d FCELL=%d", m_nfile, m_natom, fcell);
-
-    // Validate against the topology only when it is already loaded. During .qsc
-    // load the DCD block is read before the Trajectory's own topology (GRO/PSF),
-    // so getAllAtomSize() may still be 0 here; Trajectory::append()'s
-    // getCrdSize() check re-validates once the topology is present.
-    const int topoN = static_cast<int>(pTraj->getAllAtomSize());
-    if (topoN > 0 && natom != topoN) {
-        LString msg = LString::format("DCD: Inconsistent NATOM with topology %d!=%d",
-                                      natom, topoN);
-        MB_THROW(qlib::FileFormatException, msg);
-        return;
-    }
 }
 
 void DCDTrajReader::readFrameRecords(FortBinInStream &fbis, std::vector<float> &tmpv,

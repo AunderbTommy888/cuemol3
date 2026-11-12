@@ -25,6 +25,9 @@ runtime_class XtcTrajReader extends ObjReader
   default nevery = 1;
 
   property integer targTrajUID => redirect(getTargTrajUID, setTargTrajUID) (nopersist);
+
+  /// Atom count the file at the reader's path declares (header only), or -1.
+  integer getFileAtomCount();
 };
 
 #endif

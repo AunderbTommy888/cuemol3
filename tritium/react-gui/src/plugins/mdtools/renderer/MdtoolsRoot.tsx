@@ -9,7 +9,9 @@
  */
 
 import React from 'react'
+import { AttachTrajectoryDialogProvider } from './AttachTrajectoryDialogProvider'
 import { OpenMdTrajDialogProvider } from './OpenMdTrajDialogProvider'
+import { useAttachTrajCommand } from './useAttachTrajCommand'
 import { useOpenMdTrajCommand } from './useOpenMdTrajCommand'
 
 void React
@@ -17,12 +19,15 @@ void React
 /** Registers the command; renders nothing. */
 const MdtoolsCommands: React.FC = () => {
   useOpenMdTrajCommand()
+  useAttachTrajCommand()
   return null
 }
 
 export const MdtoolsRoot: React.FC = () => (
   <OpenMdTrajDialogProvider>
-    <MdtoolsCommands />
+    <AttachTrajectoryDialogProvider>
+      <MdtoolsCommands />
+    </AttachTrajectoryDialogProvider>
   </OpenMdTrajDialogProvider>
 )
 MdtoolsRoot.displayName = 'MdtoolsRoot'

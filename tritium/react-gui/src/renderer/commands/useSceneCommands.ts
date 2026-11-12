@@ -65,10 +65,11 @@ function cannotOpenMessage(
             'The file may be corrupt, an unsupported format, or its extension does not match its content.'
     }
     if (objType === TRAJ_BLOCK_CLASS) {
+        const ways = 'drop it onto the window to attach it to an open molecule, or open it with ' +
+            'File > Open MD Trajectory..., together with a topology file (.gro).'
         const how = mdtoolsEnabled
-            ? 'Open it with File > Open MD Trajectory..., together with a topology file (.gro).'
-            : 'Enable the MD Tools plugin in Settings > Plugins, then open it with ' +
-              'File > Open MD Trajectory..., together with a topology file (.gro).'
+            ? ways.charAt(0).toUpperCase() + ways.slice(1)
+            : `Enable the MD Tools plugin in Settings > Plugins, then ${ways}`
         return `This file holds MD trajectory frames and cannot be opened on its own:\n${path}\n\n${how}`
     }
     return `Nothing can display what this file contains:\n${path}\n\n` +
@@ -216,7 +217,7 @@ export function useSceneCommands({
                     // When reopening from the MRU, data.readerName pins the
                     // reader the file was first opened with (skips sniff). For
                     // a fresh open it is undefined and the reader is sniffed.
-                    const { types, objType, readerName } = await cm.getCompatibleRendererNames(
+                    const { types, objType, readerName, formatDescr } = await cm.getCompatibleRendererNames(
                         data.path, data.readerName, data.contentFirst,
                     )
                     // Empty types means nothing can draw this file, which
@@ -253,6 +254,7 @@ export function useSceneCommands({
                         presetTypes,
                         objType,
                         readerName,
+                        formatDescr,
                     })
                     if (options === null) return { loaded: false }
                     const sceneId = pinned ?? (await plan?.commit())?.scene_uid
