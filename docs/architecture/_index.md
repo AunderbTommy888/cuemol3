@@ -38,8 +38,8 @@ architecture, it belongs here.
   MCP と同じ op の description から出す。
 
 - [Camera pane と camera の表示順 (`ui_order`)](camera-pane.md) (日本語) --
-  名前付き camera を scene tree の枝から独立した Camera pane に移し、View activity view
-  (Camera pane + View pane) を新設した記録。Camera に `ui_order` property (nopersist) を足し、
+  名前付き camera を scene tree の枝から独立した Camera pane に移した記録 (Camera / View pane は
+  Explorer に置き、View activity view は非表示)。Camera に `ui_order` property (nopersist) を足し、
   qsc には `<camera>` 要素の並び順として保存する (object / renderer と同じ仕組み)。
   save / apply の with show/hide 版を含むツールバー、drag での並べ替え、既存名の上書き挙動。
 

@@ -14,8 +14,7 @@
  *
  * | View       | Panes                                       |
  * |------------|---------------------------------------------|
- * | Explorer   | ScenePane, ColorPane                        |
- * | View       | CameraPane, ViewPane                        |
+ * | Explorer   | ScenePane, CameraPane, ColorPane, ViewPane  |
  * | Selection  | MolStructPane, SelectionPane                |
  * | Crystal    | SymmetryPane, DensityMapPane                |
  * | Actions    | ActionHistoryPane, ActionLibraryPane        |
@@ -86,7 +85,6 @@ const HEADER_HEIGHT = 28;
 
 const VIEW_TITLES: Record<string, string> = {
   explorer: "Explorer",
-  view: "View",
   selection: "Selection",
   crystal: "Crystal",
   actions: "Actions",
@@ -94,7 +92,6 @@ const VIEW_TITLES: Record<string, string> = {
 
 const VIEW_ICONS: Record<string, AppIconKey> = {
   explorer: "activity.explorer",
-  view: "activity.view",
   selection: "activity.selection",
   crystal: "activity.crystal",
   actions: "activity.actions",
@@ -126,19 +123,17 @@ const VIEW_PANES: Record<string, PaneConfig[]> = {
       ),
     },
     {
-      id: "color",
-      defaultSize: 240,
-      render: (collapsed, onToggle) => (
-        <ColorPane collapsed={collapsed} onToggleCollapse={onToggle} />
-      ),
-    },
-  ],
-  view: [
-    {
       id: "camera",
       defaultSize: 200,
       render: (collapsed, onToggle) => (
         <CameraPane collapsed={collapsed} onToggleCollapse={onToggle} />
+      ),
+    },
+    {
+      id: "color",
+      defaultSize: 240,
+      render: (collapsed, onToggle) => (
+        <ColorPane collapsed={collapsed} onToggleCollapse={onToggle} />
       ),
     },
     {

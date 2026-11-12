@@ -41,10 +41,14 @@ interface ActivityItemDef {
   label: string;
 }
 
-/** The views the application itself owns, in top-to-bottom order. */
+/**
+ * The views the application itself owns, in top-to-bottom order.
+ *
+ * The "view" activity (icon `activity.view`) is hidden for now: its Camera
+ * and View panes moved into the Explorer and it has no panes of its own.
+ */
 export const BUILTIN_ACTIVITY_ITEMS: readonly ActivityItemDef[] = [
   { id: "explorer", icon: "activity.explorer", label: "Explorer" },
-  { id: "view", icon: "activity.view", label: "View" },
   { id: "selection", icon: "activity.selection", label: "Selection" },
   { id: "crystal", icon: "activity.crystal", label: "Crystal" },
   { id: "actions", icon: "activity.actions", label: "Actions" },

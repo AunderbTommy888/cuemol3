@@ -22,7 +22,7 @@ camera は object の階層の一部ではなく視点のリストなので、tr
 | 論点 | 決定 | 理由 |
 |---|---|---|
 | `__current` | 一覧に出し、**先頭に固定** (ドラッグ不可・その上には何も置けない) | UXP も tree に出していた。scene を開いたときの視点そのものなので、ユーザーが並べる「名前付きの視点」とは役割が違い、常に同じ場所にある方が探しやすい |
-| 配置 | activity bar に **View** view を新設。上が **Camera pane**、下が既存の **View pane** (Explorer から移動) | camera と view transform はどちらも「視点」の操作。Explorer は scene 構造 (Scene / Color) に専念する |
+| 配置 | **Explorer** に Scene / Camera / Color / View の順で並べる。activity bar の View view は pane が無くなったので非表示 (`BUILTIN_ACTIVITY_ITEMS` から外しただけで、`activity.view` アイコンは残っている) | 当初は Camera + View pane で View view を新設したが、Explorer と行き来する手間が多く、2026-11-12 に 1 つの view にまとめた |
 | scene tree の Camera 枝 | **撤去**。`buildCameraRoot` と `SceneNodeType` の `camera` / `cameraRoot` を削除 | 表示と操作の入口が 2 箇所にあると必ず drift する。tree 側は uid キー、camera は名前キーで、同じ union に同居させる必然性も無かった |
 | 並び順の保存 | Camera に `ui_order` property を新設 (`(nopersist)`)。qsc には**要素の並び順**として保存 | object / renderer と同じ仕組み。順序が camera 本体に付いて回るので、rename / delete / paste / undo で TS 側のリスト保守が一切要らない |
 | 上書き | `createCamera` は既存名でも `saveViewToCam` する (undo ラベルだけ変える) | UXP `ws.createCamera` と同じ。`Scene::setCamera` はもともと upsert |
@@ -138,4 +138,4 @@ controller の Add / double-click / inline-rename の camera 分岐、
 
 - [ADR-0005](../migration/adr/ADR-0005-camera-name-keyed.md) — worker 境界が名前キーである理由 (不変)
 - [ADR-0026](../migration/adr/ADR-0026-camera-vis-flags-editor.md) — vis flags エディタ
-- [ADR-0025](../migration/adr/ADR-0025-view-panel.md) — View pane 本体 (この変更で View view へ移動)
+- [ADR-0025](../migration/adr/ADR-0025-view-panel.md) — View pane 本体 (Explorer の最後の pane)
