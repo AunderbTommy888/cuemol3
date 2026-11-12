@@ -83,6 +83,17 @@
   color: var(--accent);
 }
 
+/* A row shown for information but not pickable (e.g. a target that cannot
+   take the operation, with the reason in its caption). */
+.h3-list-row.is-disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+.h3-list-row.is-disabled:hover {
+  background: transparent;
+}
+
 /* ── (2) HTML table rows (inspector generic tab, ...) ── */
 .h3-list-table {
   width: 100%;

@@ -14,12 +14,12 @@
  * the user picks another.
  */
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppIconKey } from "@renderer/h3-kit/primitives";
 import { PanelTabButton } from "./PanelTabButton";
 import { LogPanel } from "@renderer/features/log/LogPanel";
 import { AnimationPanel } from "@renderer/features/animation/AnimationPanel";
-import { insertAfterId, usePluginContributions } from "@renderer/plugin-host";
+import { insertAfterId, onRevealBottomTab, usePluginContributions } from "@renderer/plugin-host";
 import type { ResolvedPluginBottomTab } from "@renderer/plugin-host";
 import { useLogActions, useLogContents } from "@renderer/contexts/LogContext";
 import { IPC } from "@shared/ipcChannels";
@@ -92,6 +92,9 @@ const BottomPanelComponent: React.FC = () => {
   const { bottomTabs: contributedTabs } = usePluginContributions();
   const tabs = useMemo(() => buildBottomTabs(contributedTabs), [contributedTabs]);
   const activeTab = pickedTab !== null && tabs.some((t) => t.id === pickedTab) ? pickedTab : tabs[0].id;
+  // A tab brought to the front from elsewhere (revealBottomTab) counts as
+  // picked; an id with no tab falls back like a switched-off plugin's.
+  useEffect(() => onRevealBottomTab(setActiveTab), []);
 
   // The log buffer lives in LogProvider (so renderer-side code can append via
   // useLogPanel() and it survives tab switches); the Output-tab UI state stays

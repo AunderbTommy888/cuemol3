@@ -112,6 +112,32 @@ export interface PluginSettingDecl {
   default?: PluginPrefValue
 }
 
+/**
+ * Files a plugin opens itself. A dropped file whose extension is listed goes
+ * to `command` instead of the core object open, with every such file of the
+ * drop in one call (`FileOpenerArgs`). The command's promise must settle only
+ * once the plugin is done with the files: the drop batch waits for it.
+ */
+export interface PluginFileOpener {
+  /** Identifier within the plugin. */
+  id: string
+  /** Extensions with the dot, lower case (`.xtc`). */
+  extensions: string[]
+  /** Command id (`plugin.<id>.<name>`) the files are dispatched to. */
+  command: string
+}
+
+/** What a file opener command receives. */
+export interface FileOpenerArgs {
+  /** The files, in drop order. */
+  paths: string[]
+  /**
+   * Scene the drop's other files were opened into, or the active scene when
+   * there were none. Undefined when no scene is open.
+   */
+  sceneId: number | undefined
+}
+
 /** Everything a plugin adds to the shell. */
 export interface PluginContributes {
   commands?: PluginCommandDecl[]
@@ -121,6 +147,7 @@ export interface PluginContributes {
   bottomTabs?: PluginBottomTab[]
   statusBar?: PluginStatusBarItem[]
   settings?: PluginSettingDecl[]
+  fileOpeners?: PluginFileOpener[]
   /**
    * What this plugin adds to another plugin, by extension point. The key is
    * the point's name, prefixed with the id of the plugin that reads it
@@ -249,6 +276,7 @@ export interface PluginContributions {
   bottomTabs: ResolvedPluginBottomTab[]
   statusBar: ResolvedPluginStatusBarItem[]
   settings: ResolvedPluginSetting[]
+  fileOpeners: PluginFileOpener[]
   /** Every active plugin's `extensions` entries, joined per extension point. */
   extensions: Readonly<Record<string, readonly unknown[]>>
 }

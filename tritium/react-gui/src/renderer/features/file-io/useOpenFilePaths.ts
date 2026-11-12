@@ -10,6 +10,11 @@
  * Each path is classified by extension against the C++ reader lists (object
  * readers before scene readers) and dispatched; files no reader accepts are
  * collected and reported in a single alert at the end of the batch.
+ *
+ * Files whose extension an enabled plugin claims (`contributes.fileOpeners`)
+ * skip the core open: after the batch's other files are opened, each opener's
+ * command gets its files in one call, with the scene those files went into
+ * (so a topology dropped together with its trajectory is already there).
  */
 
 import { useCallback } from 'react'
@@ -23,6 +28,10 @@ import {
   IOH_CAT_SCEREADER,
 } from '@renderer/utils/classifyDropFile'
 import type { OpenFileTarget } from '@renderer/data/openFileTarget'
+import { usePluginContributions } from '@renderer/plugin-host'
+import type { FileOpenerArgs, PluginFileOpener } from '@renderer/plugin-host/types'
+import { useActiveScene } from '@renderer/state/workspace'
+import { useLatestRef } from '@renderer/hooks/react/useLatestRef'
 
 /**
  * What to do when another batch is already being opened.
@@ -66,6 +75,37 @@ export function resetOpenFilePathsForTests(): void {
   tail = Promise.resolve()
 }
 
+/** Lower-case extension with the dot (`.xtc`), or '' when there is none. */
+function extOf(p: string): string {
+  const name = baseName(p)
+  const i = name.lastIndexOf('.')
+  return i > 0 ? name.slice(i).toLowerCase() : ''
+}
+
+/**
+ * Split a batch into the files a plugin opener claims (grouped per opener, in
+ * drop order) and the rest.
+ */
+function splitByOpener(
+  paths: string[],
+  openers: readonly PluginFileOpener[],
+): { rest: string[]; claimed: { opener: PluginFileOpener; paths: string[] }[] } {
+  const rest: string[] = []
+  const claimed: { opener: PluginFileOpener; paths: string[] }[] = []
+  for (const p of paths) {
+    const ext = extOf(p)
+    const opener = ext ? openers.find((o) => o.extensions.includes(ext)) : undefined
+    if (!opener) {
+      rest.push(p)
+      continue
+    }
+    const group = claimed.find((c) => c.opener === opener)
+    if (group) group.paths.push(p)
+    else claimed.push({ opener, paths: [p] })
+  }
+  return { rest, claimed }
+}
+
 /** Last path segment, for the object-open label. UXP used nsIFile.leafName. */
 function baseName(p: string): string {
   return p.split(/[\\/]/).pop() ?? p
@@ -78,8 +118,12 @@ function baseName(p: string): string {
  *   (CueMol is still initialising and the open commands would no-op).
  */
 export function useOpenFilePaths({ cm }: { cm: AsyncCueMol | null }): OpenFilePathsApi {
-  const { dispatch } = useCommands()
+  const { dispatch, dispatchAny } = useCommands()
   const showErrorAlert = useShowErrorAlert()
+  // Refs: a batch runs across awaits, and the contributions / active scene
+  // must be read as they are when each step runs, not when the batch began.
+  const openersRef = useLatestRef(usePluginContributions().fileOpeners)
+  const activeSceneRef = useLatestRef(useActiveScene().activeSceneId)
 
   const runBatch = useCallback(
     async (paths: string[], unopenable: string[], openTarget?: OpenFileTarget): Promise<void> => {
@@ -107,9 +151,10 @@ export function useOpenFilePaths({ cm }: { cm: AsyncCueMol | null }): OpenFilePa
               batchSceneId = res.sceneId
             }
           }
+          const { rest, claimed } = splitByOpener(paths, openersRef.current)
           // Sequential on purpose (UXP parity): each object file's renderer
           // option dialog is answered before the next file starts.
-          for (const p of paths) {
+          for (const p of rest) {
             const cls = classifyDropFile(p, objFilters, sceneFilters)
             try {
               if (cls.kind === 'obj') {
@@ -134,6 +179,21 @@ export function useOpenFilePaths({ cm }: { cm: AsyncCueMol | null }): OpenFilePa
               console.error('open failed:', p, e)
             }
           }
+          // Plugin-opened files go last, into the scene the rest landed in,
+          // or else the active scene even when the drop targets a new scene:
+          // an opener adds to what a scene already holds (a trajectory needs
+          // its molecule), so a new empty scene would give it nothing.
+          for (const { opener, paths: ps } of claimed) {
+            const args: FileOpenerArgs = {
+              paths: ps,
+              sceneId: batchSceneId ?? activeSceneRef.current,
+            }
+            try {
+              await dispatchAny(opener.command, args)
+            } catch (e) {
+              console.error('plugin file open failed:', opener.command, e)
+            }
+          }
         }
         if (unsupported.length > 0) {
           await showErrorAlert({
@@ -149,7 +209,7 @@ export function useOpenFilePaths({ cm }: { cm: AsyncCueMol | null }): OpenFilePa
         opening = false
       }
     },
-    [cm, dispatch, showErrorAlert],
+    [cm, dispatch, dispatchAny, showErrorAlert, openersRef, activeSceneRef],
   )
 
   const openPaths = useCallback(

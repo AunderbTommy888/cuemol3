@@ -20,16 +20,23 @@ export interface ListRowProps
     extends Omit<React.HTMLAttributes<HTMLDivElement>, 'className' | 'children'> {
     /** Highlight the row as selected. */
     selected?: boolean;
+    /**
+     * Shown but not pickable: greyed, no hover, and clicks are not passed on.
+     * Say why in the row itself.
+     */
+    disabled?: boolean;
     className?: string;
     children: React.ReactNode;
 }
 
-export const ListRow: React.FC<ListRowProps> = ({ selected, className, children, ...rest }) => (
+export const ListRow: React.FC<ListRowProps> = ({ selected, disabled, className, children, onClick, ...rest }) => (
     <div
         {...rest}
-        className={`h3-list-row${selected ? ' is-selected' : ''}${className ? ` ${className}` : ''}`}
+        onClick={disabled ? undefined : onClick}
+        className={`h3-list-row${selected ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}${className ? ` ${className}` : ''}`}
         role="option"
         aria-selected={selected || undefined}
+        aria-disabled={disabled || undefined}
     >
         {children}
     </div>

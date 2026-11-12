@@ -9,10 +9,12 @@
 export { PluginProvider, usePluginContributions, usePlugins } from './PluginProvider'
 export { PluginRoots } from './PluginRoots'
 export { insertAfterId } from './pluginSelect'
+export { onRevealBottomTab } from './bottomTabReveal'
 export type {
   BottomTabComponent,
   PaneComponent,
   PluginContributions,
+  PluginFileOpener,
   PluginToolbarContribution,
   ResolvedPluginBottomTab,
   ResolvedPluginPane,
