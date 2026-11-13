@@ -7,12 +7,14 @@
 // needs the root and the dotted name passed down two levels
 // (LScrObjBase::setupParentData -> parentDataChanged); the nodes must survive
 // a qsc round trip (readFrom2 + reapplyStyle); and a copied coloring must own
-// its nodes.
+// its nodes. Pointing an iterator at the molecule must not rename it, or a
+// coloring put on it later gets a "target.coloring" name the renderers ignore.
 //
 
 #include <gtest/gtest.h>
 #include <common.h>
 
+#include "molstr/AtomIterator.hpp"
 #include "molstr/BfacColoring.hpp"
 #include "molstr/MolCoord.hpp"
 #include "molstr/MolAtom.hpp"
@@ -21,6 +23,7 @@
 #include <qsys/RendererFactory.hpp>
 #include <qsys/MultiGradient.hpp>
 #include <qlib/LPropEvent.hpp>
+#include <qlib/LVarArgs.hpp>
 #include <gfx/SolidColor.hpp>
 
 #include "../surface/qsc_roundtrip_util.hpp"
@@ -140,6 +143,35 @@ TEST(BfacColoringMultiGrad, NodeEditReachesTheRendererAndIsUndoable)
     EXPECT_EQ(pGrad->getSize(), 0);
     f.pScene->redo(0);
     EXPECT_EQ(pGrad->getSize(), 5);
+}
+
+// An iterator takes its molecule by setTarget(), not by a property setter
+// (which renames the value it is given): the molecule keeps its empty name, so
+// a coloring put on it afterwards gets the "coloring.multi_grad" name the
+// renderers and undo look for.
+TEST(BfacColoringMultiGrad, IteratorTargetDoesNotRenameTheMolecule)
+{
+    Fixture f;
+    molstr::MolCoordPtr pMol(f.pRend->getClientObj(), qlib::no_throw_tag());
+    ASSERT_FALSE(pMol.isnull());
+
+    qlib::LScrSp<molstr::AtomIterator> pIter(MB_NEW molstr::AtomIterator());
+    qlib::LVariant var;
+    var.setObjectPtr(pMol.copy());
+    EXPECT_FALSE(pIter->setProperty("target", var));  // read-only
+    qlib::LVarArgs args(1);
+    args.at(0).setObjectPtr(pMol.copy());
+    ASSERT_TRUE(pIter.invokeMethod("setTarget", args));
+    EXPECT_EQ(pIter->getTarget().get(), pMol.get());
+    EXPECT_STREQ(pMol->getThisName().c_str(), "");
+
+    qlib::LScrSp<molstr::ColoringScheme> pSchm(MB_NEW BfacColoring());
+    qlib::LVariant cvar;
+    cvar.setObjectPtr(pSchm.copy());
+    ASSERT_TRUE(pMol->setProperty("coloring", cvar));
+    auto *pBfac = dynamic_cast<BfacColoring *>(pMol->getColSchm().get());
+    ASSERT_NE(pBfac, nullptr);
+    EXPECT_STREQ(pBfac->getMultiGrad()->getThisName().c_str(), "coloring.multi_grad");
 }
 
 // The nodes survive a qsc save and load (readFrom2 + reapplyStyle), and a

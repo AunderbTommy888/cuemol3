@@ -24,7 +24,8 @@ interface LabelRenderer {
 }
 
 interface AtomIter {
-    target: unknown;
+    // A method, not `target =`: the property setter would rename the molecule.
+    setTarget: (mol: unknown) => void;
     sel: unknown;
     first(): void;
     next(): void;
@@ -37,7 +38,7 @@ export function selectionAtomIds(ctx: WorkerContext, sceneId: number, mol: unkno
     const sel = makeSel(ctx, selStr, sceneId);
     const iter = ctx.svc.createObj('AtomIterator') as unknown as AtomIter | null;
     if (!sel || !iter) return null;
-    iter.target = mol;
+    iter.setTarget(mol);
     iter.sel = sel;
     const ids: number[] = [];
     for (iter.first(); iter.hasMore(); iter.next()) ids.push(iter.getID());

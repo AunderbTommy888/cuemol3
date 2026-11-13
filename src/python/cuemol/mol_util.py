@@ -10,7 +10,7 @@ import cuemol
 #
 #     iter = cuemol.createObj("AtomIterator")
 #
-#     iter.target = aMolObj;
+#     iter.setTarget(aMolObj)
 #     iter.sel = aSelObj;
 #
 #     for (iter.first(); iter.hasMore(); iter.next()) {
@@ -28,7 +28,7 @@ class AtomIter:
         selObj = cuemol.sel(aSel, molObj.scene_uid)
 
         self.mIter = cuemol.createObj("AtomIterator")
-        self.mIter.target = molObj
+        self.mIter.setTarget(molObj)
         self.mIter.sel = selObj
 
         self.mIter.first()
@@ -51,7 +51,7 @@ def forEachResid(aMol, aSel, aFn):
 
     iter = cuemol.createObj("ResidIterator")
 
-    iter.target = molObj
+    iter.setTarget(molObj)
     iter.sel = selObj
 
     iter.first()
@@ -70,7 +70,7 @@ class ResidIter:
         selObj = cuemol.sel(aSel, molObj.scene_uid)
 
         self.mIter = cuemol.createObj("ResidIterator")
-        self.mIter.target = molObj
+        self.mIter.setTarget(molObj)
         self.mIter.sel = selObj
 
         self.mIter.first()
