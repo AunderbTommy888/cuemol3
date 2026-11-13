@@ -31,8 +31,13 @@ import type {
   SetStyleSetSelectionArgs,
   StyleSetEditResult,
 } from '@renderer/worker/server/services/style/styleSetEdit'
+import type {
+  ListStyleSetsArgs,
+  ListStyleSetsResult,
+} from '@renderer/worker/server/services/style/styleSetList'
 
 export interface StyleCalls {
+  listStyleSets:              { args: ListStyleSetsArgs; result: ListStyleSetsResult }
   createStyleSet:             { args: CreateStyleSetArgs; result: CreateStyleSetResult }
   destroyStyleSet:            { args: DestroyStyleSetArgs; result: DestroyStyleSetResult }
   toggleStyleSetReadOnly:     { args: ToggleStyleSetReadOnlyArgs; result: ToggleStyleSetReadOnlyResult }
@@ -48,6 +53,7 @@ export interface StyleCalls {
 }
 
 export const STYLE_KEYS = [
+  'listStyleSets',
   'createStyleSet',
   'destroyStyleSet',
   'toggleStyleSetReadOnly',

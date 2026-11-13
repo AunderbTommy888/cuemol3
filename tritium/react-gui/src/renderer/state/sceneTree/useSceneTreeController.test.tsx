@@ -168,21 +168,17 @@ describe('useSceneTreeController gestures dispatch commands', () => {
     h.unmount();
 
     dispatch.mockClear();
-    const onStyle = makeScene({ selectedNode: node({ id: 7, type: 'style', name: 'st' }) });
-    const h3 = renderController(onStyle);
+    const onScene = makeScene({ selectedNode: node({ id: 1, type: 'scene', name: 'S' }) });
+    const h3 = renderController(onScene);
     act(() => h3.result.actions.addSelected());
     expect(dispatch).not.toHaveBeenCalled();
     h3.unmount();
   });
 
-  it('a double-click opens the inspector, except on a synthesised root', () => {
+  it('a double-click opens the inspector', () => {
     const h = renderController(makeScene());
     act(() => h.result.actions.nodeDoubleClick(node({ id: 42, type: 'object', name: 'mol1' })));
     expect(dispatch).toHaveBeenCalledWith(CmdId.SceneNodeProperty, { id: '42' });
-
-    dispatch.mockClear();
-    act(() => h.result.actions.nodeDoubleClick(node({ id: -2, type: 'styleRoot', name: 'Styles' })));
-    expect(dispatch).not.toHaveBeenCalled();
     h.unmount();
   });
 
@@ -249,7 +245,6 @@ describe('useSceneTreeController expand/collapse persistence', () => {
     const scene = makeScene();
     const h = renderController(scene);
     act(() => {
-      h.result.actions.nodeExpandChange(node({ id: -2, type: 'styleRoot', name: 'Styles' }), true);
       // Negative-id guard also applies to otherwise-persistable types.
       h.result.actions.nodeExpandChange(node({ id: -5, type: 'object', name: 'x' }), true);
       h.result.actions.nodeExpandChange(node({ id: 1, type: 'scene', name: 'S' }), true);

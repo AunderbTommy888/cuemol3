@@ -146,16 +146,11 @@ export function useSceneTreeNodeOps(
                 node.type === 'rendGroup'
                     ? node.children.map((c) => c.id).filter((n) => n >= 0)
                     : undefined
-            // Style nodes require the scope id so the worker can call
-            // StyleManager.destroyStyleSet(scopeId, styleSetId).
-            const scopeId =
-                node.type === 'style' ? node.styleInfo?.scopeId : undefined
             const res = await cm.invokeService('deleteNode', {
                 sceneId: sid,
                 nodeId: numId,
                 nodeType: node.type as SceneNodeType,
                 childIds,
-                scopeId,
             })
             // Event subscription handles refetch on success.
             return res?.ok === true
@@ -205,18 +200,14 @@ export function useSceneTreeNodeOps(
             if (
                 node.type !== 'object' &&
                 node.type !== 'renderer' &&
-                node.type !== 'rendGroup' &&
-                node.type !== 'style'
+                node.type !== 'rendGroup'
             ) {
                 return false
             }
-            const scopeId =
-                node.type === 'style' ? node.styleInfo?.scopeId : undefined
             const res = await cm.invokeService('copyNode', {
                 sceneId: sid,
                 nodeId: node.id,
                 nodeType: node.type,
-                scopeId,
             })
             return writeSceneClip(res)
         },

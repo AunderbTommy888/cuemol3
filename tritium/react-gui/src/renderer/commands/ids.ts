@@ -124,7 +124,10 @@ export const CmdId = {
   ObjectRegenSurface:    'scene.object.regenSurface',    // args: { objId }
 
   // Style sets.
-  StyleNew:              'scene.style.new',              // no args
+  StyleNew:              'scene.style.new',              // no args -> new set uid
+  StyleDelete:           'scene.style.delete',           // args: { id; scopeId }
+  StyleCopy:             'scene.style.copy',             // args: { id; scopeId }
+  StylePaste:            'scene.style.paste',            // no args
   StyleEdit:             'scene.style.edit',             // args: { id; scopeId; name }
   StyleToggleReadOnly:   'scene.style.toggleReadOnly',   // args: { id; scopeId }
   StyleLoadFromFile:     'scene.style.load',             // no args

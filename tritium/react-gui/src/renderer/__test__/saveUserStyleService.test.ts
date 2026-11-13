@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { loadDotStyles, loadUserStyle, saveUserStyle } from '@renderer/worker/server/workerLifecycle'
+import { loadDotStyles, loadUserStyle, markBundledStylesReadOnly, saveUserStyle } from '@renderer/worker/server/workerLifecycle'
 import type { CueMol } from '@cuemol/core/src/cuemol'
 
 // Temp dirs a test makes, removed after it.
@@ -120,5 +120,19 @@ describe('loadDotStyles / loadUserStyle (worker lifecycle)', () => {
         expect(set.name).toBe('user')
         expect(stylem.registerStyleSet).toHaveBeenCalledWith(set, 0, 0)
         expect(stylem.createStyleSet).not.toHaveBeenCalled()
+    })
+})
+
+describe('markBundledStylesReadOnly (worker lifecycle)', () => {
+    it('marks every global set loaded at init read-only (nothing saves them)', () => {
+        const sets: Record<number, { readonly: boolean }> = { 11: { readonly: false }, 12: { readonly: false } }
+        const stylem = {
+            getStyleSetsJSON: () => '[{"name":"system","uid":11},{"name":"cuemol3","uid":12}]',
+            getStyleSet: (uid: number) => sets[uid] ?? null,
+        }
+        const cm = { getService: () => stylem } as unknown as CueMol
+        expect(markBundledStylesReadOnly(cm)).toBe(2)
+        expect(sets[11].readonly).toBe(true)
+        expect(sets[12].readonly).toBe(true)
     })
 })

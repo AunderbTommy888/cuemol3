@@ -237,12 +237,4 @@ describe('buildSceneCtxPayload — pre-fetch dispatch', () => {
         const p = await buildSceneCtxPayload(makeCm(), 7, rendererNode())
         expect(p.clipboardKind).toBeNull()
     })
-
-    it('passes node.styleInfo through for style nodes', async () => {
-        const cm = makeCm()
-        const styleInfo = { scopeId: 0, src: '/x.qsl', readonly: true, modified: false }
-        const p = await buildSceneCtxPayload(cm, 7,
-            { id: 5, type: 'style', name: 'st', visible: true, children: [], styleInfo } as any)
-        expect(p.styleInfo).toEqual(styleInfo)
-    })
 })

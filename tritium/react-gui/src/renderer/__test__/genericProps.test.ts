@@ -183,12 +183,6 @@ describe('resolvePropTarget', () => {
         expect(getView).toHaveBeenCalledWith(8);
         expect(res.target).toBe(view);
     });
-
-    it('returns a null target for unsupported node types', () => {
-        const { ctx } = makeCtx();
-        expect(resolvePropTarget(ctx, { sceneId: 1, nodeId: 9, nodeType: 'styleRoot' }).target).toBeNull();
-        expect(resolvePropTarget(ctx, { sceneId: 1, nodeId: 9, nodeType: 'style' }).target).toBeNull();
-    });
 });
 
 // --- genericProps services ---
@@ -339,9 +333,10 @@ describe('genericProps services', () => {
     });
 
     it('reports failure when the node cannot be resolved', () => {
-        const { ctx } = makeEnv();
+        const { ctx, scene } = makeEnv();
+        scene.getRenderer.mockReturnValue(null as never);
         const res = services.setGenericProp(ctx, {
-            ...ref, nodeType: 'style', propName: 'alpha', op: 'set', valueType: 'real', value: 1,
+            ...ref, propName: 'alpha', op: 'set', valueType: 'real', value: 1,
         });
         expect(res.ok).toBe(false);
         expect(res.entries).toEqual([]);

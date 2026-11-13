@@ -43,6 +43,12 @@ architecture, it belongs here.
   qsc には `<camera>` 要素の並び順として保存する (object / renderer と同じ仕組み)。
   save / apply の with show/hide 版を含むツールバー、drag での並べ替え、既存名の上書き挙動。
 
+- [Styles view (Style Sets / Colors / Selections pane)](styles-panel.md) (日本語) --
+  style set を scene tree の枝から外し、activity bar の Styles view に set の一覧と、選んだ set の
+  色・selection を編集する pane を置いた記録。一覧は名前を探す順番 (scene の set、次に global)、
+  編集できるかどうかは read only フラグだけで決め、同梱の set は起動時に read only にする。
+  global (`user`) の set の編集は undo しない。書き込みは pending event を積む StyleManager を通す。
+
 - [Ball & stick trace renderer (`tracestick`)](tracestick-renderer.md) (日本語) --
   主鎖 pivot atom (CA / P) を sphere + cylinder で結ぶ `trace` の ball & stick 版。
   segment 判定は MainChainRenderer 共通、coordinate texture 経路と display-list 経路、style 一覧。

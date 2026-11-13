@@ -255,6 +255,7 @@ function buildCameraRootMenu(
  *   - Style file submenu -- Reload only when src is non-empty (external)
  *   - Read-only checkbox -- disabled on global rows OR when modified
  *   - Rename -- UXP has no JS implementation; omitted
+ *   - Properties -- omitted: a style set has no property inspector target
  */
 function buildStyleNodeMenu(
     payload: SceneCtxMenuPayload,
@@ -304,7 +305,7 @@ function buildStyleNodeMenu(
             ],
         },
         { type: 'separator' },
-        { label: 'Edit…', action: { kind: 'editStyle' } },
+        { label: 'Style Entries…', action: { kind: 'editStyle' } },
         {
             label: 'Read-only',
             type: 'checkbox',
@@ -314,8 +315,6 @@ function buildStyleNodeMenu(
             enabled: !isGlobal && !(isReadOnly === false && isModified),
             action: { kind: 'styleToggleReadOnly' },
         },
-        { type: 'separator' },
-        propertyItem(),
     ]
 }
 

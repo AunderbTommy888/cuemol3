@@ -8,11 +8,10 @@
  *   object1 (PDBMol)         -- object branches
  *     renderer1 (cartoon)
  *   object2 (...)
- *   Camera                   -- cameraRoot (children = saved cameras)
- *   Styles                   -- styleRoot (children = registered styles)
  *
- * Scene, objects, cameraRoot and styleRoot are all top-level siblings; the
- * scene row itself does not nest the objects beneath it.
+ * The scene row and the objects are top-level siblings; the scene row itself
+ * does not nest the objects beneath it. Cameras and style sets have panes of
+ * their own (Camera pane in the Explorer, Style Sets pane in the Styles view).
  *
  * @module ScenePane
  */
@@ -42,8 +41,6 @@ const TYPE_ICON: Record<SceneNodeType, AppIconKey> = {
     object: "node.object",
     renderer: "node.renderer",
     rendGroup: "node.group",
-    styleRoot: "node.group",
-    style: "node.style",
 };
 
 /* --- Props --- */
@@ -142,7 +139,7 @@ const ScenePaneComponent: React.FC<ScenePaneProps> = ({
     // has no in-place name setter); every other type goes through the
     // renameNode worker, which accepts object / renderer / rendGroup /
     // scene (scene uses scene.setName as Scene.name is read-only at the
-    // .qif level). styleRoot / style are not renameable.
+    // .qif level).
     const isRenameableType = useCallback((t: SceneNodeType): boolean => {
         return (
             t === "scene" ||
@@ -559,8 +556,6 @@ function nodeLabel(node: SceneTreeNode): string {
         case "renderer":
             return node.className ? `${node.name} (${node.className})` : node.name;
         case "rendGroup":
-        case "styleRoot":
-        case "style":
         default:
             return node.name;
     }

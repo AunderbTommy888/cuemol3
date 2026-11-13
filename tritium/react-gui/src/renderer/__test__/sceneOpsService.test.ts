@@ -133,9 +133,6 @@ describe('sceneOps service', () => {
             expect(services.focusOnNode(ctx, {
                 sceneId: 1, viewId: 2, nodeId: 1, nodeType: 'scene',
             }).ok).toBe(false)
-            expect(services.focusOnNode(ctx, {
-                sceneId: 1, viewId: 2, nodeId: -1, nodeType: 'styleRoot',
-            }).ok).toBe(false)
         })
     })
 
@@ -185,13 +182,11 @@ describe('sceneOps service', () => {
             expect(commitUndoTxn).toHaveBeenCalledTimes(1)
         })
 
-        it('returns ok:false for style/scene nodes (Phase 2 out of scope)', () => {
+        it('returns ok:false for the scene node', () => {
             const { ctx } = makeCtx()
-            for (const nt of ['scene', 'style', 'styleRoot'] as const) {
-                expect(services.deleteNode(ctx, {
-                    sceneId: 1, nodeId: 1, nodeType: nt,
-                }).ok).toBe(false)
-            }
+            expect(services.deleteNode(ctx, {
+                sceneId: 1, nodeId: 1, nodeType: 'scene',
+            }).ok).toBe(false)
         })
 
         it('rolls back undo txn when destroyObject throws', () => {
@@ -268,17 +263,6 @@ describe('sceneOps service', () => {
             expect(res.ok).toBe(false)
             expect(startUndoTxn).not.toHaveBeenCalled()
             expect(setName).not.toHaveBeenCalled()
-        })
-
-        it('returns ok:false for unsupported node types', () => {
-            const { ctx } = makeCtx()
-            // 'scene' has its own branch and is tested below; camera and
-            // style intentionally rejects here (no UXP rename handler).
-            for (const nt of ['style', 'styleRoot'] as const) {
-                expect(services.renameNode(ctx, {
-                    sceneId: 1, nodeId: 1, nodeType: nt, newName: 'x',
-                }).ok).toBe(false)
-            }
         })
 
         it('renames rendGroup and re-assigns each member group string in one txn', () => {

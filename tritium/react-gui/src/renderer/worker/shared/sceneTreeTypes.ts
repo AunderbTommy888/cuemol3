@@ -16,9 +16,7 @@ export type SceneNodeType =
     | 'scene'
     | 'object'
     | 'renderer'
-    | 'rendGroup'
-    | 'styleRoot'
-    | 'style';
+    | 'rendGroup';
 
 export interface SceneTreeNode {
     /** C++ UID of the scene / object / renderer / group. */
@@ -49,25 +47,6 @@ export interface SceneTreeNode {
     effectiveVisible: boolean;
     /** Recursive children. Empty for leaf renderers. */
     children: SceneTreeNode[];
-    /**
-     * Style-node metadata from `StyleManager.getStyleSetsJSON`. Only present
-     * on `style` nodes; absent for everything else. Used by ctxmenu wiring
-     * to drive Reload / Save / Read-only gates without an extra round-trip.
-     */
-    styleInfo?: StyleNodeInfo;}
-
-/**
- * Per-style-node metadata mirroring the fields produced by
- * `StyleMgr::getStyleSetsJSON`. `scopeId` is the StyleManager scope under
- * which this style set was registered (0 for global, scene.uid for
- * scene-local) -- the operation services key on it for create / destroy /
- * register / saveToFile.
- */
-export interface StyleNodeInfo {
-    scopeId: number;
-    src: string;
-    readonly: boolean;
-    modified: boolean;
 }
 
 // - Raw JSON shapes from C++ (internal to the parser) -
@@ -147,74 +126,6 @@ export function parseSceneTreeJSON(json: string): SceneTreeNode | null {
         uiOrder: 0,
         effectiveVisible: true,
         children: objectNodes,
-    };
-}
-
-/** Input shape for `buildStyleRoot` -- one entry per StyleSet. */
-export interface StyleRootEntry {
-    /** Display name (UXP renders "" as "(anonymous)"). */
-    name: string;
-    /** Real C++ UID of the StyleSet -- used as `id` on the tree node. */
-    uid: number;
-    /** Scope id (0 for global, scene.uid for scene-local). */
-    scopeId: number;
-    src: string;
-    readonly: boolean;
-    modified: boolean;
-}
-
-/**
- * Build a virtual `styleRoot` node listing the given style sets. The root
- * itself uses a synthesised negative `id` (no real C++ uid), but each style
- * child carries the real StyleSet uid so worker services can resolve them
- * directly. `scopeId` / `readonly` / `modified` / `src` flow through to
- * `styleInfo` for ctxmenu gating.
- */
-export function buildStyleRoot(entries: StyleRootEntry[]): SceneTreeNode {
-    return {
-        id: -2,
-        name: 'Styles',
-        type: 'styleRoot',
-        className: '',
-        visible: true,
-        locked: false,
-        uiCollapsed: true,
-        uiOrder: 0,
-        effectiveVisible: true,
-        children: entries.map((e, idx) => ({
-            id: e.uid,
-            // UXP renders the empty-name case as "(anonymous)" so the row
-            // is selectable; preserve that here. The real name on the
-            // StyleSet is "" -- we don't write it back.
-            name: e.name === '' ? '(anonymous)' : e.name,
-            type: 'style' as SceneNodeType,
-            // Surface readonly/global state as className-like hint so the
-            // existing ScenePane row rendering can dim or lock-icon a row
-            // without consulting styleInfo separately. Empty for editable
-            // scene-local styles.
-            className:
-                e.scopeId === 0
-                    ? 'global'
-                    : e.readonly
-                      ? 'readonly'
-                      : '',
-            // Style nodes have no visibility flag; report true so the
-            // existing UI gates "hasVisibility" cleanly without special-cases.
-            visible: true,
-            // UXP gates "lock" on `scope==0 || readonly`. The tree-row
-            // renderer keys off `locked` to show the lock badge.
-            locked: e.scopeId === 0 || e.readonly,
-            uiCollapsed: false,
-            uiOrder: idx,
-            effectiveVisible: true,
-            children: [],
-            styleInfo: {
-                scopeId: e.scopeId,
-                src: e.src,
-                readonly: e.readonly,
-                modified: e.modified,
-            },
-        })),
     };
 }
 

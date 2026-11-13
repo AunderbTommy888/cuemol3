@@ -172,10 +172,7 @@ describe('bulkSceneNodeOps.bulkSetNodeVisible', () => {
         const res = services.bulkSetNodeVisible(f.ctx, {
             sceneId: 7,
             visible: true,
-            items: [
-                { nodeId: -1, nodeType: 'styleRoot' },
-                { nodeId: -2, nodeType: 'style' },
-            ],
+            items: [{ nodeId: 7, nodeType: 'scene' }],
         })
         expect(res).toEqual({ ok: false, applied: 0 })
         expect(f.startUndoTxn).not.toHaveBeenCalled()
