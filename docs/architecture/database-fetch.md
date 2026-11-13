@@ -111,12 +111,13 @@ URL と EMDB では使わない (warn)。ファイルを開くときは今まで
 
 **AlphaFold の pLDDT の色**: ChimeraX は AlphaFold のモデルを開くと、B-factor の列 (pLDDT) で
 `alphafold` colormap に沿って塗る (`alphafold/fetch.py` の `_color_by_confidence`、colormap は
-`core/colors.py`: 0 赤、50 オレンジ、70 黄、90 cornflowerblue、100 青の連続な補間)。ChX は auto style の
-後に、これを pLDDT 2 刻みの 50 色の paint entry (`bfac > 98` ... `bfac > 0`、最後に `*` を赤) で近似して、
-atom と cartoon の renderer に入れる (`colorSchemes.ts` の `plddtEntries`、`colorCommands.ts` の
-`colorByPlddt`)。分子全体を塗るので、先に表を消してから入れる。`fetch_entry` の取得処理は先に
-`AlphaFoldPlddtColoring` (B-factor の多色グラデーション) を当てるが、ChX の `chx:` renderer は paint が前提
-(後の `color` が paint に戻す) なので、ChX はその上から paint の近似で塗り直す。
+`core/colors.py`: 0 赤、50 オレンジ、70 黄、90 cornflowerblue、100 青の連続な補間)。`fetch_entry` の取得処理が
+分子の coloring を pLDDT の `BfacColoring` (多色のグラデーション) にする ([bfac-multigradient](bfac-multigradient.md) §4)
+ので、ChX は auto style の後に atom と cartoon の renderer の paint を `("*", $molcol)` の 1 行に置き換えて、
+分子の coloring を見せる (`colorCommands.ts` の `colorByPlddt`。分子全体を塗るので先に表を消す)。分子の coloring が
+`BfacColoring` でないとき (取得以外の経路) は、pLDDT 2 刻みの 50 色の paint entry (`bfac > 98` ... `bfac > 0`、
+最後に `*` を赤) で近似する (`colorSchemes.ts` の `plddtEntries`)。後から `color /A red` のように一部を塗っても、
+残りと `$molcol` を参照する色 (ribbon の helix の裏面など) は pLDDT のまま。
 
 **断る取得元** (理由を言う):
 
@@ -156,7 +157,7 @@ Entry 欄の先頭に **Database** の切り替え (`SegmentField`: PDB / EMDB�
 - 結果 (`GetPdbDialogResult`) は `entryId` (PDB / EMDB の accession、または AlphaFold / PubChem の ID) と
   `coord: { source, format }`。地図の取得は PDB / EMDB のときだけ。
 
-AlphaFold のモデルは、Get PDB からでも `fetch_entry` からでも pLDDT の style で塗られる
+AlphaFold のモデルは、Get PDB からでも `fetch_entry` からでも、分子の coloring が pLDDT になる
 ([bfac-multigradient](bfac-multigradient.md) §4)。
 
 ## 5. テスト

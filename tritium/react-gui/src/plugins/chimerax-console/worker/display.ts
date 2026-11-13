@@ -133,7 +133,8 @@ export interface AtomView {
 
 /** An atom iterator, as `AtomIterator` exposes it. */
 interface AtomIter {
-  target: unknown
+  // A method, not `target =`: the property setter would rename the molecule.
+  setTarget: (mol: unknown) => void
   sel: unknown
   first(): void
   next(): void
@@ -151,7 +152,7 @@ export function forEachAtom(ctx: WorkerContext, sceneId: number, objUid: number,
   const sel = makeSel(ctx, expr, sceneId)
   const iter = ctx.svc.createObj('AtomIterator') as unknown as AtomIter | null
   if (!mol || !sel || !iter) return
-  iter.target = mol
+  iter.setTarget(mol)
   iter.sel = sel
   for (iter.first(); iter.hasMore(); iter.next()) if (visit(iter.get()) === false) return
 }

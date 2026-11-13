@@ -61,7 +61,7 @@ if __name__ == "__main__":
         
     def atomPropCol(mol):
         iter = cuemol.createObj("AtomIterator")
-        iter.target = mol
+        iter.setTarget(mol)
         
         iter.first()
         i = 0;

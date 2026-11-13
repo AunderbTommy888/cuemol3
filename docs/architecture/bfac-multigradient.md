@@ -53,6 +53,26 @@ style と qsc: どちらも `coloring` を XML の節点から作り (`LDom2Node
 `MultiGradient::readFrom2` が `<gradnode par="値"><col>色</col></gradnode>` を読む)、`setPropertyImpl` ->
 `setPropHelper` -> `setupParentData("coloring")` で設定するので、`parentDataChanged()` を通る。
 
+### root の object を参照する property (iterator の `setTarget`)
+
+`setupParentData` は、property の setter (`setPropHelper` と `resetProp`) で入れた値が object なら、
+それが子か参照かを区別せずに名前を書き換える。分子や scene のような root の object を参照用の property に
+入れると、その object の名前が property 名になり、その後で入れた子の名前がずれる。実際に、ChX の表示設定や
+atom label (`AtomIterator` に分子を入れる) の後で分子の coloring を入れ直すと、名前が
+`target.coloring.multi_grad` になり、multigrad の node を変えても renderer が `coloring.` で始まる parent 名と
+見なさず再描画されず、undo も対象を辿れずに失敗していた (`MolCoord.coloring` の node の変更)。
+
+- `AtomIterator` / `ResidIterator` / `ChainIterator` は、対象の分子を method `setTarget(mol)` で受け取る。
+  `target` は読み取り専用の property (読むだけなら名前は変わらない)。method の呼び出しは `setupParentData` を
+  通らない。uid を渡す property にしなかったのは、呼ぶ側が分子の object を持っていて、uid から引き直すと
+  「無い」「分子でない」という失敗が増えるだけだから。
+- script (TS / Python) は `iter.setTarget(mol)` と書く。以前の `iter.target = mol` は動かない
+  (`target` に書き込めない)。
+- 同じ形で残っている property: `HoleSurfBuilder.target_mol`、`NewRendererCommand.target_object`、
+  `LoadObjectCommand` / `LoadSceneCommand` の `target_scene`。script から root の object を入れないこと
+  (`NewRendererCommand` は TS 側で直接 `mol.createRenderer` を呼んでよけている。`setupRenderer.ts`)。
+  `setupParentData` 自体は直していない (すべての property の代入に関わるため)。
+
 ## 3. op と worker service (`set_multigrad_nodes`、`services/coloring/multiGrad.ts`)
 
 **どのグラデーションか**を呼ぶ側が言う。分子表面 (`molsurf` / `dsurface`) は renderer 直下の `multi_grad`
@@ -82,9 +102,14 @@ style と qsc: どちらも `coloring` を XML の節点から作り (`LDom2Node
   (アプリで確認: style 適用後に node 5 つ)。`coloringStyleNames` に入れたので `set_renderer_coloring` の style
   モードでも当てられる。
 - **取得**: `streamLoadFromUrl` に `entry.source === 'alphafold'` が渡ると (op `fetch_entry` と、Get PDB の
-  AlphaFold DB)、取得と同じ undo の中で、作った object の coloring を持つ renderer 全部に style を当てる
-  (`applyColoringStyleToObject`)。別の op としては記録しない: `fetch_entry` の意味に含まれ、記録された
-  `fetch_entry` を再生すれば同じく塗られる (別に記録すると再生で二重に当たる)。
+  AlphaFold DB)、取得と同じ undo の中で、分子の coloring (`mol.coloring`) を pLDDT の `BfacColoring` にする
+  (`services/coloring/plddtColoring.ts` の `setPlddtMolColoring`: `mode="bfac"`、`auto="none"`、node は
+  `multiGradPresets.ts` の `PLDDT_NODES`、style と同じ)。既定の renderer の coloring は `$molcol` で分子の
+  coloring に従うので、読み込み時の renderer も後から作る renderer も pLDDT で塗られる。renderer ごとには
+  style を当てない (preset で独自の coloring を持つ renderer は pLDDT にならない)。分子の coloring を自動で
+  `BfacColoring` にするのはここだけ。別の op としては記録しない: `fetch_entry` の意味に含まれ、記録された
+  `fetch_entry` を再生すれば同じく塗られる (別に記録すると再生で二重に当たる)。ファイルから開いた AlphaFold の
+  モデルは対象外 (source が分からない)。
 - 色付けの style の当て直し (`applyStyleColoring`) は、renderer の style の並びから色付けの style
   (`*Paint` と `*Coloring`) をまとめて外してから足す。以前は `*Paint` だけを外していたので、pLDDT の style の
   後に Paint の style を当てても pLDDT の style が並びに残っていた。
@@ -116,11 +141,13 @@ C++ (`src/tests/modules/molstr/test_bfac_coloring.cpp`):
   ことを確かめてある。
 - qsc の保存 -> 読込 (`readFrom2` + `reapplyStyle`) で node が残り、copy した coloring は node を共有しない。
 - style のファイルと同じ属性の形 (`<gradnode par="0" col="#FF0000"/>`) の node が読める。
+- iterator の `setTarget` で分子を渡しても分子の名前は空のままで、その後で分子に入れた coloring の
+  `multi_grad` の名前が `coloring.multi_grad` になる。`target` には書き込めない。
 
 tritium:
 - `__test__/multiGradService.test.ts`: 両方のグラデーションを持つ renderer で `gradient` の指定どおりの方に書き、
   もう一方に書かない。object を対象にしても届く。`BfacColoring` でない coloring は拒否する。空の node が記録の
   文字列と往復する。`coloring.multi_grad` のイベントで再取得する。
-- `__test__/streamLoadFromUrlService.test.ts`: AlphaFold の entry だけが取得の中で pLDDT の style を当てる。
+- `__test__/streamLoadFromUrlService.test.ts`: AlphaFold の entry だけが取得の中で分子に pLDDT の coloring を入れる。
 - `plugins/pymol-console/worker/commands/colorCommands.test.ts`: `spectrum b, rainbow` / `q, blue_white_red` が多色の
   plan になり、色が最小から最大に等間隔に並ぶ。

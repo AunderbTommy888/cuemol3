@@ -5,11 +5,12 @@
  * Pinned: a chain id is looked up case-blind in ChimeraX's table (`/a` and
  * `/A` share a colour), and `rainbow residues` keeps the paint table small
  * -- at most RAINBOW_STEPS ranges per chain, blue at the first residue and
- * red at the last, `^` running it backwards.
+ * red at the last, `^` running it backwards. A builtin palette with colours
+ * at values (`alphafold`) colours over its own values unless a range is given.
  */
 
 import { describe, expect, it } from 'vitest'
-import { chainColor, RAINBOW, RAINBOW_STEPS, rainbowRanges, readPalette } from './colorSchemes'
+import { chainColor, RAINBOW, RAINBOW_STEPS, rainbowRanges, readPalette, valueRange } from './colorSchemes'
 import { modifyColor } from './colorModify'
 
 describe('chain colours', () => {
@@ -42,6 +43,16 @@ describe('palettes and colour changes', () => {
     expect(p4.ok && p4.palette.stops.length).toBe(4)
     const p = readPalette('pastel2')
     expect(p.ok && p.palette.stops.length).toBe(6)
+  })
+
+  it('reads a builtin palette with colours at values, and colours over those values', () => {
+    const p = readPalette('alphafold')
+    expect(p.ok).toBe(true)
+    if (!p.ok) return
+    expect(p.palette.stops.map((s) => s.at)).toEqual([0, 50, 70, 90, 100])
+    // pLDDT 0-100 whatever the atoms' values, unless a range is given.
+    expect(valueRange(p.palette, null, 30, 80)).toEqual([0, 100])
+    expect(valueRange(p.palette, [20, 40], 30, 80)).toEqual([20, 40])
   })
 
   it('changes a colour as ChimeraX\'s color modify (values from Python colorsys)', () => {

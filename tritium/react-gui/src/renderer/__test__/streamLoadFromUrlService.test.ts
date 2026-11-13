@@ -31,13 +31,12 @@ vi.mock('@renderer/worker/server/actions/serviceOps', async (importOriginal) => 
     recordOp: vi.fn(),
 }))
 
-vi.mock('@renderer/worker/server/services/coloring/applyColoring', async (importOriginal) => ({
-    ...(await importOriginal<object>()),
-    applyColoringStyleToObject: vi.fn(),
+vi.mock('@renderer/worker/server/services/coloring/plddtColoring', () => ({
+    setPlddtMolColoring: vi.fn(() => true),
 }))
 
 import { services } from '@renderer/worker/server/services/file/file.service'
-import { applyColoringStyleToObject } from '@renderer/worker/server/services/coloring/applyColoring'
+import { setPlddtMolColoring } from '@renderer/worker/server/services/coloring/plddtColoring'
 import { setupRenderer } from '@renderer/worker/server/services/rend/setupRenderer'
 import { applyReaderOptions } from '@renderer/worker/server/services/helpers/applyReaderOptions'
 import { recordOp } from '@renderer/worker/server/actions/serviceOps'
@@ -213,8 +212,8 @@ describe('streamLoadFromUrl service', () => {
                 sceneId: 7, options: makeOptions(), entry: { source, id: 'x', format: null, defaultName: 'x' },
             })
         }
-        expect(applyColoringStyleToObject).toHaveBeenCalledTimes(1)
-        expect(vi.mocked(applyColoringStyleToObject).mock.calls[0][2]).toBe('AlphaFoldPlddtColoring')
+        // On the molecule (mol.coloring), which the default renderers colour from.
+        expect(setPlddtMolColoring).toHaveBeenCalledTimes(1)
     })
 
     it('cancel path: aborts fetch, drains IOThread via waitLoadAsync, does NOT add to scene', async () => {

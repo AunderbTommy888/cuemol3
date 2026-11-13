@@ -118,21 +118,6 @@ function applyStyleColoring(scene: Scene, rend: Renderer, styleName: string): vo
 }
 
 /**
- * Colour every renderer of `obj` that has a colouring with `styleName` (the
- * same steps as the Coloring submenu's styles). Run inside the caller's undo
- * transaction; records nothing (the caller's op stands for it).
- */
-export function applyColoringStyleToObject(scene: Scene, obj: unknown, styleName: string): void {
-    const o = obj as { getRendCount?: () => number; getRendererByIndex?: (i: number) => Renderer | null };
-    if (typeof o.getRendCount !== 'function' || typeof o.getRendererByIndex !== 'function') return;
-    const n = o.getRendCount();
-    for (let i = 0; i < n; i++) {
-        const rend = o.getRendererByIndex(i);
-        if (rend && getColoringClassName(rend) !== '') applyStyleColoring(scene, rend, styleName);
-    }
-}
-
-/**
  * Apply a `paint-type-XXX` coloring by instantiating a fresh coloring object
  * and assigning it. On a renderer with a molecule colormode, also switch into
  * it (see `forceMoleculeColormode`). `init` runs on the fresh object before it

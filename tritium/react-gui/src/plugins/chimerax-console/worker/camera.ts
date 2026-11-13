@@ -31,7 +31,8 @@ interface Vec {
 }
 
 interface AtomIter {
-  target: unknown
+  // A method, not `target =`: the property setter would rename the molecule.
+  setTarget: (mol: unknown) => void
   sel: unknown
   first(): void
   next(): void
@@ -82,7 +83,7 @@ export function framingOf(ctx: WorkerContext, sceneId: number, viewId: number, t
     const sel = makeSel(ctx, t.sel, sceneId)
     const iter = ctx.svc.createObj('AtomIterator') as unknown as AtomIter | null
     if (!mol || !sel || !iter) continue
-    iter.target = mol
+    iter.setTarget(mol)
     iter.sel = sel
     for (iter.first(); iter.hasMore(); iter.next()) {
       const p = iter.get().pos

@@ -17,7 +17,12 @@ runtime_class AtomIterator
   cloneable;
   smartptr;
 
-  property object<MolCoord$> target => redirect(getTarget, setTarget);
+  // The target molecule is set by a method, not a writable property: a
+  // property setter calls setupParentData(), which would rename the molecule
+  // to "target" and break the nested names ("coloring.multi_grad") that its
+  // renderers and undo rely on.
+  property object<MolCoord$> target => redirect(getTarget, xxx) (readonly);
+  void setTarget(object<MolCoord$>);
   property object<MolSelection$> sel => redirect(getSelection, setSelection);
 
   void first();

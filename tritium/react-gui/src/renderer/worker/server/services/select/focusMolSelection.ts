@@ -45,7 +45,8 @@ interface FramingMol {
 
 /** An atom iterator, as `AtomIterator` exposes it. */
 interface AtomIter {
-  target: unknown
+  // A method, not `target =`: the property setter would rename the molecule.
+  setTarget: (mol: unknown) => void
   sel: unknown
   first(): void
   next(): void
@@ -103,7 +104,7 @@ export function framingTarget(
 function selectionCentroid(ctx: WorkerContext, mol: unknown, sel: unknown): XYZ | null {
   const iter = ctx.svc.createObj('AtomIterator') as unknown as AtomIter | null
   if (!iter) return null
-  iter.target = mol
+  iter.setTarget(mol)
   iter.sel = sel
   let n = 0
   const sum = { x: 0, y: 0, z: 0 }
