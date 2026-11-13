@@ -38,7 +38,11 @@ persist to localStorage (`molSuperposeHistory`, key
 `cuemol2.ui.histories.mol_superpose`); selection-string history flows through the
 shared `MolSelList` `selHistory` store. Initial molecule defaults: restored
 history when still present, else reference=first / moving=second MolCoord (UXP
-`onLoad`).
+`onLoad`). Unlike UXP, the moving default never equals the reference when the
+scene has two or more molecules: a saved moving molecule that is gone or equal
+to the reference gives way to the first other molecule (`defaultSuperposePair`).
+UXP picked the second item blindly, so a saved reference that was the second
+molecule became the moving one too.
 
 The **"Write RMSD info file" option is dropped (won't implement)** — it needs a
 native save-file dialog (main-process round-trip) to obtain a path before calling
