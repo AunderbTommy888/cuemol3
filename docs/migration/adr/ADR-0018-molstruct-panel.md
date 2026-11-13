@@ -95,6 +95,28 @@ shared.
   performance hint rather than a correctness requirement, so a future
   topology-event filter can be added without changing the panel.
 
+**Residue rows in pages** (2026-11-13). An expanded chain draws its
+residues `RESIDUE_PAGE` (500) at a time. While residues remain, the chain's
+last row is a disabled "Loading more... (N left)" row; when it comes within
+200 px of the visible area of `.mol-tree-scroll` (`IntersectionObserver`
+rooted there), the next page is added, and again while the row stays in
+view. Collapsing the chain or switching the molecule goes back to the first
+page. Shift+click range selection counts only the rows drawn.
+
+- Why: an MD system puts every water in one chain as its own residue
+  (tens of thousands of residues). Blueprint `Tree` is not virtualized, so
+  drawing them all built that many DOM rows at once and rebuilt them on
+  every click; the main thread stayed blocked, so the chain could not even
+  be collapsed again.
+- The fetch is not paged: `MolChain::getResidsJSON()` takes about 20 ms for
+  50k residues (with or without a selection), and Select / Center / Zoom
+  merge ranges over the chain's whole residue order (`selStrFromTree`).
+- A "Show N more" button was tried first and replaced by the scroll-driven
+  page after the visual check. A "Show all" is deliberately absent.
+- Scrolling far enough still accumulates DOM rows; a chain scrolled to tens
+  of thousands of rows can make clicks slow again. Virtualization (below)
+  remains the fix for that.
+
 **Negative / deferred**
 - **Tree expansion stagger** (known issue). Even with all CSS
   transitions / animations disabled on `.mol-tree`, Blueprint's

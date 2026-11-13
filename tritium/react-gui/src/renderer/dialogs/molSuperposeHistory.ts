@@ -64,3 +64,27 @@ export function loadMolSuperposeHistory(): MolSuperposeHistory {
 export function saveMolSuperposeHistory(hist: MolSuperposeHistory): void {
     prefs.save(hist);
 }
+
+/**
+ * The reference and moving molecules the dialog opens with: the saved ones
+ * when they are still in the scene, else the first molecule for the
+ * reference. The moving one differs from the reference whenever the scene
+ * has two or more molecules (UXP `ssm_sup.js` picks the second item when no
+ * moving molecule is saved): a saved moving molecule equal to the reference,
+ * or one no longer present, gives way to the first other molecule.
+ *
+ * @param uids - the molecules that can be picked, in list order
+ * @param hist - the saved history
+ * @returns the reference and moving uids (undefined when there is none)
+ */
+export function defaultSuperposePair(
+    uids: readonly number[],
+    hist: Pick<MolSuperposeHistory, 'refObjId' | 'movObjId'>,
+): { refObjId: number | undefined; movObjId: number | undefined } {
+    const has = (id: number | undefined): id is number => id !== undefined && uids.includes(id);
+    const refObjId = has(hist.refObjId) ? hist.refObjId : uids[0];
+    const movObjId = has(hist.movObjId) && hist.movObjId !== refObjId
+        ? hist.movObjId
+        : (uids.find((id) => id !== refObjId) ?? refObjId);
+    return { refObjId, movObjId };
+}
