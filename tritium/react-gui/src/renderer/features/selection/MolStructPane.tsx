@@ -9,7 +9,11 @@
  *   - toolbar: Select / Center / Zoom / Properties
  *
  * Residue / atom rows are lazy-loaded on expand via `useMolStructure`;
- * the worker round-trip only happens the first time a node opens.
+ * the worker round-trip only happens the first time a node opens. A chain
+ * shows its residues RESIDUE_PAGE at a time: Blueprint `Tree` is not virtualized, so a chain of tens of thousands
+ * of residues (the waters of an MD system) drawn at once blocked the main
+ * thread, and with it any way to collapse the chain again. The next page is
+ * added when the chain's last row ("Loading more...") scrolls into view.
  * Center / Zoom drive `selectAndFocusMol` (set the selection, then move
  * the view to it) using the active mol-view's id. Properties stays a stub -- UXP's
  * `onBtnPropCmd` is empty.
@@ -17,7 +21,7 @@
  * @module MolStructPane
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     Button,
     ButtonGroup,
@@ -69,6 +73,15 @@ function applyAndRecord<K extends SelApplyService>(
  */
 const BLANK_ICON = <span style={{ display: "inline-block", width: 16 }} aria-hidden />;
 
+/** How many residue rows an expanded chain shows at first, and adds each time its end scrolls into view. */
+export const RESIDUE_PAGE = 500;
+
+/** Id prefix of a chain's "Loading more..." row, the last row while residues remain. */
+const MORE_PREFIX = "more-resid:";
+
+/** How far below the visible area the "Loading more..." row starts the next page, in px. */
+const MORE_MARGIN_PX = 200;
+
 /* --- Props --- */
 
 interface MolStructPaneProps {
@@ -105,6 +118,12 @@ export const MolStructPane: React.FC<MolStructPaneProps> = ({ collapsed, onToggl
     // Expansion state lives in React, not Blueprint -- Tree is a stateless
     // controlled component when we set `isExpanded` explicitly.
     const [expandedIds, setExpandedIds] = useState<Set<MolTreeId>>(() => new Set());
+    // Residue rows shown per chain name (RESIDUE_PAGE when absent).
+    const [shownByChain, setShownByChain] = useState<Map<string, number>>(() => new Map());
+    const shownOf = useCallback(
+        (chainName: string) => shownByChain.get(chainName) ?? RESIDUE_PAGE,
+        [shownByChain],
+    );
 
     // Clear local selection / expansion whenever the active mol changes
     // (the lazy cache itself is cleared by the hook).
@@ -112,6 +131,7 @@ export const MolStructPane: React.FC<MolStructPaneProps> = ({ collapsed, onToggl
         setSelectedIds(new Set());
         setAnchorId(null);
         setExpandedIds(new Set());
+        setShownByChain(new Map());
     }, [selectedMolId]);
 
     // Self-heal: any expanded chain/residue whose lazy cache is missing
@@ -156,7 +176,7 @@ export const MolStructPane: React.FC<MolStructPaneProps> = ({ collapsed, onToggl
             if (!expandedIds.has(cid)) continue;
             const residues = residuesByChain.get(chain.name);
             if (!residues) continue; // children not loaded yet -> placeholder, skip
-            for (const r of residues) {
+            for (const r of residues.slice(0, shownOf(chain.name))) {
                 const rid = encodeResidueId(chain.name, r.index);
                 ids.push(rid);
                 if (!expandedIds.has(rid)) continue;
@@ -168,7 +188,7 @@ export const MolStructPane: React.FC<MolStructPaneProps> = ({ collapsed, onToggl
             }
         }
         return ids;
-    }, [chains, expandedIds, residuesByChain, atomsByResidue]);
+    }, [chains, expandedIds, residuesByChain, atomsByResidue, shownOf]);
 
     const handleNodeClick = useCallback(
         (node: TreeNodeInfo, _path: number[], e: React.MouseEvent<HTMLElement>) => {
@@ -252,6 +272,16 @@ export const MolStructPane: React.FC<MolStructPaneProps> = ({ collapsed, onToggl
             next.delete(id);
             return next;
         });
+        // A chain opens again at its first page.
+        if (id.startsWith("chain:")) {
+            const chainName = id.slice("chain:".length);
+            setShownByChain((prev) => {
+                if (!prev.has(chainName)) return prev;
+                const next = new Map(prev);
+                next.delete(chainName);
+                return next;
+            });
+        }
     }, []);
 
     // residueOrder map for selStrFromTree range merging.
@@ -326,7 +356,8 @@ export const MolStructPane: React.FC<MolStructPaneProps> = ({ collapsed, onToggl
                     },
                 ];
             }
-            return residues.map((r) => {
+            const shown = shownOf(chainName);
+            const rows: TreeNodeInfo[] = residues.slice(0, shown).map((r) => {
                 const id = encodeResidueId(chainName, r.index);
                 const label = `${r.index} ${r.name}`;
                 const expanded = expandedIds.has(id);
@@ -342,8 +373,22 @@ export const MolStructPane: React.FC<MolStructPaneProps> = ({ collapsed, onToggl
                         : undefined,
                 };
             });
+            const rest = residues.length - shown;
+            if (rest > 0) {
+                rows.push({
+                    id: `${MORE_PREFIX}${chainName}`,
+                    label: (
+                        <span data-more-chain={chainName} data-more-shown={shown}>
+                            Loading more... ({rest} left)
+                        </span>
+                    ),
+                    icon: BLANK_ICON,
+                    disabled: true,
+                });
+            }
+            return rows;
         },
-        [residuesByChain, selectedIds, expandedIds, buildAtomChildren],
+        [residuesByChain, selectedIds, expandedIds, buildAtomChildren, shownOf],
     );
 
     const treeContents: TreeNodeInfo[] = useMemo(() => {
@@ -361,6 +406,33 @@ export const MolStructPane: React.FC<MolStructPaneProps> = ({ collapsed, onToggl
             };
         });
     }, [chains, selectedIds, expandedIds, buildResidueChildren]);
+
+    // Add a chain's next page when its "Loading more..." row comes near the
+    // visible area. The row carries the count it was drawn with, so a repeated
+    // callback before the next render adds the page once.
+    const scrollRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const root = scrollRef.current;
+        if (!root || typeof IntersectionObserver === "undefined") return;
+        const rows = root.querySelectorAll<HTMLElement>("[data-more-chain]");
+        if (rows.length === 0) return;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                for (const e of entries) {
+                    if (!e.isIntersecting) continue;
+                    const el = e.target as HTMLElement;
+                    const chainName = el.dataset.moreChain ?? "";
+                    const next = Number(el.dataset.moreShown) + RESIDUE_PAGE;
+                    setShownByChain((prev) =>
+                        (prev.get(chainName) ?? RESIDUE_PAGE) >= next ? prev : new Map(prev).set(chainName, next),
+                    );
+                }
+            },
+            { root, rootMargin: `0px 0px ${MORE_MARGIN_PX}px 0px` },
+        );
+        rows.forEach((r) => observer.observe(r));
+        return () => observer.disconnect();
+    }, [treeContents]);
 
     const hasSelection = selectedIds.size > 0;
     const hasView = activeMolViewId !== undefined;
@@ -466,7 +538,7 @@ export const MolStructPane: React.FC<MolStructPaneProps> = ({ collapsed, onToggl
                         emptyText="(no molecules)"
                         fallbackName={(m) => `Mol ${m.uid}`}
                     />
-                    <div className="sp-pane-scroll mol-tree-scroll">
+                    <div ref={scrollRef} className="sp-pane-scroll mol-tree-scroll">
                         <ListboxTree
                             contents={treeContents}
                             onNodeClick={handleNodeClick}
