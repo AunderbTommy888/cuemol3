@@ -2,11 +2,12 @@
 
 accession ID と取得元のデータベースから、構造を取得して開く仕組み。取得元の知識 (ID の形・URL・reader・
 既定の名前) は core の共有モジュールに置き、op `fetch_entry` (native console・MCP・agent)、Get PDB ダイアログ、
-ChX console の `open` (`open pdbe:1crn`、`open alphafold:P29474`、`open 1crn fromDatabase pdbj` など) が使う。
+ChX console の `open` (`open pdbe:1crn`、`open alphafold:P29474`、`open ccd:ATP`、`open 1crn fromDatabase pdbj` など) が使う。
 AlphaFold のモデルは開くと pLDDT で塗る ([bfac-multigradient](bfac-multigradient.md) §4)。
 
 URL は ChimeraX の取得処理に合わせた (`~/ext/ChimeraX/src/bundles/` の `mmcif`・`pdb`・`alphafold`・
-`pubchem`)。同じ接頭辞で同じものを取る。
+`pubchem`)。同じ接頭辞で同じものを取る。例外は CCD (`ccd`): ChimeraX は CCD の mmCIF (`chem_comp_atom`) を
+読むが、CueMol の mmCIF の reader は `_atom_site` しか読まないので、RCSB が配る理想座標の SDF を取る。
 
 ## 1. 取得元の表 (`renderer/worker/shared/dbSources.ts`)
 
@@ -21,8 +22,11 @@ URL は ChimeraX の取得処理に合わせた (`~/ext/ChimeraX/src/bundles/` �
 | `redo` | 同上 | `https://pdb-redo.eu/db/{id}/{id}_final.cif` (`.pdb`) | 同上 | なし | 同上 |
 | `alphafold` | `P29474`、`Q8N9C0-2`、`AF-Q8N9C0-F1-v6`、`AF-Q8N9C0-2-F1-v6` | `https://alphafold.ebi.ac.uk/files/AF-{uniprot}[-{isoform}]-F{fragment}-model_v{version}.cif` (`.pdb`) | 同上 | なし | `AF-{uniprot}[-{isoform}]-F{fragment}` |
 | `pubchem` | CID (数字) | `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{id}/SDF?record_type=3d` | `sdf` | なし | `pubchem_{cid}` |
+| `ccd` | CCD のコード (英数字 1〜5 文字。大文字にする) | `https://files.rcsb.org/ligands/download/{CODE}_ideal.sdf` | `sdf` | なし | コード (大文字) |
 
-- 形式 (`format`) を省くと mmCIF。PubChem は SDF しか無いので、形式を渡すと断る。
+- 形式 (`format`) を省くと mmCIF。PubChem と CCD は SDF しか無いので、形式を渡すと断る。
+- CCD の座標は理想座標 (水素を含む)。結晶構造の中の座標 (`_model.sdf`) は RCSB が SDF で配っていない (404)。
+  SDF の 1 行目がコードなので、SDF の reader はそれを残基名にする (`resn ATP` で選べる)。
 - **PDBj は形式によらず gzip で返す** (`application/gzip`。どの窓口も同じ)。そのため `fetch_url` に `gzip` を
   足した (§2)。
 - AlphaFold の ID は ChimeraX の `_parse_alphafold_id` と同じに読む。fragment の既定は 1、DB の版の既定は
@@ -36,12 +40,14 @@ URL は ChimeraX の取得処理に合わせた (`~/ext/ChimeraX/src/bundles/` �
 - `mapUrlFetch(url)`: 地図 (CCP4 / MRC) の URL。拡張子が `.map` / `.mrc` / `.ccp4` (末尾の `.gz` は展開) なら
   reader `ccp4map` と名前を返し、そうでなければ null (呼ぶ側は `urlFetch` を試す)。
 - `emdbAccession(text)`: `1080`、`emd_1080`、`EMD-1080` を `EMD-1080` にする (`fetch_emdb` の `id`)。
-- `dbEntryInfoUrl` / `parseDbEntryInfo`: AlphaFold DB と PubChem の entry の情報 (Get PDB が表示する名前と概要)。
+- `dbEntryInfoUrl` / `parseDbEntryInfo`: AlphaFold DB・PubChem・CCD の entry の情報 (Get PDB が表示する名前と概要)。
   - AlphaFold DB: `https://alphafold.ebi.ac.uk/api/prediction/{uniprot}[-{isoform}]`。fragment ごとの配列から
     ID の fragment (既定 F1) のものを選び、`uniprotDescription` を名前、遺伝子名・生物種・残基数・平均 pLDDT を概要にする。
     無い accession は 404。
   - PubChem: `.../compound/cid/{cid}/property/Title,IUPACName,MolecularFormula,MolecularWeight/JSON`。`Title` を名前、
     分子式・分子量・IUPAC 名を概要にする。無い CID は 400。
+  - CCD: `https://data.rcsb.org/rest/v1/core/chemcomp/{CODE}`。`chem_comp` の `name` を名前、`formula`・
+    `formula_weight`・`type` を概要にする。無いコードは 404。
   - worker の service `fetchDbEntryInfo` (`services/file/entryInfo.ts`、RCSB / EMDB の照会と同じ場所) が取得し、
     400 / 404 は `not-found` にする。
 
@@ -134,27 +140,28 @@ URL と EMDB では使わない (warn)。ファイルを開くときは今まで
 
 ## 4. Get PDB ダイアログ (`plugins/getpdb`)
 
-Entry 欄の先頭に **Database** の切り替え (`SegmentField`: PDB / EMDB、AlphaFold DB、PubChem) を置く。ID 欄の
+Entry 欄の先頭に **Database** の切り替え (`SegmentField`: PDB / EMDB、AlphaFold DB、PubChem、CCD (ligand)) を置く。ID 欄の
 見出しと placeholder は Database で変わる。
 
 - **PDB / EMDB**: 今までどおり (RCSB / EMDB の照会、キーワード検索、地図の欄。[get-pdb-emdb](get-pdb-emdb.md))。
   Coordinates 欄は **Server** (RCSB / PDBe / PDBj / PDB-REDO) と **Format** (mmCIF / PDB) の 2 つ。PDBe などは
   同じ PDB の entry を配るので、RCSB の照会結果 (手法・地図の有無・PDB 形式の可否) はそのまま使う。
-- **AlphaFold DB / PubChem**: RCSB の照会と検索はせず、地図の欄も出さない (PDB として扱うと、RCSB の照会結果や
+- **AlphaFold DB / PubChem / CCD**: RCSB の照会と検索はせず、地図の欄も出さない (PDB として扱うと、RCSB の照会結果や
   結晶の地図の fallback が別の取得元の ID に使われるため)。
   - ID の形を `structureFetch` で検査し、違えば理由を赤字で出して Download を押せなくする。
   - 形が正しければ `fetchDbEntryInfo` で照会し (`useDbEntryLookup`、PDB の照会と同じ待ち時間と古い結果の破棄)、
     名前と概要を 2 行で出す。見つからなければ Download を押せなくする。照会の失敗 (offline など) では押せる。
-  - AlphaFold DB は Model 欄に Format (mmCIF / PDB)。PubChem は SDF だけなので Compound 欄に説明だけ。
+  - AlphaFold DB は Model 欄に Format (mmCIF / PDB)。PubChem は SDF だけなので Compound 欄に説明だけ。CCD も
+    SDF だけなので Ligand 欄に説明だけ。
 - Database を切り替えると、前の Database の照会は止まり、結果も捨てる (`useEntryLookup` の `active` を落とす)。
 
 取得 (`useGetPdbCommand.ts`):
 - 座標は `structureFetch(source, id, format)` の URL・reader・gzip・名前で `streamLoadFromUrl` に渡す。
 - 記録: RCSB は今までどおり `fetch_pdb` (読込のダイアログで選んだ reader の設定付き)。それ以外は `entry` を渡して
   `fetch_entry` (reader の設定は記録しない。`fetch_entry` は reader の設定を取らない)。
-- **PubChem** は file-open option ダイアログを出さず、reader の既定値、ballstick の renderer、表示の中心を合わせる
+- **PubChem と CCD** は file-open option ダイアログを出さず、reader の既定値、ballstick の renderer、表示の中心を合わせる
   (`centerView`) で開く (`compoundOpenOptions`)。化合物 1 つなので、選ばせる必要が無い。
-- 結果 (`GetPdbDialogResult`) は `entryId` (PDB / EMDB の accession、または AlphaFold / PubChem の ID) と
+- 結果 (`GetPdbDialogResult`) は `entryId` (PDB / EMDB の accession、または AlphaFold / PubChem の ID、CCD のコード) と
   `coord: { source, format }`。地図の取得は PDB / EMDB のときだけ。
 
 AlphaFold のモデルは、Get PDB からでも `fetch_entry` からでも、分子の coloring が pLDDT になる
@@ -166,10 +173,10 @@ AlphaFold のモデルは、Get PDB からでも `fetch_entry` からでも、�
   記録され (既定の名前は残さない)、gzip の取得は reader の `compress` を `gzip` にする。
 
 - `renderer/worker/shared/dbSources.test.ts`: 取得元ごとの URL・reader・gzip・名前 (PDBj の gzip、AlphaFold の
-  ID の分解、PubChem の SDF、URL の `.gz`)、断る ID。
+  ID の分解、PubChem と CCD の SDF、URL の `.gz`)、断る ID。
 - `plugins/chimerax-console/worker/openTarget.test.ts`: `fromDatabase` は同じ名前のファイルより優先、
   `db:id` と `fromDatabase` が同じ取得になること、`C:\...` はファイル、断る取得元、`eds` が PDBe の CCP4 の
   URL を地図として開くこと。
-- `renderer/worker/shared/dbSources.test.ts` (`parseDbEntryInfo`): AlphaFold DB と PubChem の応答から名前と概要を読む。
+- `renderer/worker/shared/dbSources.test.ts` (`parseDbEntryInfo`): AlphaFold DB・PubChem・CCD の応答から名前と概要を読む。
 - `plugins/getpdb/renderer/GetPdbDialog.test.tsx`: AlphaFold DB の ID は形が正しければ照会結果を出して取得でき、
   PDB の照会結果が残っていても地図の欄を出さない。

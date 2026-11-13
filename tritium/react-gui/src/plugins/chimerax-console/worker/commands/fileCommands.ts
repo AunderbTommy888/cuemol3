@@ -4,7 +4,7 @@
  *
  * `open` reads a file, a `.cxc` script, or fetches an entry from a database:
  * a bare PDB id (mmCIF from the RCSB, as ChimeraX does), `db:id` (`pdbe:`,
- * `pdbj:`, `redo:`, `alphafold:`, `pubchem:`, `emdb:`), `id fromDatabase db`,
+ * `pdbj:`, `redo:`, `alphafold:`, `pubchem:`, `ccd:`, `emdb:`), `id fromDatabase db`,
  * or an http(s) URL (`openTarget.ts`). A molecule opens with the console's
  * renderers, styled as ChimeraX's automatic styling would style it
  * (`autoStyle.ts`); an AlphaFold model is then coloured by pLDDT, as
@@ -186,7 +186,7 @@ const open = chxCommand({
     { name: 'maxAssemblies', type: IntArg, role: 'keyword' },
   ],
   mutates: true,
-  summary: 'Open files, .cxc scripts, or fetch entries: PDB ids, db:id (pdbe, pdbj, redo, alphafold, pubchem, emdb, eds), or URLs.',
+  summary: 'Open files, .cxc scripts, or fetch entries: PDB ids, db:id (pdbe, pdbj, redo, alphafold, pubchem, ccd, emdb, eds), or URLs.',
   completions: [{ source: 'files', description: 'file', files: 'openable' }],
   // A scene file replaces the scene: it cannot run inside the submission's transaction.
   outsideTxn: (args) => /\.qsc$/i.test(args.names ?? ''),

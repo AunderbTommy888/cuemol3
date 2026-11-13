@@ -45,7 +45,7 @@ import { Listbox, ListRow, TruncatedText } from '@renderer/h3-kit/list'
 import { getHistory, pushHistory } from './pdbIdHistory'
 import { parseAccession } from '@renderer/worker/shared/pdbUrls'
 import { structureFetch } from '@renderer/worker/shared/dbSources'
-import type { StructureFormat, StructureSource } from '@renderer/worker/shared/dbSources'
+import type { InfoSource, StructureFormat, StructureSource } from '@renderer/worker/shared/dbSources'
 import type { EmdbMapInfo, EntryInfo, SearchMethodFilter, SearchSort } from '@renderer/worker/shared/pdbEntryInfo'
 import { useDbEntryLookup, useEntryLookup, type DbEntryLookup, type EmdbInfoMap, type EntryLookup } from './useEntryLookup'
 import { usePdbSearch, type PdbSearchState } from './usePdbSearch'
@@ -59,8 +59,8 @@ import type {
 
 export type { EmdbServerType, MapServerType }
 
-/** What the id field names: a PDB / EMDB entry, an AlphaFold DB model, or a PubChem compound. */
-export type EntryDatabase = 'pdb' | 'alphafold' | 'pubchem'
+/** What the id field names: a PDB / EMDB entry, an AlphaFold DB model, a PubChem compound, or a CCD ligand. */
+export type EntryDatabase = 'pdb' | InfoSource
 
 /** The servers a PDB entry's coordinates are fetched from. */
 export type CoordServer = Extract<StructureSource, 'pdb' | 'pdbe' | 'pdbj' | 'redo'>
@@ -75,6 +75,7 @@ const DATABASE_OPTIONS: { value: EntryDatabase; label: string }[] = [
   { value: 'pdb', label: 'PDB / EMDB' },
   { value: 'alphafold', label: 'AlphaFold DB' },
   { value: 'pubchem', label: 'PubChem' },
+  { value: 'ccd', label: 'CCD (ligand)' },
 ]
 
 /** The id field's label and placeholder per database. */
@@ -82,6 +83,7 @@ const ID_FIELD: Record<EntryDatabase, { label: string; placeholder: string }> = 
   pdb: { label: 'PDB or EMDB ID, or keywords', placeholder: '1mbn, EMD-11638, or keywords' },
   alphafold: { label: 'UniProt accession or AlphaFold ID', placeholder: 'P29474, Q8N9C0-2, or AF-P29474-F1-v6' },
   pubchem: { label: 'PubChem compound ID (CID)', placeholder: '2244' },
+  ccd: { label: 'CCD code (Chemical Component Dictionary)', placeholder: 'ATP, HEM, or NAG' },
 }
 
 /** One EMDB map to fetch. */
@@ -232,10 +234,10 @@ function EntryInfoLines({ lookup, emdbInfo, onSearchInstead }: {
   }
 }
 
-const DATABASE_NAMES: Record<'alphafold' | 'pubchem', string> = { alphafold: 'AlphaFold DB', pubchem: 'PubChem' }
+const DATABASE_NAMES: Record<InfoSource, string> = { alphafold: 'AlphaFold DB', pubchem: 'PubChem', ccd: 'the CCD' }
 
-/** What the AlphaFold DB / PubChem lookup says, under the id field. */
-function DbEntryInfoLines({ lookup, source }: { lookup: DbEntryLookup; source: 'alphafold' | 'pubchem' }): React.JSX.Element | null {
+/** What the AlphaFold DB / PubChem / CCD lookup says, under the id field. */
+function DbEntryInfoLines({ lookup, source }: { lookup: DbEntryLookup; source: InfoSource }): React.JSX.Element | null {
   switch (lookup.status) {
     case 'idle':
       return null
@@ -407,7 +409,7 @@ export function GetPdbDialog({ visible, onConfirm, onCancel }: Props): React.JSX
   const otherId = text.trim()
   const otherCheck = isPdb || otherId === '' ? null : structureFetch(database, otherId, null)
   const otherError = otherCheck && !otherCheck.ok ? otherCheck.error : null
-  const otherSource = !isPdb && visible ? (database as 'alphafold' | 'pubchem') : null
+  const otherSource = !isPdb && visible ? database : null
   const dbLookup = useDbEntryLookup(otherSource, text)
 
   // A PDB entry has coordinates; an EMDB code typed directly does not.
@@ -434,7 +436,7 @@ export function GetPdbDialog({ visible, onConfirm, onCancel }: Props): React.JSX
   }
 
   const coordRequest = (): CoordRequest => {
-    if (database === 'pubchem') return { source: 'pubchem', format: null }
+    if (database === 'pubchem' || database === 'ccd') return { source: database, format: null }
     if (database === 'alphafold') return { source: 'alphafold', format: coordFormat }
     return { source: coordServer, format: effFormat }
   }
@@ -637,6 +639,12 @@ export function GetPdbDialog({ visible, onConfirm, onCancel }: Props): React.JSX
       {showCoord && database === 'pubchem' && (
         <FieldSection title="Compound">
           <div className="h3-dialog-hint">The compound's 3D conformer, as SDF.</div>
+        </FieldSection>
+      )}
+
+      {showCoord && database === 'ccd' && (
+        <FieldSection title="Ligand">
+          <div className="h3-dialog-hint">The component's ideal coordinates (with hydrogens), as SDF from RCSB.</div>
         </FieldSection>
       )}
 

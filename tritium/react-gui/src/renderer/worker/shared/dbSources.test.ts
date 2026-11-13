@@ -4,7 +4,8 @@
  *
  * Pins what a wrong row would get quietly wrong: PDBj's gzip-only answers read
  * as plain text, an AlphaFold id taken apart differently from ChimeraX, or a
- * URL read with the wrong reader.
+ * URL read with the wrong reader. A CCD ligand is RCSB's ideal SDF under its
+ * upper-case code.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -21,6 +22,9 @@ describe('structureFetch', () => {
       url: 'https://alphafold.ebi.ac.uk/files/AF-Q8N9C0-2-F1-model_v4.cif', readerName: 'mmcif', gzip: false, name: 'AF-Q8N9C0-2-F1',
     })
     expect(spec(structureFetch('pubchem', '2244', null))).toMatchObject({ readerName: 'sdf', name: 'pubchem_2244' })
+    expect(spec(structureFetch('ccd', ' atp ', null))).toEqual({
+      url: 'https://files.rcsb.org/ligands/download/ATP_ideal.sdf', readerName: 'sdf', gzip: false, name: 'ATP',
+    })
     expect(mapUrlFetch('https://example.org/m/emd_1080.map.gz')).toEqual({
       url: 'https://example.org/m/emd_1080.map.gz', readerName: 'ccp4map', gzip: true, name: 'emd_1080',
     })
@@ -34,11 +38,13 @@ describe('structureFetch', () => {
     expect(structureFetch('pdbe', '1crnx', null).ok).toBe(false)
     expect(structureFetch('alphafold', 'NOS3_HUMAN', null).ok).toBe(false)
     expect(structureFetch('pubchem', '2244', 'pdb').ok).toBe(false)
+    expect(structureFetch('ccd', 'ABCDEF', null).ok).toBe(false)
+    expect(structureFetch('ccd', 'AT-P', null).ok).toBe(false)
   })
 })
 
 describe('parseDbEntryInfo', () => {
-  it('reads the name and facts from the AlphaFold DB and PubChem records, and nothing from an empty one', () => {
+  it('reads the name and facts from the AlphaFold DB, PubChem and CCD records, and nothing from an empty one', () => {
     const af = [
       { modelEntityId: 'AF-P29474-F1', uniprotAccession: 'P29474', uniprotDescription: 'Nitric oxide synthase 3', gene: 'NOS3',
         organismScientificName: 'Homo sapiens', sequenceStart: 1, sequenceEnd: 1203, globalMetricValue: 82.5 },
@@ -49,6 +55,10 @@ describe('parseDbEntryInfo', () => {
     const pc = { PropertyTable: { Properties: [{ CID: 2244, MolecularFormula: 'C9H8O4', MolecularWeight: '180.16', IUPACName: '2-acetyloxybenzoic acid', Title: 'Aspirin' }] } }
     expect(parseDbEntryInfo('pubchem', '2244', pc)).toEqual({
       title: 'Aspirin', details: ['C9H8O4', '180.16 g/mol', '2-acetyloxybenzoic acid'],
+    })
+    const ccd = { chem_comp: { id: 'ATP', name: "ADENOSINE-5'-TRIPHOSPHATE", formula: 'C10 H16 N5 O13 P3', formula_weight: 507.181, type: 'non-polymer' } }
+    expect(parseDbEntryInfo('ccd', 'atp', ccd)).toEqual({
+      title: "ADENOSINE-5'-TRIPHOSPHATE", details: ['C10 H16 N5 O13 P3', '507.181 g/mol', 'non-polymer'],
     })
     expect(parseDbEntryInfo('alphafold', 'P29474', [])).toBeNull()
   })

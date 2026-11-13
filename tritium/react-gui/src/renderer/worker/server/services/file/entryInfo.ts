@@ -25,7 +25,7 @@ import {
     type SearchMethodFilter,
     type SearchSort,
 } from '@renderer/worker/shared/pdbEntryInfo';
-import { dbEntryInfoUrl, parseDbEntryInfo, type DbEntryInfo } from '@renderer/worker/shared/dbSources';
+import { dbEntryInfoUrl, parseDbEntryInfo, type DbEntryInfo, type InfoSource } from '@renderer/worker/shared/dbSources';
 
 const RCSB_GRAPHQL_URL = 'https://data.rcsb.org/graphql';
 const EMDB_API_URL = 'https://www.ebi.ac.uk/emdb/api/entry';
@@ -147,17 +147,17 @@ export async function fetchEmdbMapInfo(
 }
 
 export interface FetchDbEntryInfoArgs {
-    source: 'alphafold' | 'pubchem';
+    source: InfoSource;
     id: string;
 }
 
 export type FetchDbEntryInfoResult = Result<{ info: DbEntryInfo }>;
 
 /**
- * Read what AlphaFold DB or PubChem says about `id`.
+ * Read what AlphaFold DB, PubChem or RCSB (a CCD ligand) says about `id`.
  *
  * @returns the info; `not-found` when the database has no such entry (AlphaFold
- *   answers 404, PubChem 400 or 404) or the id is not of its form
+ *   and RCSB answer 404, PubChem 400 or 404) or the id is not of its form
  */
 export async function fetchDbEntryInfo(
     _ctx: WorkerContext,

@@ -15,7 +15,7 @@ import { useCueMol } from '@renderer/plugin-host/api'
 import { useStaleGuard } from '@renderer/hooks/react/useStaleGuard'
 import { parseAccession, type Accession } from '@renderer/worker/shared/pdbUrls'
 import type { EmdbMapInfo, EntryInfo } from '@renderer/worker/shared/pdbEntryInfo'
-import { dbEntryInfoUrl, type DbEntryInfo } from '@renderer/worker/shared/dbSources'
+import { dbEntryInfoUrl, type DbEntryInfo, type InfoSource } from '@renderer/worker/shared/dbSources'
 
 /** How long typing has to pause before the lookup starts. */
 const LOOKUP_DEBOUNCE_MS = 400
@@ -143,7 +143,7 @@ export type DbEntryLookup =
  * @param source - the database, or null when the dialog is on PDB / EMDB (no lookup)
  * @param id - the id as typed; looked up only when it has the database's form
  */
-export function useDbEntryLookup(source: 'alphafold' | 'pubchem' | null, id: string): DbEntryLookup {
+export function useDbEntryLookup(source: InfoSource | null, id: string): DbEntryLookup {
   const { cm } = useCueMol()
   const guard = useStaleGuard()
   const [state, setState] = useState<DbEntryLookup>({ status: 'idle' })
