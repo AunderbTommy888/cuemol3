@@ -17,7 +17,9 @@
  *   - On open the algorithm / pivot / checkbox state is restored from history.
  *
  * The default molecule ids come from the dialog's own listSceneObjects fetch
- * (ref=first uid, mov=second uid) -- pinned via two MolCoord objects.
+ * (ref=first uid, mov=second uid) -- pinned via two MolCoord objects. With two
+ * or more molecules the moving one never defaults to the reference, even when
+ * only the saved reference is still in the scene.
  */
 
 import React from 'react'
@@ -182,6 +184,20 @@ describe('MolSuperposeDialog commit + history wire', () => {
         expect(document.body.querySelector('.h3-dialog-error')?.textContent)
             .toBe('SSM failed')
         expect(globalThis.localStorage.getItem(STORAGE_KEY)).toBeNull()
+        handle.unmount()
+    })
+
+    it('defaults the moving molecule to one other than the saved reference', async () => {
+        // The saved reference (20) is the second molecule; the saved moving one is gone.
+        globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify({ refObjId: 20, movObjId: 99 }))
+        routeInvoke(() => ({ ok: true }))
+        const handle = mount()
+        await flushPromises()
+
+        await act(async () => { okButton().click() })
+        await flushPromises()
+
+        expect(commitCalls()[0][1]).toMatchObject({ refObjId: 20, movObjId: 10 })
         handle.unmount()
     })
 

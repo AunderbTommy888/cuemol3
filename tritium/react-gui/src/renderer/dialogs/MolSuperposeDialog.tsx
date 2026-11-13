@@ -40,6 +40,7 @@ import {
 } from '@renderer/worker/shared/superposeTypes'
 import { useStaleGuard } from '@renderer/hooks/react/useStaleGuard'
 import {
+    defaultSuperposePair,
     loadMolSuperposeHistory,
     saveMolSuperposeHistory,
 } from './molSuperposeHistory'
@@ -116,17 +117,9 @@ export function MolSuperposeDialog({
             .then((res) => {
                 if (!guard.isCurrent(token)) return
                 const mols = (res?.objects ?? []).filter(objectFilters.molCoordNotTraj)
-                const uids = mols.map((m: SceneObjectEntry) => m.uid)
-                const has = (id: number | undefined): boolean =>
-                    id !== undefined && uids.includes(id)
-                setRefObjId(has(hist.refObjId) ? hist.refObjId : uids[0])
-                setMovObjId(
-                    has(hist.movObjId)
-                        ? hist.movObjId
-                        : uids.length > 1
-                          ? uids[1]
-                          : uids[0],
-                )
+                const pair = defaultSuperposePair(mols.map((m: SceneObjectEntry) => m.uid), hist)
+                setRefObjId(pair.refObjId)
+                setMovObjId(pair.movObjId)
             })
             .catch(() => {
                 if (!guard.isCurrent(token)) return
