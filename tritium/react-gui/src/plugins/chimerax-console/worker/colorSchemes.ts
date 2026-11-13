@@ -100,6 +100,21 @@ const BUILTIN_PALETTES: Readonly<Record<string, readonly string[]>> = {
   lipophilicity: ['#008b8b', '#ffffff', '#b8860b'],
 }
 
+/**
+ * `core/colors.py` `_builtin_colormaps`: the ones whose colours sit at given
+ * values, as `v1,c1:v2,c2:...`. Coloured by such a palette, the values map
+ * onto these unless a range is given (`valueRange`): pLDDT 0-100 for
+ * `alphafold`, 0-1 for `esmfold`, predicted aligned error in angstroms for
+ * the `pae` ones.
+ */
+const VALUE_PALETTES: Readonly<Record<string, string>> = {
+  alphafold: '0,red:50,orange:70,yellow:90,cornflowerblue:100,blue',
+  esmfold: '0,red:0.5,orange:0.7,yellow:0.9,cornflowerblue:1,blue',
+  pae: '0,blue:5,cornflowerblue:10,yellow:15,orange:20,gray:25,lightgray:30,white',
+  paegreen: '0,#1e461e:5,#249224:10,#37b137:15,#56c956:20,#82dd82:25,#baefba:30,#ffffff',
+  paecontacts: '0,blue:5,cornflowerblue:10,yellow:15,orange:20,red',
+}
+
 /** The default palette (`rainbow`: blue at the N-terminus, red at the C-terminus). */
 export const RAINBOW: Palette = even(BUILTIN_PALETTES.rainbow)
 
@@ -109,12 +124,6 @@ function tokenColor(text: string): Rgb | null {
   return c && c.rest.trim() === '' ? rgbOf(c.hex) : null
 }
 
-/**
- * Read a palette as `ColormapArg` writes it: a builtin name, `c1:c2:...`,
- * or `v1,c1:v2,c2:...` (positions 0-1); `^` first reverses it.
- *
- * @returns the palette, or why the text is not one
- */
 /**
  * A COLOURlovers palette by its number (`palette 130451`), fetched as
  * ChimeraX does (`colorarg.py` `_colourlovers_fetch_by_id`); its colours
@@ -147,15 +156,29 @@ export async function readPaletteOrFetch(text: string): Promise<{ ok: true; pale
   return { ok: true, palette: { stops: s.map((x) => ({ at: s[0].at + s[s.length - 1].at - x.at, rgb: x.rgb })).reverse() } }
 }
 
+/**
+ * Read a palette as `ColormapArg` writes it: a builtin name (an evenly
+ * spaced one, or one whose colours sit at values such as `alphafold`),
+ * `c1:c2:...`, or `v1,c1:v2,c2:...` (colours at values); `^` first reverses it.
+ *
+ * @returns the palette, or why the text is not one
+ */
 export function readPalette(text: string): { ok: true; palette: Palette } | { ok: false; error: string } {
   const reversed = text.startsWith('^')
   const body = reversed ? text.slice(1) : text
   let palette: Palette
   const parts = body.split(':')
   if (parts.length === 1) {
-    const named = BUILTIN_PALETTES[body.toLowerCase()] ?? colorBrewerPalette(body)
-    if (!named) return { ok: false, error: `"${body}" is not a palette (${Object.keys(BUILTIN_PALETTES).join(', ')}, a ColorBrewer name such as pastel2-4, or c1:c2:...)` }
-    palette = even(named)
+    const valued = VALUE_PALETTES[body.toLowerCase()]
+    if (valued) {
+      const r = readPalette(valued)
+      if (!r.ok) return r
+      palette = r.palette
+    } else {
+      const named = BUILTIN_PALETTES[body.toLowerCase()] ?? colorBrewerPalette(body)
+      if (!named) return { ok: false, error: `"${body}" is not a palette (${[...Object.keys(BUILTIN_PALETTES), ...Object.keys(VALUE_PALETTES)].join(', ')}, a ColorBrewer name such as pastel2-4, or c1:c2:...)` }
+      palette = even(named)
+    }
   } else {
     const stops: { at: number | null; rgb: Rgb }[] = []
     for (const p of parts) {
@@ -199,7 +222,7 @@ export function paletteColor(p: Palette, f: number): string {
 
 /** ChimeraX's `alphafold` colormap (`core/colors.py`): pLDDT 0 red, 50 orange, 70 yellow, 90 cornflowerblue, 100 blue. */
 const ALPHAFOLD_PALETTE: Palette = (() => {
-  const r = readPalette('0,red:0.5,orange:0.7,yellow:0.9,cornflowerblue:1,blue')
+  const r = readPalette('alphafold')
   if (!r.ok) throw new Error(r.error)
   return r.palette
 })()

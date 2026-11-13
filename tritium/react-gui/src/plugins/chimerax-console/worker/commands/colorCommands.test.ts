@@ -17,6 +17,10 @@
  *
  * `color` on a map named as a model colours its contours, with the
  * transparency (percent) as their opacity.
+ *
+ * The pLDDT colouring an AlphaFold model opens with takes the molecule's own
+ * colouring (`$molcol`) when the fetch put a BfacColoring there, and the
+ * stepped entries otherwise.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -37,6 +41,8 @@ const { state } = vi.hoisted(() => ({
     /** The maps the specification names as models, and what colorMaps was given. */
     maps: [] as { uid: number }[],
     mapColors: [] as [number[], string | null, number | null][],
+    /** The class of the molecule's own colouring (mol.coloring). */
+    molColoring: 'PaintColoring',
   },
 }))
 
@@ -73,6 +79,9 @@ vi.mock('../display', async (importOriginal) => ({
     return { ok: true }
   },
 }))
+vi.mock('@renderer/worker/server/services/helpers/sceneResolver', () => ({
+  getSceneOrNull: () => ({ getObject: () => ({ coloring: { getClassName: () => state.molColoring } }) }),
+}))
 vi.mock('../surface', () => ({ surfacesOn: () => (state.withSurface ? [{ id: 7, chain: 'A' }] : []) }))
 vi.mock('./mapCommands', () => ({
   colorMaps: async (_ctx: unknown, _cc: unknown, maps: { uid: number }[], c: string | null, a: number | null) => {
@@ -81,7 +90,7 @@ vi.mock('./mapCommands', () => ({
   },
 }))
 
-import { COLOR_COMMANDS } from './colorCommands'
+import { COLOR_COMMANDS, colorByPlddt, MOLCOL } from './colorCommands'
 
 const ctx = {} as WorkerContext
 const cc = { sceneId: 1, viewId: 2, print: vi.fn(), warn: vi.fn() } as unknown as CmdContext
@@ -104,6 +113,7 @@ beforeEach(() => {
   state.paintWrites.length = 0
   state.maps = []
   state.mapColors.length = 0
+  state.molColoring = 'PaintColoring'
   vi.mocked(cc.warn).mockClear()
 })
 
@@ -143,6 +153,22 @@ describe('color bfactor', () => {
       expect(entries(uid)[1][0]).toBe('bfac > 10')
       expect(entries(uid)[50]).toEqual(['bfac > 39.4', '#ff0505'])
     }
+  })
+})
+
+describe('pLDDT colouring of an AlphaFold model', () => {
+  it('takes the molecule\'s BfacColoring by $molcol, and steps otherwise', async () => {
+    const obj = { uid: 10, model: 1, name: 'm', className: 'MolCoord' }
+    /** The cartoon's entries after clearing it. */
+    const cartoon = () => state.ops.filter((o) => o.name === 'add_paint_at' && o.args.nodeId === 4).map((o) => [o.args.selection, o.args.color])
+    state.molColoring = 'BfacColoring'
+    expect((await colorByPlddt(ctx, cc, obj)).ok).toBe(true)
+    expect(cartoon()).toEqual([['*', MOLCOL]])
+    state.ops.length = 0
+    state.molColoring = 'PaintColoring'
+    await colorByPlddt(ctx, cc, obj)
+    expect(cartoon().length).toBeGreaterThan(1)
+    expect(cartoon().some(([, c]) => c === MOLCOL)).toBe(false)
   })
 })
 

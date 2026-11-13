@@ -34,6 +34,8 @@
  */
 
 import type { WorkerContext } from '@renderer/worker/server/types/WorkerContext'
+import { getObjectColoringClassName } from '@renderer/worker/server/services/coloring/colorTargets'
+import { getSceneOrNull } from '@renderer/worker/server/services/helpers/sceneResolver'
 import type { CmdContext, CmdOutcome } from '@plugins/console/worker/dialect-api'
 import { ColorArg, EnumOf, FloatArg, ListOf, Or, RestOfLine, SpecArg, StringArg } from '../cli/argTypes'
 import { chxCommand } from '../cli/command'
@@ -160,13 +162,21 @@ export async function paintTarget(ctx: WorkerContext, cc: CmdContext, t: Target,
   return { ok: true }
 }
 
+/** The paint colour that takes each atom's colour from its molecule's colouring (`gfx::MolColorRef`). */
+export const MOLCOL = '$molcol'
+
 /**
  * Colour a whole molecule by pLDDT, as ChimeraX colours an AlphaFold model
  * when it opens (`alphafold/fetch.py` `_color_by_confidence`): atoms and
- * cartoons, replacing the colours it was opened with.
+ * cartoons, replacing the colours it was opened with. A model fetched from
+ * AlphaFold DB already has the pLDDT colouring on the molecule
+ * (`setPlddtMolColoring`), so one `("*", $molcol)` entry shows it; a
+ * molecule without one (another colouring) gets the stepped entries.
  */
 export function colorByPlddt(ctx: WorkerContext, cc: CmdContext, obj: NumberedObject): Promise<CmdOutcome> {
-  return paintTarget(ctx, cc, { obj, sel: '*' }, 'ac', plddtEntries(), false, true)
+  const mol = getSceneOrNull(ctx, cc.sceneId)?.getObject(obj.uid) as Parameters<typeof getObjectColoringClassName>[0] | null
+  const entries: PaintEntry[] = mol && getObjectColoringClassName(mol) === 'BfacColoring' ? [['*', MOLCOL]] : plddtEntries()
+  return paintTarget(ctx, cc, { obj, sel: '*' }, 'ac', entries, false, true)
 }
 
 /** ChimeraX's default target, acsbpf: atoms (and bonds), cartoons, surfaces... */
@@ -441,6 +451,7 @@ const colorModify: ChxCommand = chxCommand({
     const found = targetsOf(ctx, cc.sceneId, args.objects)
     if (!found.ok) return found
     let unpainted = 0
+    let molcolRows = 0
     for (const t of found.targets) {
       const owned = ownedOn(ctx, cc.sceneId, t.obj.uid)
       const r = atomRenderers(owned)
@@ -459,6 +470,7 @@ const colorModify: ChxCommand = chxCommand({
         const changed: PaintRow[] = []
         for (const row of rows) {
           const sel = intersect(row.selStr, t.sel)
+          if (sel !== NONE && row.colorValue.startsWith(MOLCOL)) molcolRows++
           const c = readColor(row.colorValue)
           if (sel === NONE || !c) continue
           changed.push({ selStr: sel, colorValue: modifyColor(c.hex, adjuster as Adjuster, op, amount) })
@@ -468,6 +480,9 @@ const colorModify: ChxCommand = chxCommand({
       }
     }
     if (unpainted > 0) cc.warn('color modify: some renderers are not coloured by the console (no paint table) and are left as they are')
+    // A $molcol entry takes each atom's colour from the molecule (the pLDDT
+    // colouring of an AlphaFold DB model): there is no one colour to change.
+    if (molcolRows > 0) cc.warn('color modify: atoms coloured from the molecule\'s colouring (pLDDT) are left as they are')
     return { ok: true }
   },
 })
