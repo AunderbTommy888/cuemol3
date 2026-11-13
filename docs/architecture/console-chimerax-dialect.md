@@ -236,10 +236,13 @@ renderer で表し、**その selection と paint が表示の状態そのもの
   64 entry)。`chains` は model ごとに chain id 順、`structures` は model ごとに 1 色。palette は組み込みの名前
   (`rainbow` (既定、青から赤) `grayscale` `red-white-blue` `blue-white-red` `cyan-white-maroon` `cyan-gray-maroon`
   `lipophilicity` と別名)、`c1:c2:...`、位置付きの `v1,c1:v2,c2:...`、先頭の `^` で反転 (`colorarg.py` `ColormapArg`)。
+  組み込みの名前には、値の位置を持つもの (`core/colors.py` の `_builtin_colormaps`) もある: `alphafold` (pLDDT
+  0,50,70,90,100)、`esmfold` (0〜1)、`pae` / `paegreen` (0〜30)、`paecontacts` (0〜20) (`colorSchemes.ts` の
+  `VALUE_PALETTES`)。位置付きと同じく、`range` を省けばその値の範囲で塗る。
 - `color byattribute bfactor|occupancy` と `color bfactor` (その別名) は、原子の値を palette (既定 `blue-white-red`) に
   沿って塗る。**色だけを段に分けた paint** で近似する (ChX の方針の例外。後から `color /A red` のように一部を塗り直す
   操作と両立させるため): range を 50 段に分け、`(spec) and (bfac > t)` の entry を低い順に先頭へ入れる
-  (`colorSchemes.ts` の `valueEntries`。AlphaFold の pLDDT の `plddtEntries` も同じ関数)。選ぶ原子と range は近似しない:
+  (`colorSchemes.ts` の `valueEntries`)。分子の coloring (`BfacColoring` の多色のグラデーション) は使わず、`mol.coloring` にも触らない。選ぶ原子と range は近似しない:
   - range は `range lo,hi` があればそれ、palette が位置付き (`v1,c1:...`) ならその値、無ければ
     **全対象の model の spec に当たる原子をまとめて**最小・最大を 1 回求める (ChimeraX の `_value_colors`)。
     model ごとに求めると同じ値が model で別の色になり、分子全体から求めると `color bfactor /A` で chain A が palette の
@@ -359,7 +362,7 @@ renderer で表し、**その selection と paint が表示の状態そのもの
 | `style` | `[spec] stick\|ball\|sphere`、`ringFill on\|off\|thin\|thick`、`dashes` (無視) | `set_renderer_selection`、`set_node_prop` (`ring` `thickness` `ringcolor`) | `ringFill` は `chx:stick` / `chx:ball` の環の板 (`ring`、色は `$molcol`)。thin は厚さ 0.05 Å、thick は renderer の `bondw` (ChimeraX の thick は stick の幅に合わせる)。`thickness=0` は環を描かなくなるので使わない。renderer に 1 つの値なので model 全体だけ (一部なら warn) |
 | `color` | `[spec] [色 \| byhetero \| byelement \| bychain \| bymodel \| bynucleotide \| fromatoms \| fromcartoons]`、`target`、`transparency` (地図だけ)、`halfbond` / `what` (無視) | `set_renderer_coloring`、`clear_paint`、`add_paint_at`、`set_map_contour` (地図) | target の既定は ChimeraX と同じ `acsbpf` (`s` はある surface に塗る)。target に `s` があり色が普通の色なら、model の番号だけで名指した地図 (`wholeMapsOf`) の等値面 (mesh も) にも塗り、`transparency` (percent) か色の alpha を不透明度にする (`color.py` の `_set_model_colors`)。分子の原子・cartoon・分子表面の `transparency` は warn して無視 (`transparency` コマンドを使う)。色は名前、hex (`#rgb` から 16 桁まで、alpha 付きも)、`rgb()` `rgba()` `hsl()` `hsla()` `gray()` (数値は整数なら 0-255、小数点付きなら 0-1、`%`、色相は `deg` / `rad` / `grad` / `turn`)、`r,g,b[,a]` の百分率 (`colors.ts`)。CueMol の paint は alpha を持たないので、色が alpha を述べていれば warn して不透明で塗る |
 | `color zone` | | | not supported yet。地図の等値面には近くの原子の色で塗る色付け (`colormode molecule`) があるが、その色付けにすると CueMol の画像の書き出し (`ImgSceneExporter::write`) が例外になり、以後の `save` がすべて失敗する (C++ の不具合。直るまで使わない) |
-| `color modify` | `[spec] adjuster [+\|-\|*] [number] [what]`、`target` | `add_paint_at` | `hue` `saturation` `lightness` (HLS)、`whiteness` `blackness` (HWB)、`red` `green` `blue` を ChimeraX の `color_modify` と同じ式で変える (`colorModify.ts`。ChimeraX は float32 で計算するので、0.5 付近の成分は 1 違いうる)。ChimeraX は原子ごとの色を変えるが、ここでは target が届く renderer の paint の entry を、色を変えて spec と交わらせ、同じ順で表の先頭に差し込む (atom は元の entry の色を変えた色になる)。paint でない renderer は変えずに warn。`contrast` は not supported yet |
+| `color modify` | `[spec] adjuster [+\|-\|*] [number] [what]`、`target` | `add_paint_at` | `hue` `saturation` `lightness` (HLS)、`whiteness` `blackness` (HWB)、`red` `green` `blue` を ChimeraX の `color_modify` と同じ式で変える (`colorModify.ts`。ChimeraX は float32 で計算するので、0.5 付近の成分は 1 違いうる)。ChimeraX は原子ごとの色を変えるが、ここでは target が届く renderer の paint の entry を、色を変えて spec と交わらせ、同じ順で表の先頭に差し込む (atom は元の entry の色を変えた色になる)。paint でない renderer は変えずに warn。`$molcol` の行 (AlphaFold のモデルの pLDDT。原子ごとに色が違う) は変えずに warn。`contrast` は not supported yet |
 | `color list` | `[all\|custom\|builtin]` | (読み取り) | ChimeraX の書式 (`148 builtin colors: aliceblue, ... and yellowgreen.`)。custom の色は持たないので `No custom colors.` |
 | `color byattribute` / `color bfactor` | `attrName` (byattribute だけ)、`[spec] [what]`、`target`、`palette`、`range`、`average` `noValueColor` `transparency` `key` (無視) | `set_renderer_coloring`、`clear_paint`、`add_paint_at` | §5。`N atoms, atom bfactor range lo to hi` と出す |
 | `colour` | `color` と同じ | | ChimeraX の英綴りの別名 |
@@ -619,6 +622,9 @@ renderer を持つものの、その renderer 全部に書く (spec を省くと
 - `commands/selectCommands.test.ts` (追加分): `select zone` が `find` から `near` を引いて原子単位で測り、`byres` を
   最後に掛けること、`select up` -> `down` が元の選択に戻り、途中で選択が変わったら down が何もしないこと
 - `commands/colorCommands.test.ts` (追加分): `color bfactor` の range を全 model の原子から 1 回求め、palette の端の色に
+  なること。AlphaFold のモデルの pLDDT の着色が、分子の coloring が `BfacColoring` なら `("*", $molcol)` の 1 行、
+  そうでなければ段に分けた entry になること
+- `colorSchemes.test.ts` (追加分): 値の位置を持つ組み込みの palette (`alphafold`) を読み、`range` を省くとその値の範囲に
   なること
 - `commands/reprCommands.test.ts`: surface が chain ごとに polymer から作られ `showsel` に spec の patch だけが入ること、
   `hide ... surfaces` が surface を消さず `showsel` を狭めること、`transparency` の target と renderer の対応と model の
