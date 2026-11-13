@@ -8,6 +8,9 @@
  * dialog and a core op are meant to read the same table. The URLs follow
  * ChimeraX's fetchers (`bundles/mmcif`, `bundles/pdb`, `bundles/alphafold`,
  * `bundles/pubchem`), so `pdbe:1abc` here fetches what it fetches there.
+ * A Chemical Component Dictionary ligand (`ccd`) is fetched as RCSB's ideal
+ * coordinates in SDF (ChimeraX reads the CCD's mmCIF, which CueMol's mmCIF
+ * reader does not take: it has no `_atom_site`).
  *
  * EMDB maps are not here: `pickEmdbMapUrl` and `fetch_emdb` own them.
  */
@@ -15,9 +18,15 @@
 import { PDB_ID_RE, pickCoordUrl } from './pdbUrls'
 
 /** The databases a structure can be fetched from by accession code. */
-export type StructureSource = 'pdb' | 'pdbe' | 'pdbj' | 'redo' | 'alphafold' | 'pubchem'
+export type StructureSource = 'pdb' | 'pdbe' | 'pdbj' | 'redo' | 'alphafold' | 'pubchem' | 'ccd'
 
-export const STRUCTURE_SOURCES: readonly StructureSource[] = ['pdb', 'pdbe', 'pdbj', 'redo', 'alphafold', 'pubchem']
+export const STRUCTURE_SOURCES: readonly StructureSource[] = ['pdb', 'pdbe', 'pdbj', 'redo', 'alphafold', 'pubchem', 'ccd']
+
+/** The sources the Get PDB dialog describes before downloading (`dbEntryInfoUrl`). */
+export type InfoSource = 'alphafold' | 'pubchem' | 'ccd'
+
+/** A Chemical Component Dictionary code: 1 to 5 letters or digits (`ATP`, `HEM`, `A1LU6`). */
+const CCD_ID_RE = /^[A-Za-z0-9]{1,5}$/
 
 /** The coordinate formats a PDB-like source serves. */
 export type StructureFormat = 'mmcif' | 'pdb'
@@ -88,8 +97,8 @@ export function parseAlphaFoldId(text: string): { ok: true; uniprot: string; iso
 /**
  * How to fetch `id` from `source`.
  *
- * @param format - the coordinate format; null takes mmCIF. PubChem serves SDF
- *   only and refuses one.
+ * @param format - the coordinate format; null takes mmCIF. PubChem and the
+ *   CCD serve SDF only and refuse one.
  */
 export function structureFetch(source: StructureSource, id: string, format: StructureFormat | null): StructureFetch {
   const f: StructureFormat = format ?? 'mmcif'
@@ -121,6 +130,15 @@ export function structureFetch(source: StructureSource, id: string, format: Stru
       return {
         ok: true,
         spec: { url: `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/SDF?record_type=3d`, readerName: 'sdf', gzip: false, name: `pubchem_${cid}` },
+      }
+    }
+    case 'ccd': {
+      const code = id.trim().toUpperCase()
+      if (!CCD_ID_RE.test(code)) return { ok: false, error: `"${id}" is not a CCD code (1 to 5 letters or digits)` }
+      if (format !== null) return { ok: false, error: 'The CCD serves SDF only; give no format' }
+      return {
+        ok: true,
+        spec: { url: `https://files.rcsb.org/ligands/download/${code}_ideal.sdf`, readerName: 'sdf', gzip: false, name: code },
       }
     }
   }
@@ -155,7 +173,7 @@ export function emdbAccession(text: string): string | null {
   return m ? `EMD-${m[1]}` : null
 }
 
-/** What the Get PDB dialog shows about an AlphaFold DB model or a PubChem compound before downloading it. */
+/** What the Get PDB dialog shows about an AlphaFold DB model, a PubChem compound or a CCD ligand before downloading it. */
 export interface DbEntryInfo {
   /** The protein's or compound's name. */
   title: string
@@ -165,13 +183,17 @@ export interface DbEntryInfo {
 
 /**
  * The record that describes `id` in `source`: AlphaFold DB's prediction API,
- * PubChem's compound properties. Null for a source without one, or an id
- * that is not of the source's form.
+ * PubChem's compound properties, RCSB's chemical component record. Null for
+ * a source without one, or an id that is not of the source's form.
  */
-export function dbEntryInfoUrl(source: 'alphafold' | 'pubchem', id: string): string | null {
+export function dbEntryInfoUrl(source: InfoSource, id: string): string | null {
   if (source === 'alphafold') {
     const a = parseAlphaFoldId(id)
     return a.ok ? `https://alphafold.ebi.ac.uk/api/prediction/${a.uniprot}${a.isoform ? `-${a.isoform}` : ''}` : null
+  }
+  if (source === 'ccd') {
+    const code = id.trim().toUpperCase()
+    return CCD_ID_RE.test(code) ? `https://data.rcsb.org/rest/v1/core/chemcomp/${code}` : null
   }
   const cid = id.trim()
   return /^\d+$/.test(cid)
@@ -186,7 +208,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : typeof v === 'n
  *
  * @returns the info, or null when the record names nothing
  */
-export function parseDbEntryInfo(source: 'alphafold' | 'pubchem', id: string, json: unknown): DbEntryInfo | null {
+export function parseDbEntryInfo(source: InfoSource, id: string, json: unknown): DbEntryInfo | null {
   if (source === 'alphafold') {
     if (!Array.isArray(json) || json.length === 0) return null
     // One record per fragment: the one the id names (F1 unless it says).
@@ -204,6 +226,15 @@ export function parseDbEntryInfo(source: 'alphafold' | 'pubchem', id: string, js
         residues !== null ? `${residues} residues` : '',
         plddt !== null ? `mean pLDDT ${plddt.toFixed(1)}` : '',
       ].filter((s) => s !== ''),
+    }
+  }
+  if (source === 'ccd') {
+    const rec = (json as { chem_comp?: Record<string, unknown> })?.chem_comp
+    if (!rec) return null
+    const weight = str(rec.formula_weight)
+    return {
+      title: str(rec.name) || id.trim().toUpperCase(),
+      details: [str(rec.formula), weight ? `${weight} g/mol` : '', str(rec.type)].filter((s) => s !== ''),
     }
   }
   const props = (json as { PropertyTable?: { Properties?: Record<string, unknown>[] } })?.PropertyTable?.Properties

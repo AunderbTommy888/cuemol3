@@ -135,9 +135,9 @@ export function useGetPdbCommand(): void {
               'The selected server type may not provide this entry, or the format is unsupported.',
           })
         } else {
-          // A PubChem compound is one small molecule: drawn as ball-and-stick
-          // and centred on, without asking how.
-          const options = source === 'pubchem'
+          // A PubChem compound or a CCD ligand is one small molecule: drawn as
+          // ball-and-stick and centred on, without asking how.
+          const options = source === 'pubchem' || source === 'ccd'
             ? compoundOpenOptions(name, readerName)
             : await showFileOpenOptionDialog({
                 filePath: virtualFilename,
