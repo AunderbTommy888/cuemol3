@@ -7,6 +7,8 @@
 
 #include "PickleInStream.hpp"
 
+#include <cerrno>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
@@ -383,6 +385,31 @@ LVariant *PickleInStream::getMap()
         o->getListPtr()->push_back(pArgs.release());
         push(o);
       }
+      break;
+    }
+
+    case LONG: {
+      // Python 3 writes an int outside the signed 32-bit range as
+      // "L<digits>L\n" under protocols 0-1, e.g. the PyMOL 2.x atom flags
+      // 0x88000040. A value that fits in 32 bits keeps its 32-bit pattern,
+      // as INT does for the same flags in Python 2 sessions; a larger one
+      // is kept as a real so that its magnitude is not lost.
+      LString s = readString();
+      if (!s.isEmpty() && s.getAt(s.length() - 1) == 'L')
+        s = s.substr(0, s.length() - 1);
+      const char *cstr = s.c_str();
+      char *pend = NULL;
+      errno = 0;
+      const long long v = std::strtoll(cstr, &pend, 10);
+      if (pend == cstr || *pend != '\0') {
+        LString msg = LString::format("Invalid pickle format (invalid LONG op %s)", s.c_str());
+        MB_THROW(qlib::FileFormatException, msg);
+        return NULL;
+      }
+      if (errno != ERANGE && v >= -2147483648LL && v <= 4294967295LL)
+        push(createInt(static_cast<int>(static_cast<unsigned int>(v & 0xffffffffLL))));
+      else
+        push(createFloat(std::strtod(cstr, NULL)));
       break;
     }
 

@@ -99,6 +99,12 @@ public:
         m_buf += 'j';
         le32(i);
     }
+    /// Python 3's protocol 0-1 form of an int outside the int32 range
+    void longText(const std::string &digits)
+    {
+        m_buf += 'L';
+        m_buf += digits + "L\n";
+    }
     void global(const std::string &module, const std::string &name)
     {
         m_buf += 'c';
@@ -309,6 +315,22 @@ TEST(PickleInStream, DeepLongBinputStringIsRetrievable)
     ASSERT_EQ(pList->size(), 2u);
     EXPECT_STREQ(pList->getString(0).c_str(), "12A");
     EXPECT_STREQ(pList->getString(1).c_str(), "12A");
+}
+
+TEST(PickleInStream, LongKeepsThe32BitPatternOfAtomFlags)
+{
+    // PyMOL 2.x atom flags such as 0x88000040 exceed int32, so Python 3
+    // writes them with LONG; "Unknown opcode 76" used to abort here.
+    PickleBuilder pb;
+    pb.emptyDict();
+    pb.binunicode("flags");
+    pb.longText("2281701440");  // 0x88000040
+    pb.setItem();
+    pb.stop();
+
+    std::unique_ptr<LVariant> pTop = parse(pb);
+    const int flags = pTop->getDictPtr()->getInt("flags");
+    EXPECT_EQ(static_cast<unsigned int>(flags), 0x88000040u);
 }
 
 TEST(PickleInStream, BytesValueMapsLatin1CodePointsToBytes)

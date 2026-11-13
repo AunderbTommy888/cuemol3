@@ -85,6 +85,7 @@ namespace importers {
     static const int INT = 73; /* I */
     static const int EMPTY_TUPLE = 41; /* ) */
     static const int REDUCE = 82; /* R */
+    static const int LONG = 76; /* L */
 
     typedef qlib::LVariant variant_t;
 
